@@ -37,13 +37,15 @@ type Props = {
 };
 
 const COLLAPSED_LINES = 2;
-const LINE_H = 20;
+const LINE_H = 21;
 const BOX_H = LINE_H * COLLAPSED_LINES;
 // Long enough to read a description without hurrying and to sit with a title
-// rather than watch it leave — a rotation that turns faster than the reader
-// does is just motion. Still short enough that scrolling past at a normal pace
-// catches both halves.
-const HOLD_MS = 6800;
+// rather than watch it leave — a rotation that turns faster than the reader does
+// is just motion. The trade is deliberate: at this pace someone scrolling
+// briskly past sees one half rather than both, which is the right way round,
+// since the cost of missing a line is far smaller than the cost of text moving
+// out from under someone still reading it.
+const HOLD_MS = 9000;
 const FADE_MS = 520;
 
 export default function FilmCaption({ title, caption, tags, active = true }: Props) {
@@ -166,7 +168,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   box: { height: BOX_H, overflow: 'hidden' },
   layer: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'center' },
   measure: { position: 'absolute', left: 0, right: 0, top: 0, opacity: 0 },
-  title: { color: colors.text, fontSize: 15, lineHeight: LINE_H, fontWeight: '700', letterSpacing: -0.2 },
+  title: { color: colors.text, fontSize: 16.5, lineHeight: LINE_H, fontWeight: '700', letterSpacing: -0.3 },
   desc: { color: colors.text, fontSize: 14, lineHeight: LINE_H, fontWeight: '400' },
   descUnderTitle: { marginTop: 2 },
   row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 2 },
