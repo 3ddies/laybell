@@ -455,7 +455,7 @@ export default function SpotlightScreen() {
                 <Text style={styles.freeTitle}>{t('spotlight.freeTitle')}</Text>
                 <Text style={styles.freeSub}>{t('spotlight.freeSub')}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+              <Ionicons name="chevron-forward" size={18} color={GALAXY_ACCENT} />
             </TouchableOpacity>
           )}
           {hasActive ? (
@@ -783,13 +783,18 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   hint: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
 
   // Premium free-monthly-Spotlight banner.
+  //
+  // Spotlight purple, not brand orange. Spotlight already has its own colour —
+  // the galaxy the buttons are painted in — and this banner is the feature
+  // introducing itself, so it should look like the thing it is offering rather
+  // than like everything else in the app.
   freeBanner: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    backgroundColor: colors.primary + '14', borderRadius: RADIUS.lg,
-    borderWidth: 1.5, borderColor: colors.primary, padding: SPACING.md,
+    backgroundColor: GALAXY_ACCENT + '14', borderRadius: RADIUS.lg,
+    borderWidth: 1.5, borderColor: GALAXY_ACCENT, padding: SPACING.md,
   },
   freeIcon: {
-    width: 44, height: 44, borderRadius: RADIUS.full, backgroundColor: colors.primary,
+    width: 44, height: 44, borderRadius: RADIUS.full, backgroundColor: GALAXY_ACCENT,
     alignItems: 'center', justifyContent: 'center',
   },
   freeTitle: { color: colors.text, fontSize: 15, fontWeight: '800' },

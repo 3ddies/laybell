@@ -17,7 +17,7 @@ import { supabase } from '../../lib/supabase';
 import { tabTick } from '../../lib/haptics';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { useNowPlaying, useAudioControls } from '../../contexts/AudioContext';
-import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import SlideUpSheet from '../../components/SlideUpSheet';
@@ -1013,21 +1013,17 @@ export default function MusicScreen() {
     <View style={styles.emptyContainer}>
       <View style={styles.emptyHalo}>
         <View style={styles.emptyIconCircle}>
-          <Ionicons name={icon} size={30} color={colors.primary} />
+          <Ionicons name={icon} size={30} color={colors.text} />
         </View>
       </View>
       <Text style={styles.emptyTitle}>{title}</Text>
       <Text style={styles.emptySubtitle}>{subtitle}</Text>
+      {/* Inverted rather than brand: a solid slab of the text colour, with the
+          page colour for the label. Loud on either theme without spending the
+          accent, same rule the rest of the sweep followed. */}
       {action && (
-        <TouchableOpacity onPress={action.onPress} activeOpacity={0.85}>
-          <LinearGradient
-            colors={GRADIENTS.primary as any}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.emptyCta}
-          >
-            <Text style={styles.emptyCtaText}>{action.label}</Text>
-          </LinearGradient>
+        <TouchableOpacity style={styles.emptyCta} onPress={action.onPress} activeOpacity={0.85}>
+          <Text style={styles.emptyCtaText}>{action.label}</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -1047,8 +1043,8 @@ export default function MusicScreen() {
         {p.cover ? (
           <ExpoImage source={{ uri: p.cover }} style={styles.pubCover} contentFit="cover" cachePolicy="memory-disk" transition={coverFade(p.cover)} />
         ) : (
-          <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.pubCover}>
-            <Ionicons name="musical-notes" size={26} color={colors.primary} />
+          <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.pubCover}>
+            <Ionicons name="musical-notes" size={26} color={colors.textSecondary} />
           </LinearGradient>
         )}
       </View>
@@ -1514,8 +1510,8 @@ export default function MusicScreen() {
                       {track.cover_url ? (
                         <ExpoImage source={{ uri: track.cover_url }} style={styles.forYouCover} contentFit="cover" cachePolicy="memory-disk" transition={coverFade(track.cover_url)} />
                       ) : (
-                        <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.forYouCover}>
-                          <Ionicons name="musical-notes" size={28} color={colors.primary} />
+                        <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.forYouCover}>
+                          <Ionicons name="musical-notes" size={28} color={colors.textSecondary} />
                         </LinearGradient>
                       )}
                       <Text style={styles.forYouTitle} numberOfLines={2}>{track.caption}</Text>
@@ -1554,8 +1550,8 @@ export default function MusicScreen() {
                     {todaysPick.cover_url ? (
                       <ExpoImage source={{ uri: todaysPick.cover_url }} style={styles.todaysCover} contentFit="cover" cachePolicy="memory-disk" transition={coverFade(todaysPick.cover_url)} />
                     ) : (
-                      <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.todaysCover}>
-                        <Ionicons name="musical-notes" size={20} color={colors.primary} />
+                      <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.todaysCover}>
+                        <Ionicons name="musical-notes" size={20} color={colors.textSecondary} />
                       </LinearGradient>
                     )}
                     <View style={styles.todaysInfo}>
@@ -1600,8 +1596,8 @@ export default function MusicScreen() {
                           {p.cover ? (
                             <ExpoImage source={{ uri: p.cover }} style={styles.pubCover} contentFit="cover" cachePolicy="memory-disk" transition={coverFade(p.cover)} />
                           ) : (
-                            <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.pubCover}>
-                              <Ionicons name="musical-notes" size={26} color={colors.primary} />
+                            <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.pubCover}>
+                              <Ionicons name="musical-notes" size={26} color={colors.textSecondary} />
                             </LinearGradient>
                           )}
                         </View>
@@ -1643,8 +1639,8 @@ export default function MusicScreen() {
               {item.cover ? (
                 <ExpoImage source={{ uri: item.cover }} style={[styles.playlistIcon, styles.playlistIconImg]} contentFit="cover" cachePolicy="memory-disk" transition={coverFade(item.cover)} />
               ) : (
-                <LinearGradient colors={GRADIENTS.primarySoft} style={styles.playlistIcon}>
-                  <Ionicons name="musical-notes" size={22} color={colors.primary} />
+                <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.playlistIcon}>
+                  <Ionicons name="musical-notes" size={22} color={colors.textSecondary} />
                 </LinearGradient>
               )}
               <View style={styles.playlistInfo}>
@@ -1684,8 +1680,8 @@ export default function MusicScreen() {
             {selectedPlaylist.cover ? (
               <ExpoImage source={{ uri: selectedPlaylist.cover }} style={styles.detailCover} contentFit="cover" cachePolicy="memory-disk" transition={coverFade(selectedPlaylist.cover)} />
             ) : (
-              <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.detailCover}>
-                <Ionicons name="musical-notes" size={26} color={colors.primary} />
+              <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.detailCover}>
+                <Ionicons name="musical-notes" size={26} color={colors.textSecondary} />
               </LinearGradient>
             )}
             <View style={styles.detailInfo}>
@@ -1894,8 +1890,8 @@ export default function MusicScreen() {
             {selectedCommunity.cover ? (
               <ExpoImage source={{ uri: selectedCommunity.cover }} style={styles.detailCover} contentFit="cover" cachePolicy="memory-disk" transition={coverFade(selectedCommunity.cover)} />
             ) : (
-              <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.detailCover}>
-                <Ionicons name="musical-notes" size={26} color={colors.primary} />
+              <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.detailCover}>
+                <Ionicons name="musical-notes" size={26} color={colors.textSecondary} />
               </LinearGradient>
             )}
             <View style={styles.detailInfo}>
@@ -2201,10 +2197,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     height: 42, paddingHorizontal: SPACING.xl, borderRadius: RADIUS.full,
     alignItems: 'center', justifyContent: 'center',
     marginTop: SPACING.sm,
-    shadowColor: colors.primary, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
+    // Solid inverted fill, and no coloured glow — a brand-tinted shadow under a
+    // neutral button is the accent leaking back in by another route.
+    backgroundColor: colors.text,
   },
-  emptyCtaText: { color: '#fff', fontSize: 14.5, fontWeight: '700', letterSpacing: 0.1 },
+  emptyCtaText: { color: colors.background, fontSize: 14.5, fontWeight: '800', letterSpacing: 0.1 },
 
   // ─── Discover styles ──────────────────────────────────────────────────────
   discoverContent: { paddingBottom: SPACING.xxl * 3 },
