@@ -64,11 +64,17 @@ function loadCover(songId: string): Promise<string | null> {
   return p;
 }
 
-const PULSE_FIRST_MS = 1800; // let the video establish itself before anything appears
+// Both halves are long on purpose. Short and frequent turns the corner into a
+// blinking thing you learn to ignore — or resent — while the point is that the
+// video is what you came for and the song is what you might leave with. Seven
+// seconds is long enough to read a cover rather than register one; eighteen away
+// is long enough that its return is a small event and not a metronome. On screen
+// roughly a quarter of the time, six or seven times across a three-minute video.
+const PULSE_FIRST_MS = 2500; // let the video establish itself before anything appears
 const PULSE_IN_MS = 340;
-const PULSE_HOLD_MS = 4200;
+const PULSE_HOLD_MS = 7000;
 const PULSE_OUT_MS = 420;
-const PULSE_GAP_MS = 9000;
+const PULSE_GAP_MS = 18000;
 
 export default function SongAttribution({
   songId, title, artist, artistId, style, inline = false, pulse = false, active = true,
@@ -157,31 +163,49 @@ export default function SongAttribution({
   const pulseAnim = useRef(new Animated.Value(0)).current;
   // Drives pointerEvents only. Flipped at the START of each fade so the artwork
   // stops taking taps the moment it begins to leave, and no setState lands on an
-  // animation's last frame over a playing video.
+  // animation's last frame over a playing video. The ref is the same fact read
+  // from inside the loop, which must not depend on it.
   const [pulseShown, setPulseShown] = useState(false);
+  const shownRef = useRef(false);
+  // Tapped: the cover stays put instead of leaving on its own. A music video
+  // already IS the song playing, so opening the audio player would swap it for a
+  // worse version of what you are watching — the tap keeps you here and holds
+  // the artwork still. Tapping again puts it away.
+  const [pinned, setPinned] = useState(false);
+  // A pin belongs to the post it was made on; this cell will be recycled.
+  useEffect(() => { setPinned(false); }, [songId]);
+
   useEffect(() => {
-    if (!pulsing || !active) return;
+    if (!pulsing) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    const setShown = (v: boolean) => { shownRef.current = v; setPulseShown(v); };
     const wait = (ms: number, fn: () => void) => {
       timer = setTimeout(() => { if (!cancelled) fn(); }, ms);
     };
-    const show = () => {
-      setPulseShown(true);
+    const show = (then?: () => void) => {
+      setShown(true);
       Animated.timing(pulseAnim, { toValue: 1, duration: PULSE_IN_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true })
-        .start(({ finished }) => { if (finished && !cancelled) wait(PULSE_HOLD_MS, hide); });
+        .start(({ finished }) => { if (finished && !cancelled) then?.(); });
     };
     const hide = () => {
-      setPulseShown(false);
+      setShown(false);
       Animated.timing(pulseAnim, { toValue: 0, duration: PULSE_OUT_MS, easing: Easing.in(Easing.quad), useNativeDriver: true })
-        .start(({ finished }) => { if (finished && !cancelled) wait(PULSE_GAP_MS, show); });
+        .start(({ finished }) => { if (finished && !cancelled) wait(PULSE_GAP_MS, () => show(() => wait(PULSE_HOLD_MS, hide))); });
     };
-    wait(PULSE_FIRST_MS, show);
+    if (pinned) { show(); return () => { cancelled = true; }; }
+    if (!active) return;
+    // Already on screen when the loop (re)starts — an unpin, or the card coming
+    // back into view mid-hold. Taking it away is the answer to both: the second
+    // tap reads as "put it back", and a card returning does not owe the viewer
+    // another full hold of something they have already seen.
+    if (shownRef.current) hide();
+    else wait(PULSE_FIRST_MS, () => show(() => wait(PULSE_HOLD_MS, hide)));
     // Only the CHAIN is cancelled; an in-flight fade is left to land. Stopping a
     // native-driven animation is a round trip that can resolve after whatever we
     // set next, which strands the card half-visible.
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [pulsing, active, pulseAnim]);
+  }, [pulsing, active, pinned, pulseAnim]);
 
   const showArt = !inline && !pulsing && isThisTrack && isPlaying && !!cover && artReady;
 
@@ -333,10 +357,11 @@ export default function SongAttribution({
           pointerEvents={pulseShown ? 'auto' : 'none'}
         >
           <TouchableOpacity
-            onPress={playSong}
+            onPress={() => setPinned((p) => !p)}
             activeOpacity={0.85}
             accessibilityRole="button"
             accessibilityLabel={title || t('songAttr.audioTrack')}
+            accessibilityState={{ selected: pinned }}
           >
             {/* transition={0} for the same reason as the artwork card: the
                 pulse owns the fade, and expo-image's own cross-fade running
