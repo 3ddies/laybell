@@ -5,13 +5,15 @@ import { useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { SPACING, type ThemePalette } from '../constants/theme';
 
-// A film's text on a home-feed card.
+// The text on a home-feed card for a post that has a NAME as well as a caption.
 //
-// A film is the one post type carrying TWO separate pieces of writing — the
-// title (posts.film_title) and the description (the ordinary caption) — and a
-// feed row has room for roughly one. Stacking both pushes the like/comment row
-// down on every film in the feed, so the slot ALTERNATES between them on a slow
-// crossfade instead.
+// Two post types do: a film, whose name is posts.film_title, and a music video,
+// whose name is the track it is a video of. Everything else has a caption and
+// nothing more, and keeps the ordinary caption row.
+//
+// A feed row has room for roughly one of the two. Stacking both pushes the
+// like/comment row down on every such post, so the slot ALTERNATES between them
+// on a slow crossfade instead.
 //
 // Weight carries the distinction rather than colour: the title is 700 and the
 // description 400, so a glance at any moment says which of the two you are
@@ -25,7 +27,7 @@ import { SPACING, type ThemePalette } from '../constants/theme';
 
 type Props = {
   title?: string | null;
-  /** The description — a film's caption. Already translated by the caller. */
+  /** The description — the post's caption. Already translated by the caller. */
   caption?: string | null;
   /** Community hashtags, rendered on their own line under the text. */
   tags?: ReactNode;
@@ -55,7 +57,7 @@ const BOX_H = Math.max(TITLE_LINE, DESC_LINE) * COLLAPSED_LINES;
 const HOLD_MS = 8200;
 const FADE_MS = 520;
 
-export default function FilmCaption({ title, caption, tags, active = true }: Props) {
+export default function RotatingCaption({ title, caption, tags, active = true }: Props) {
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const [expanded, setExpanded] = useState(false);

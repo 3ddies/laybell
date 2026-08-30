@@ -3,7 +3,7 @@ import {
   EMPTY_PROFILE, type UserAffinityProfile, type ScoreOpts,
 } from '../../lib/feedScorer';
 import { fetchGirlSpaceCommunityIds } from '../../lib/communities';
-import { songPlaysFor } from '../../lib/postSong';
+import { captionEchoesTitle, songCreditLine, songIsLinkOnly, songPlaysFor } from '../../lib/postSong';
 import FeedVideo from '../../components/FeedVideo';
 import { PlacedStickers } from '../../components/StickerLayer';
 // FlashList v2: RECYCLES card views instead of mounting/destroying them while
@@ -193,7 +193,7 @@ import MentionText from '../../components/MentionText';
 import TranslatableText from '../../components/TranslatableText';
 import TaggedPeopleButton from '../../components/TaggedPeopleButton';
 import CommunityTag from '../../components/CommunityTag';
-import FilmCaption from '../../components/FilmCaption';
+import RotatingCaption from '../../components/RotatingCaption';
 import { isFilm } from '../../lib/tv';
 import { parseSlides, isSlideshow } from '../../lib/slideshow';
 import { useStories } from '../../contexts/StoriesContext';
@@ -326,6 +326,25 @@ const PostCard = memo(function PostCard({
     isLiked,
     onLike: () => { popLike(); onLike(item); },
   });
+
+  // ── Posts that have a NAME as well as a caption ────────────────────────────
+  // A film's is film_title; a music video's is the track it is a video of. Both
+  // take the alternating block (RotatingCaption); everything else keeps the
+  // plain caption row. songCreditLine folds the artist in only when the song
+  // title does not already carry it.
+  const rotatingTitle =
+    isFilm(item) && item.film_title?.trim()
+      ? item.film_title.trim()
+      : item.type === 'video' && songIsLinkOnly(item) && item.song_title?.trim()
+        ? songCreditLine(item.song_title, item.song_artist)
+        : null;
+  // A caption that only restates the credit is dropped, not alternated with it —
+  // rotating "Break that · 3ddie" against "Break that - 3ddie" would be the very
+  // repetition the title line just removed. The post then simply shows its name.
+  const rotatingCaption =
+    rotatingTitle && captionEchoesTitle(item.caption, rotatingTitle, item.song_artist)
+      ? ''
+      : item.caption ?? '';
 
   return (
     <View style={styles.postCard}>
@@ -549,18 +568,18 @@ const PostCard = memo(function PostCard({
         </View>
       )}
 
-      {/* A FILM has two pieces of writing where every other post has one, so it
-          gets its own block that alternates between them (see FilmCaption).
-          Without a film_title there is nothing to alternate with, and it falls
-          back to the ordinary caption row like anything else. */}
-      {isFilm(item) && !!item.film_title?.trim() ? (
-        item.caption ? (
+      {/* A film or a music video has two pieces of writing where every other
+          post has one, so it gets the block that alternates between them (see
+          RotatingCaption). With no name to alternate with, it falls back to the
+          ordinary caption row like anything else. */}
+      {rotatingTitle ? (
+        rotatingCaption ? (
           <TranslatableText
-            text={item.caption}
+            text={rotatingCaption}
             render={(s) => (
-              <FilmCaption
+              <RotatingCaption
                 key={item.id}
-                title={item.film_title}
+                title={rotatingTitle}
                 caption={s}
                 active={isVisibleVideo}
                 tags={(item.community_tags ?? []).map((ct) => (
@@ -571,10 +590,10 @@ const PostCard = memo(function PostCard({
           />
         ) : (
           // TranslatableText returns null for empty text, which would drop the
-          // title along with the absent description.
-          <FilmCaption
+          // title along with the absent (or voided) description.
+          <RotatingCaption
             key={item.id}
-            title={item.film_title}
+            title={rotatingTitle}
             tags={(item.community_tags ?? []).map((ct) => (
               <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} />
             ))}
