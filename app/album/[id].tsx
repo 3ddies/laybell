@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -46,6 +47,11 @@ export default function AlbumScreen() {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
+  // MEASURED, not a constant. The first version padded a fixed 40pt from the
+  // top, which is fine on a phone with a notch and squashes Back and Edit up
+  // against the clock on one with a Dynamic Island. Math.max keeps a floor for
+  // devices reporting no inset at all.
+  const insets = useSafeAreaInsets();
   const { playQueue, expand, currentTrack, isPlaying } = useAudio();
 
   const [album, setAlbum] = useState<Album | null>(null);
@@ -158,7 +164,7 @@ export default function AlbumScreen() {
   return (
     <SwipeBackPager>
       <View style={styles.container}>
-        <View style={styles.topBar}>
+        <View style={[styles.topBar, { paddingTop: Math.max(insets.top, SPACING.md) + SPACING.xs }]}>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={8}>
             <Ionicons name="chevron-back" size={22} color={colors.primaryLight} />
             <Text style={styles.backText}>{t('common.back')}</Text>
@@ -229,7 +235,9 @@ export default function AlbumScreen() {
             <FlatList
               data={tracks}
               keyExtractor={(item) => item.post_id}
-              contentContainerStyle={styles.listContent}
+              // Home-indicator inset added to the list's own tail, so Add tracks
+              // clears the gesture bar instead of sitting on it.
+              contentContainerStyle={[styles.listContent, { paddingBottom: SPACING.xxl + insets.bottom }]}
               ListEmptyComponent={
                 <View style={styles.center}>
                   <Ionicons name="musical-notes-outline" size={40} color={colors.textTertiary} />
@@ -363,9 +371,10 @@ export default function AlbumScreen() {
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  // paddingTop is supplied at the call site from the safe-area inset.
   topBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.md, paddingTop: SPACING.xl + SPACING.sm, paddingBottom: SPACING.sm,
+    paddingHorizontal: SPACING.md, paddingBottom: SPACING.md,
   },
   backBtn: { flexDirection: 'row', alignItems: 'center' },
   backText: { color: colors.primaryLight, fontSize: 16, marginLeft: 2 },
@@ -376,7 +385,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   unavailable: { color: colors.textSecondary, fontSize: 15, textAlign: 'center' },
   emptyHint: { color: colors.textTertiary, fontSize: 13, textAlign: 'center', maxWidth: 280 },
 
-  header: { flexDirection: 'row', gap: SPACING.md, padding: SPACING.md },
+  // More air above the sleeve than below it: the cover is the first thing the
+  // eye lands on after the bar, and sitting it tight under a hairline made the
+  // whole screen feel like it started before it was ready to.
+  header: {
+    flexDirection: 'row', gap: SPACING.md,
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.lg, paddingBottom: SPACING.md,
+  },
   cover: { width: 96, height: 96, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceLight },
   headerInfo: { flex: 1, justifyContent: 'center' },
   title: { color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
