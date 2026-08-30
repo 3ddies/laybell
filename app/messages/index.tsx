@@ -404,25 +404,25 @@ export default function MessagesScreen() {
         ListEmptyComponent={
           q ? (
             <View style={styles.emptyContainer}>
-              <Ionicons name="search-outline" size={52} color={colors.textTertiary} />
+              <Ionicons name="search-outline" size={64} color={colors.textTertiary} />
               <Text style={styles.emptyTitle}>{t('messages.empty.noChatsFound')}</Text>
               <Text style={styles.emptySubtitle}>{t('messages.empty.noChatsFoundSub', { query: searchQuery.trim() })}</Text>
             </View>
           ) : tab === 'friends' ? (
             <View style={styles.emptyContainer}>
-              <Ionicons name="people-outline" size={52} color={colors.textTertiary} />
+              <Ionicons name="people-outline" size={64} color={colors.textTertiary} />
               <Text style={styles.emptyTitle}>{t('messages.empty.friendsTitle')}</Text>
               <Text style={styles.emptySubtitle}>{t('messages.empty.friendsSub')}</Text>
             </View>
           ) : tab === 'followers' ? (
             <View style={styles.emptyContainer}>
-              <Ionicons name="person-outline" size={52} color={colors.textTertiary} />
+              <Ionicons name="person-outline" size={64} color={colors.textTertiary} />
               <Text style={styles.emptyTitle}>{t('messages.empty.followersTitle')}</Text>
               <Text style={styles.emptySubtitle}>{t('messages.empty.followersSub')}</Text>
             </View>
           ) : (
             <View style={styles.emptyContainer}>
-              <Ionicons name="chatbubbles-outline" size={52} color={colors.textTertiary} />
+              <Ionicons name="chatbubbles-outline" size={64} color={colors.textTertiary} />
               <Text style={styles.emptyTitle}>{t('messages.empty.title')}</Text>
               <Text style={styles.emptySubtitle}>{t('messages.empty.sub')}</Text>
             </View>
@@ -687,6 +687,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // explanation, and nothing drawn around any of it. The boxed icon this
   // replaces gave the emptiest screen in the app its most decorated object.
   emptyContainer: { alignItems: 'center', paddingTop: SPACING.xxl * 1.5, gap: SPACING.sm },
-  emptyTitle: { color: colors.text, fontSize: 17, fontWeight: '700', marginTop: SPACING.xs },
-  emptySubtitle: { color: colors.textSecondary, fontSize: 14, lineHeight: 19, textAlign: 'center', maxWidth: 260 },
+  // Hierarchy the iOS way: the title carries the weight, the line under it is
+  // deliberately quiet. Same size gap and the same two colours as the Music tab,
+  // so the two screens read as one pattern rather than two takes on it.
+  emptyTitle: { color: colors.text, fontSize: 19, fontWeight: '800', letterSpacing: -0.4, marginTop: SPACING.sm },
+  emptySubtitle: { color: colors.textTertiary, fontSize: 13.5, lineHeight: 19, textAlign: 'center', maxWidth: 260 },
 });

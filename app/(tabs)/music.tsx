@@ -1015,7 +1015,7 @@ export default function MusicScreen() {
           two lines of text with nothing drawn around them — the two concentric
           circles this replaces made the most decorated object on screen the one
           announcing there is nothing here. */}
-      <Ionicons name={icon} size={52} color={colors.textTertiary} />
+      <Ionicons name={icon} size={64} color={colors.textTertiary} />
       <Text style={styles.emptyTitle}>{title}</Text>
       <Text style={styles.emptySubtitle}>{subtitle}</Text>
       {/* Inverted rather than brand: a solid slab of the text colour, with the
@@ -2180,8 +2180,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // adapts to the theme) instead of a hard gradient tile, copy with room to
   // breathe, and a gradient pill CTA.
   emptyContainer: { alignItems: 'center', paddingTop: SPACING.xxl * 1.6, paddingHorizontal: SPACING.xl, gap: SPACING.sm },
-  emptyTitle: { color: colors.text, fontSize: 17, fontWeight: '700', letterSpacing: -0.3, marginTop: SPACING.xs },
-  emptySubtitle: { color: colors.textSecondary, fontSize: 14, lineHeight: 19, textAlign: 'center', maxWidth: 260 },
+  emptyTitle: { color: colors.text, fontSize: 19, fontWeight: '800', letterSpacing: -0.4, marginTop: SPACING.sm },
+  emptySubtitle: { color: colors.textTertiary, fontSize: 13.5, lineHeight: 19, textAlign: 'center', maxWidth: 260 },
   emptyCta: {
     height: 42, paddingHorizontal: SPACING.xl, borderRadius: RADIUS.full,
     alignItems: 'center', justifyContent: 'center',
