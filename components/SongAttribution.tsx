@@ -78,7 +78,7 @@ const PULSE_OUT_MS = 420;
 const PULSE_GAP_MS = 18000;
 
 export default function SongAttribution({
-  songId, title, artist, artistId, style, inline = false, pulse = false, active = true,
+  songId, title, artist, artistId, style, inline = false, pulse = false, active = true, getPositionMs,
   onNavigate, onPauseHost, onResumeHost,
 }: {
   songId: string;
@@ -94,6 +94,10 @@ export default function SongAttribution({
   pulse?: boolean;
   // False while the card is off-screen, so the pulse doesn't run unwatched.
   active?: boolean;
+  // Where the HOST video has reached, in ms. Supplied by a music video so that
+  // opening the track continues it from here rather than restarting it — read
+  // at tap time, never rendered, so it costs nothing per frame.
+  getPositionMs?: () => number;
   onNavigate?: () => void;
   onPauseHost?: () => void;
   // Fired when the song's 3-dot menu closes — a host paused via onPauseHost
@@ -104,7 +108,7 @@ export default function SongAttribution({
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
-  const { play, expand, currentTrack, isPlaying } = useAudio();
+  const { play, playFrom, expand, currentTrack, isPlaying } = useAudio();
   const { stop: stopPostMusic } = usePostMusicActions();
   const { show } = usePostOptions();
   const { profile } = useProfile();
@@ -168,16 +172,8 @@ export default function SongAttribution({
   // from inside the loop, which must not depend on it.
   const [pulseShown, setPulseShown] = useState(false);
   const shownRef = useRef(false);
-  // Tapped: the cover stays put instead of leaving on its own. A music video
-  // already IS the song playing, so opening the audio player would swap it for a
-  // worse version of what you are watching — the tap keeps you here and holds
-  // the artwork still. Tapping again puts it away.
-  const [pinned, setPinned] = useState(false);
-  // A pin belongs to the post it was made on; this cell will be recycled.
-  useEffect(() => { setPinned(false); }, [songId]);
-
   useEffect(() => {
-    if (!pulsing) return;
+    if (!pulsing || !active) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const setShown = (v: boolean) => { shownRef.current = v; setPulseShown(v); };
@@ -194,19 +190,17 @@ export default function SongAttribution({
       Animated.timing(pulseAnim, { toValue: 0, duration: PULSE_OUT_MS, easing: Easing.in(Easing.quad), useNativeDriver: true })
         .start(({ finished }) => { if (finished && !cancelled) wait(PULSE_GAP_MS, () => show(() => wait(PULSE_HOLD_MS, hide))); });
     };
-    if (pinned) { show(); return () => { cancelled = true; }; }
-    if (!active) return;
-    // Already on screen when the loop (re)starts — an unpin, or the card coming
-    // back into view mid-hold. Taking it away is the answer to both: the second
-    // tap reads as "put it back", and a card returning does not owe the viewer
-    // another full hold of something they have already seen.
-    if (shownRef.current) hide();
+    // Already on screen when the loop restarts — the card left mid-hold and came
+    // back. It resumes the hold rather than starting over, so scrolling past and
+    // returning does not owe the viewer another full twelve seconds of something
+    // they were already looking at.
+    if (shownRef.current) wait(PULSE_HOLD_MS, hide);
     else wait(PULSE_FIRST_MS, () => show(() => wait(PULSE_HOLD_MS, hide)));
     // Only the CHAIN is cancelled; an in-flight fade is left to land. Stopping a
     // native-driven animation is a round trip that can resolve after whatever we
     // set next, which strands the card half-visible.
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [pulsing, active, pinned, pulseAnim]);
+  }, [pulsing, active, pulseAnim]);
 
   const showArt = !inline && !pulsing && isThisTrack && isPlaying && !!cover && artReady;
 
@@ -278,6 +272,9 @@ export default function SongAttribution({
     }
     if (busyRef.current) return; // a previous tap is still loading — ignore
     busyRef.current = true;
+    // Read BEFORE the await: by the time the song row comes back the video has
+    // moved on, and the handoff should land on the moment that was tapped.
+    const at = Math.round(getPositionMs?.() ?? 0);
     try {
       onNavigate?.(); // close the host (post/reel/story) so the root player shows in front
       stopPostMusic(); // promote from ambient to the main mini-player
@@ -288,7 +285,13 @@ export default function SongAttribution({
         .single();
       if (data) {
         const d: any = data;
-        play({ id: d.id, uri: d.media_url, caption: d.caption, artist: d.profiles?.display_name ?? artist ?? '', cover: d.cover_url });
+        const track = { id: d.id, uri: d.media_url, caption: d.caption, artist: d.profiles?.display_name ?? artist ?? '', cover: d.cover_url };
+        // A music video hands the listener OVER: the song picks up where the
+        // video had reached, so the same music keeps going and only the surface
+        // playing it changes. AudioContext drops the position if it falls
+        // outside the song, so a video with an intro the track does not have
+        // simply starts from the top.
+        if (at > 0) playFrom(track, at); else play(track);
         expand();
       }
     } finally {
@@ -358,11 +361,10 @@ export default function SongAttribution({
           pointerEvents={pulseShown ? 'auto' : 'none'}
         >
           <TouchableOpacity
-            onPress={() => setPinned((p) => !p)}
+            onPress={playSong}
             activeOpacity={0.85}
             accessibilityRole="button"
             accessibilityLabel={title || t('songAttr.audioTrack')}
-            accessibilityState={{ selected: pinned }}
           >
             {/* transition={0} for the same reason as the artwork card: the
                 pulse owns the fade, and expo-image's own cross-fade running

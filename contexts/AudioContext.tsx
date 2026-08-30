@@ -86,6 +86,13 @@ type AudioContextType = {
   isPlaying: boolean;
   isBuffering: boolean;
   play: (track: Track) => Promise<void>;
+  /**
+   * play(), but continuing from `startAtMs` instead of 0:00 — the music-video
+   * handoff. Best effort by design: the position is honoured only when it falls
+   * inside the song, since a video and the track it is a video of do not always
+   * share a timeline. Out of range, it simply starts from the top.
+   */
+  playFrom: (track: Track, startAtMs: number) => Promise<void>;
   playQueue: (tracks: Track[], startIndex?: number, loadMore?: QueueLoader) => Promise<void>;
   // Now Playing reports comment activity so a song ending at the end of the queue
   // doesn't tear the sheet away while the user is still engaged with the comments.
@@ -294,6 +301,19 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // in-use lock (so removing/evicting an offline file never yanks it out from
   // under a live player) when we tear it down or switch tracks.
   const loadedIdRef = useRef<string | null>(null);
+  // A one-shot "start this track HERE, not at 0:00", used by the music-video
+  // handoff: tapping the artwork over a video continues the song from where the
+  // video had reached, so the listener moves onto the real player mid-track
+  // instead of hearing the song restart under them.
+  //
+  // Applied from the progress handler rather than straight after load, because
+  // that is the first moment the DURATION is known — and without the duration
+  // there is no way to tell a legitimate position from one past the end of a
+  // song whose video was longer than it. Paired with the track id so a seek
+  // cannot land on whatever is playing by the time it resolves.
+  const pendingSeekMsRef = useRef(0);
+  const pendingSeekIdRef = useRef<string | null>(null);
+  const clearPendingSeek = () => { pendingSeekMsRef.current = 0; pendingSeekIdRef.current = null; };
   // Genuine forward listen ms accrued toward the daily "music streaming" badge —
   // a SEPARATE accumulator from the per-post stream credit (listenMsRef), so it
   // sums across posts and isn't tied to any 24h per-post window. Flushed as whole
@@ -1120,6 +1140,20 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       if (!adPlayingRef.current) emitPosition(pos, dur);
       progressRef.current = dur > 0 ? pos / dur : 0;
 
+      // The music-video handoff, applied on the first tick that carries a real
+      // duration. The window is deliberately strict: a position inside the song
+      // by more than a second and a half at both ends. Outside it the video and
+      // the song plainly do not share a timeline — an intro the song does not
+      // have, an outro it ended before — and starting from 0:00 is the honest
+      // answer, far better than dropping someone into the last two seconds of a
+      // track they just asked to hear.
+      if (pendingSeekMsRef.current > 0 && dur > 0 && !adPlayingRef.current) {
+        const want = pendingSeekMsRef.current;
+        const forId = pendingSeekIdRef.current;
+        clearPendingSeek();
+        if (forId === loadedIdRef.current && want > 1500 && want < dur - 1500) seekTo(want);
+      }
+
       // Comment-hold: with native advance, a finishing track must be CAUGHT
       // just before its end (the engine won't wait for JS) — pause it and
       // defer the advance, exactly like the old didJustFinish hold. resume()
@@ -1342,6 +1376,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       // from 0:00. (Restarting the SAME song isn't a move; it stays ad-free.)
       const adFirst = adDueRef.current && !adPlayingRef.current && previousSongId !== startTrack.id;
       if (adFirst) {
+        // An ad break has already broken the seamlessness the handoff was for,
+        // and every fireAudioAd outcome starts the track from 0:00 — so drop the
+        // seek rather than have it land on a song the listener is now hearing
+        // from the top.
+        clearPendingSeek();
         adDueRef.current = false;
         setIsPlaying(false);
         fireAudioAd();
@@ -1357,11 +1396,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function play(track: Track, fromQueue = false, suppressToggle = false) {
+  async function play(track: Track, fromQueue = false, suppressToggle = false, startAtMs = 0) {
     pendingFinishRef.current = false;  // a fresh play cancels any deferred advance/close
     engagedNearEndRef.current = false; // and resets near-end engagement for the new track
     progressRef.current = 0;
     positionRef.current = 0;
+    // Set (or cleared) on EVERY play, so an unused handoff can never sit around
+    // waiting to hijack an unrelated song started later.
+    pendingSeekMsRef.current = startAtMs > 0 ? startAtMs : 0;
+    pendingSeekIdRef.current = startAtMs > 0 ? track.id : null;
     // A fresh play supersedes any in-flight audio ad (e.g. tapping a feed track
     // while a playlist break is on screen) — tear the ad down like stop() does.
     if (adPlayingRef.current) {
@@ -1389,6 +1432,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     // (next / previous / restart / advance) must always play its target — never
     // stop and close the player — so it passes suppressToggle to skip this.
     if (!suppressToggle && currentTrack?.id === track.id && isPlaying) {
+      clearPendingSeek();
       await stop();
       return;
     }
@@ -1408,6 +1452,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     await startQueue(queueIndexRef.current);
   }
 
+  const playFrom = (track: Track, startAtMs: number) => play(track, false, false, startAtMs);
+
   // Keep the now-playing module store + stable play accessor in sync, so
   // useNowPlaying() consumers (Explore grid, track rails) re-render on ONLY a
   // track change / play-pause — not on this provider's buffering/ad/queue churn.
@@ -1422,7 +1468,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { publishVideoMuted(videoMuted); }, [videoMuted]);
 
   return (
-    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, play, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, hasMore, videoMuted, toggleVideoMuted, adState, skipAudioAd }}>
+    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, play, playFrom, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, hasMore, videoMuted, toggleVideoMuted, adState, skipAudioAd }}>
       <AudioPositionContext.Provider value={subscribePosition}>
         {children}
       </AudioPositionContext.Provider>
