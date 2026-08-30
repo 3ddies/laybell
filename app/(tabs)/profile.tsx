@@ -187,6 +187,12 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (!orderedKeys.includes(activeTab)) setActiveTab('posts');
   }, [orderedKeys, activeTab]);
+  // Measured rather than counted: whether the pills fit depends on the language
+  // as much as the number of them ("Playlists" is "Wiedergabelisten" in German),
+  // so counting tabs would be right in English and wrong everywhere else.
+  const [tabsViewportW, setTabsViewportW] = useState(0);
+  const [tabsContentW, setTabsContentW] = useState(0);
+  const tabsFit = tabsViewportW > 0 && tabsContentW > 0 && tabsContentW <= tabsViewportW;
 
   // Slide the incoming sub-tab in from the travel direction (Music-pill style).
   const tabAnimX = useRef(new Animated.Value(0)).current;
@@ -808,11 +814,26 @@ export default function ProfileScreen() {
       </View>
 
       {/* Tabs — tap to switch; swiping ON this row scrolls the pills
-          (traversal) rather than stepping the sub-tab. */}
+          (traversal) rather than stepping the sub-tab.
+
+          The row CENTRES itself when the pills fit, and only then. This strip
+          was drawn for five tabs and filled the width; now that empty showcases
+          are dropped it can be three, and left-aligned pills with a third of the
+          screen blank beside them read as something missing rather than
+          something removed.
+
+          Conditional because centring an OVERFLOWING horizontal scroller pushes
+          its first item off the left edge, where nothing can scroll back to it —
+          five tabs genuinely do overflow, so this cannot be unconditional. It
+          settles rather than oscillating: once flexGrow makes the content match
+          the viewport it is still "fits", and a row too wide for it never is. */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.tabsScroll}
+        onLayout={(e) => setTabsViewportW(e.nativeEvent.layout.width)}
+        onContentSizeChange={(w) => setTabsContentW(w)}
+        contentContainerStyle={tabsFit ? styles.tabsContentFit : undefined}
         onTouchStart={() => { tabsRowTouchRef.current = true; }}
         onTouchEnd={() => { tabsRowTouchRef.current = false; }}
         onTouchCancel={() => { tabsRowTouchRef.current = false; }}
@@ -950,6 +971,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   tabsScroll: { marginTop: SPACING.md, borderBottomWidth: 0.5, borderBottomColor: colors.border, flexGrow: 0 },
   tabsRow: { flexDirection: 'row', paddingHorizontal: SPACING.sm, paddingVertical: SPACING.sm, gap: 4 },
+  // Applied to the CONTENT CONTAINER only while the pills fit, so the row grows
+  // to the full width and centres itself in it instead of ending in dead space.
+  tabsContentFit: { flexGrow: 1, justifyContent: 'center' },
   tab: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
