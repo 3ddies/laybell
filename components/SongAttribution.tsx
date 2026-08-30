@@ -98,7 +98,9 @@ export default function SongAttribution({
   // opening the track can continue from here rather than restart — the duration
   // is what lets AudioContext tell a real music video from a post merely called
   // one. Read at tap time, never rendered, so it costs nothing per frame.
-  getHostPlayback?: () => { positionMs: number; durationMs: number };
+  // Null once the card has been recycled onto another post — its numbers then
+  // belong to a different video, and a seek built on them would be nonsense.
+  getHostPlayback?: () => { positionMs: number; durationMs: number } | null;
   onNavigate?: () => void;
   onPauseHost?: () => void;
   // Fired when the song's 3-dot menu closes — a host paused via onPauseHost
@@ -292,8 +294,15 @@ export default function SongAttribution({
         // playing it changes. AudioContext vets the position against the two
         // durations and falls back to 0:00 on any doubt — a video that is not
         // really this song simply plays it from the top.
-        if (host && host.positionMs > 0) playFrom(track, host.positionMs, host.durationMs);
-        else play(track);
+        if (host && host.positionMs > 0) {
+          // getHostPlayback goes along as `live`: by the time the stream is open
+          // the video has moved past the snapshot, and the seek should land
+          // where it is THEN. It returns null once the card has been recycled
+          // away, and the snapshot covers that.
+          playFrom(track, { atMs: host.positionMs, sourceMs: host.durationMs, live: getHostPlayback });
+        } else {
+          play(track);
+        }
         expand();
       }
     } finally {

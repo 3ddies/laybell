@@ -310,11 +310,14 @@ const PostCard = memo(function PostCard({
   // state: it changes on every timeUpdate and is read only when the artwork of a
   // music video is tapped, so holding it in state would re-render the whole card
   // several times a second to feed one tap handler.
-  const videoPlaybackRef = useRef({ positionMs: 0, durationMs: 0 });
+  // Stamped with the post it describes: the handoff re-reads this AFTER opening
+  // an audio stream, by which time a fast scroll may have recycled this card
+  // onto something else, and the numbers would then be a different video's.
+  const videoPlaybackRef = useRef({ postId: '', positionMs: 0, durationMs: 0 });
   useEffect(() => {
     setZooming(false);
     gestureSincePress.current = false;
-    videoPlaybackRef.current = { positionMs: 0, durationMs: 0 };
+    videoPlaybackRef.current = { postId: item.id, positionMs: 0, durationMs: 0 };
     onMediaZoom?.(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id]);
@@ -539,7 +542,7 @@ const PostCard = memo(function PostCard({
                   // the tracker accumulates genuine watch time across surfaces and
                   // the server enforces the per-user/device caps.
                   onProgress={(pos, dur) => {
-                    videoPlaybackRef.current = { positionMs: pos, durationMs: dur };
+                    videoPlaybackRef.current = { postId: item.id, positionMs: pos, durationMs: dur };
                     trackVideoProgress(item.id, pos, dur);
                   }}
                 />
@@ -586,8 +589,11 @@ const PostCard = memo(function PostCard({
               // Tapping the artwork continues the song from where the video is,
               // so the handoff is a change of surface rather than a restart. The
               // duration travels with it: it is what proves the two timelines
-              // correspond before any position is believed.
-              getHostPlayback={() => videoPlaybackRef.current}
+              // correspond before any position is believed. Called again at the
+              // moment of the seek, hence the id check — this closure belongs to
+              // the post that was tapped, not to whatever the cell holds now.
+              getHostPlayback={() =>
+                (videoPlaybackRef.current.postId === item.id ? videoPlaybackRef.current : null)}
             />
           )}
           <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />
