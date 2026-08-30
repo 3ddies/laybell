@@ -22,7 +22,7 @@ import { supabase } from '../../lib/supabase';
 import { bumpBadge } from '../../lib/badges';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import {
-  canShowLandscapeSwipeHint, noteLandscapeSwipeHintShown, retireLandscapeSwipeHint,
+  canShowSwipeIntro, canShowPauseHint, noteSwipeIntroShown, noteLandscapeSwiped,
 } from '../../lib/landscapeSwipeHint';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -1170,12 +1170,13 @@ export default function ReelScreen() {
       if (overlayIdRef.current !== tappedId) return; // swiped to another reel → skip the stale action
       const inCenter = lx > winW * 0.3 && lx < winW * 0.7 && ly > winH * 0.2 && ly < winH * 0.8;
       if (inCenter) { setPaused((p) => !p); return; }
-      // Any tap that ISN'T pause/play gives up on the hint for this sitting —
+      // Any tap that ISN'T pause/play gives up on the INTRO for this sitting —
       // "twenty seconds without other taps" means exactly this. Someone working
-      // the controls is exploring already and does not need to be interrupted
-      // with a tip; pausing is not that, which is why it falls out above.
-      // Given up on, not spent: none of the three are consumed.
-      hintSpentRef.current = true;
+      // the controls is exploring already and does not need interrupting with a
+      // tip; pausing is not that, which is why it falls out above. Given up on,
+      // not spent: none of the three are consumed. The paused note is untouched,
+      // since it waits for a state this tap has not put them in.
+      introSpentRef.current = true;
       if (controlsVisibleRef.current) hideControls();
       else revealControls();
     });
@@ -1355,50 +1356,66 @@ export default function ReelScreen() {
   }, [landscapeFullscreen, holdControls]);
 
   // ── "Swipe sideways for the next video" ─────────────────────────────────────
-  // Turning the phone gets you a fullscreen video, and nothing about that says
-  // another one is one swipe away. The hint says it once, to people who have not
-  // found it — see lib/landscapeSwipeHint for the three-times-ever and
-  // once-a-day limits, and for the retirement the moment anyone swipes.
+  // One message, two appearances, on deliberately different terms (the storage
+  // side of it is lib/landscapeSwipeHint).
   //
-  // TWO ways in, because there are two ways to be someone who has not found it.
-  // Twenty seconds of uninterrupted playback is the settled watcher; ten seconds
-  // paused is the one who stopped and is looking at the screen wondering what
-  // else it does. Either reads as a good moment to be told.
+  // The INTRO fires after twenty seconds of settled watching. It interrupts, so
+  // it is rationed hard — three in a lifetime, one a day — and only ever on the
+  // FIRST horizontal reel of a sitting, since past that they have moved between
+  // videos somehow and the lesson is moot.
   //
-  // Only ever the FIRST horizontal reel of a sitting: past that they have
-  // already moved between videos somehow, and the lesson is moot.
-  const [hintAllowed, setHintAllowed] = useState(false);
+  // The PAUSED note fires after ten seconds stopped, and is unrationed. It
+  // interrupts nothing: there is a still frame on screen and someone looking at
+  // it, which is the best moment there is to mention what else the screen does.
+  //
+  // Both stop dead the first time the pager is dragged by hand. Doing it is
+  // proof of knowing how, and no remaining allowance is worth spending on a
+  // lesson already learned.
+  const [introAllowed, setIntroAllowed] = useState(false);
+  const [pauseHintAllowed, setPauseHintAllowed] = useState(false);
   const [hintMounted, setHintMounted] = useState(false);
   const hintOpacity = useRef(new Animated.Value(0)).current;
-  // Done with the hint for this landscape session — shown, or given up on.
-  const hintSpentRef = useRef(false);
+  const retiredRef = useRef(false);
+  // The intro is done for this sitting — shown, or given up on after a tap.
+  const introSpentRef = useRef(false);
   const hintFirstIdRef = useRef<string | null>(null);
   const hintPlayMsRef = useRef(0);
   const hintPauseMsRef = useRef(0);
+  // Already fired for the pause currently in progress. Once per pause, not once
+  // per ten seconds of it — unrationed is not the same as repeating.
+  const pauseFiredRef = useRef(false);
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
 
-  // Ask storage once per entry into landscape, and reset the session counters
-  // with it: leaving and coming back is a fresh chance for a hint that was
-  // interrupted, and no chance at all for one already shown (the day's wait).
+  // Ask storage once per entry into landscape, and reset the sitting's counters
+  // with it: coming back is a fresh chance for an intro that was interrupted,
+  // and no chance at all for one already shown (the day's wait).
   useEffect(() => {
     if (!landscapeFullscreen) {
-      hintSpentRef.current = false;
+      introSpentRef.current = false;
       hintFirstIdRef.current = null;
       hintPlayMsRef.current = 0;
       hintPauseMsRef.current = 0;
       return;
     }
     let alive = true;
-    canShowLandscapeSwipeHint().then((ok) => { if (alive) setHintAllowed(ok); });
+    Promise.all([canShowSwipeIntro(), canShowPauseHint()]).then(([intro, pause]) => {
+      if (!alive) return;
+      setIntroAllowed(intro);
+      setPauseHintAllowed(pause);
+    });
     return () => { alive = false; };
   }, [landscapeFullscreen]);
 
+  // Every pause/resume starts the ten seconds over and re-arms the note, so each
+  // stop is judged on its own length rather than on time banked across several.
+  useEffect(() => { hintPauseMsRef.current = 0; pauseFiredRef.current = false; }, [paused]);
+
   const showSwipeHint = () => {
-    if (hintSpentRef.current) return;
-    hintSpentRef.current = true;
     setHintMounted(true);
-    noteLandscapeSwipeHintShown();
+    // Retargeting the same value, not stopping and re-setting it: a second
+    // appearance while the first is still fading takes the value over cleanly,
+    // where stopAnimation + setValue is a round trip that can land out of order.
     Animated.sequence([
       Animated.timing(hintOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
       Animated.delay(4500),
@@ -1409,35 +1426,44 @@ export default function ReelScreen() {
     // a playing video every time. It stays mounted at opacity 0, costing a pill
     // nobody can see or touch.
   };
-  // The user found the gesture on their own → retire it for good. Hung off the
-  // drag, not off overlayId: autoplay-next changes the reel too, and learning
-  // nothing from that is the point.
+  // The user found the gesture on their own → both hints are finished for good.
+  // Hung off the DRAG, not off overlayId: autoplay-next changes the reel too,
+  // and learning nothing from that is the point.
   const noteSwipedByHand = () => {
-    if (hintSpentRef.current && !hintMounted) return;
-    hintSpentRef.current = true;
-    retireLandscapeSwipeHint();
+    if (retiredRef.current) return;
+    retiredRef.current = true;
+    setIntroAllowed(false);
+    setPauseHintAllowed(false);
+    noteLandscapeSwiped();
   };
 
   useEffect(() => {
-    if (!landscapeFullscreen || overlayAd || !hintAllowed || hintSpentRef.current || !overlayId) return;
+    if (!landscapeFullscreen || overlayAd || retiredRef.current || !overlayId) return;
+    if (!introAllowed && !pauseHintAllowed) return;
     if (!hintFirstIdRef.current) hintFirstIdRef.current = overlayId;
-    if (overlayId !== hintFirstIdRef.current) return;
     const tick = setInterval(() => {
-      if (hintSpentRef.current) return;
+      if (retiredRef.current) return;
       if (pausedRef.current) {
         hintPauseMsRef.current += HINT_TICK_MS;
-        if (hintPauseMsRef.current >= HINT_PAUSED_MS) showSwipeHint();
-      } else {
-        // Paused time does not count toward the playback path, but it does not
-        // erase it either — a pause is a break in watching, not a change of mind.
-        hintPauseMsRef.current = 0;
-        hintPlayMsRef.current += HINT_TICK_MS;
-        if (hintPlayMsRef.current >= HINT_PLAYING_MS) showSwipeHint();
+        if (pauseHintAllowed && !pauseFiredRef.current && hintPauseMsRef.current >= HINT_PAUSED_MS) {
+          pauseFiredRef.current = true;
+          showSwipeHint();
+        }
+        return;
+      }
+      // Paused time does not count toward the intro, but it does not erase it
+      // either — a pause is a break in watching, not a change of mind.
+      if (!introAllowed || introSpentRef.current || overlayId !== hintFirstIdRef.current) return;
+      hintPlayMsRef.current += HINT_TICK_MS;
+      if (hintPlayMsRef.current >= HINT_PLAYING_MS) {
+        introSpentRef.current = true;
+        noteSwipeIntroShown();
+        showSwipeHint();
       }
     }, HINT_TICK_MS);
     return () => clearInterval(tick);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [landscapeFullscreen, overlayAd, hintAllowed, overlayId]);
+  }, [landscapeFullscreen, overlayAd, introAllowed, pauseHintAllowed, overlayId]);
 
   // Collapse the caption again whenever a new horizontal reel is landed on.
   useEffect(() => { setCapExpanded(false); }, [overlayId]);
