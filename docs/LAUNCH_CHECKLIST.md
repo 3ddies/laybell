@@ -20,20 +20,31 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ## 0.0 ✅ THE CURRENT STATE — updated 2026-08-30 (end of session)
 
-> 🚨 **LIVE RIGHT NOW: A FAKE $456.00 IN @3ddie's WALLET.** Applied 2026-08-30
-> for the store screenshot. It is a WITHDRAWABLE balance, not a painted number —
-> with Stripe live, "Transfer to bank" would move $456 of real money against
-> value that never existed. It also carries four fake tips, one fake sale, a
-> fake listing and an ended fake live stream.
+> 🚨 **DEMO MONEY IN PRODUCTION — one item live, one reversed.** Both are for
+> the 1.0.1 store screenshots (see `docs/STORE_SCREENSHOTS_1.0.1.md`).
+>
+> **LIVE NOW: $100.00 of credits on @laybell**, so it can send a real $80 tip on
+> camera for the "Go live" shot. Clean up with:
 >
 > ```
-> npx supabase db query --linked -f supabase/sql/_DEMO_wallet_456_REVERSE.sql
+> npx supabase db query --linked -f supabase/sql/_DEMO_live_tip_CLEANUP.sql
 > ```
 >
-> **Run that the moment the wallet screenshot is taken, and before ANY build is
-> submitted.** The $58 version of this had to be chased down on launch day; this
-> one is eight times larger. Expect every count in the verify block to come back
-> 0 — they were all 0 before it was applied, which is what makes that provable.
+> That file also reverses whatever tips were actually sent — it reads the real
+> amounts rather than assuming one take — deletes the donation rows and clears
+> ended demo broadcasts. Six counters, all expected to be 0.
+>
+> **REVERSED 2026-08-30: the $456.00 wallet balance** (`_DEMO_wallet_456.sql`).
+> Verified clean: available, donations, shop orders, the demo listing, live
+> streams, invariant violations and the global sum all came back 0. It has to be
+> RE-APPLIED for the wallet reshoot, because the first capture caught the
+> pre-correction figure — it showed $231.31 from tips, which does not add up to
+> $456.00 and would be spotted.
+>
+> **Neither may be live when a build is submitted.** These are WITHDRAWABLE
+> balances, not painted numbers: with Stripe live, "Transfer to bank" moves real
+> money against value that never existed. The $58 version had to be chased down
+> on launch day.
 
 **One-line status: the launch is DONE — Laybell is live on both stores. All work now is
 1.0.1, which is unreleased and lives only on `dev`.**

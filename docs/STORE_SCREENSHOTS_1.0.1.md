@@ -57,12 +57,38 @@ tapping through. They lead with what a generic social app cannot show.
 | 5 | **Live**, with a tip landing | `Go live. Get tipped in real time.` |
 | 6 | **Shop listing** — a real beat with real artwork and a real price | `Sell beats. Buyers get the files instantly.` |
 | 7 | **Wallet**, with a non-zero balance | `Your earnings, in one wallet.` |
-| 8 | **Communities** | `Communities that stay about the music.` |
+| 8 | **An album screen** — *Short Dreams*, cover art, numbered running order | `A real catalogue, not a feed.` |
+
+Communities was dropped from the set (owner, 2026-08-30): it is not appealing
+enough to spend a slot on. The album screen replaces it and is the better
+argument anyway — frame 1 shows the album SHELF, and this shows what is behind
+it, which together is the deepest proof in the app that this is an artist
+platform rather than a feed with audio bolted on.
 
 Frame 1 changed from the feed to the profile Music tab deliberately. The feed is
 what every social app opens on and it is the frame that says the least; the
 Music tab with Featured, an album and singles is the one screen no other social
 app in the category can produce.
+
+## Where the reshoot stands (2026-08-30)
+
+First pass captured. Two are keepers, the rest need another go.
+
+- ✅ **Immersive player** ("The lite") — dark, full-bleed, use it.
+- ✅ **Feed** (dark, Comeback Szn / Boba) — the best of the set. Real music
+  videos, real titles, dense with product.
+- ⚠️ **Wallet** — caught the pre-correction figure: `$231.31 from tips` against a
+  `$456.00` headline, which does not add up. Re-apply `_DEMO_wallet_456.sql`
+  and reshoot.
+- ⚠️ **Profile** — shot on the POSTS tab. Frame 1 wants the MUSIC tab: Featured
+  card, Albums shelf, Singles.
+- ⚠️ **Shop** — still "Begging cat type beat", a photo of a cat, described as
+  "This is just a smaple test". Same failure as "Tow truck jam" in the 1.0.0
+  set, typo included. Post one real listing with real artwork first.
+- ⚠️ **Landscape** — a cow video in the reel viewer, not Laybell TV with the
+  Films shelf. A landscape REEL undersells the feature the shot exists for.
+- ⏳ **Live + tip** — @laybell holds $100 of demo credits and can send the $80
+  tip whenever. Clean up with `_DEMO_live_tip_CLEANUP.sql` after.
 
 ## Background
 
