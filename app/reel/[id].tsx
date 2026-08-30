@@ -21,6 +21,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { bumpBadge } from '../../lib/badges';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
+import {
+  canShowLandscapeSwipeHint, noteLandscapeSwipeHintShown, retireLandscapeSwipeHint,
+} from '../../lib/landscapeSwipeHint';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useLinkGuard } from '../../contexts/LinkGuardContext';
@@ -455,6 +458,17 @@ const ReelPage = memo(function ReelPage({
 });
 
 // Reel kinds the dropdown can lead with. Order here is the menu order.
+// ── Timings for the landscape swipe hint (see lib/landscapeSwipeHint) ────────
+// Twenty seconds of playback is past the point where someone is still deciding
+// whether to watch — they have settled in, which is when a note about what else
+// the screen does is useful rather than an interruption. Ten seconds paused is
+// the other kind of settled: stopped, looking at it, wondering.
+const HINT_PLAYING_MS = 20_000;
+const HINT_PAUSED_MS = 10_000;
+// Half-second granularity. The thresholds are in tens of seconds, so a finer
+// tick would just be more wakeups on a screen that is playing video.
+const HINT_TICK_MS = 500;
+
 const REEL_FILTERS = ['all', 'vertical', 'horizontal', 'films'] as const;
 // The chevron sits to the RIGHT of the label, so centring the pair puts the
 // LABEL half a chevron left of the screen's centre line — which is the "not
@@ -1156,6 +1170,12 @@ export default function ReelScreen() {
       if (overlayIdRef.current !== tappedId) return; // swiped to another reel → skip the stale action
       const inCenter = lx > winW * 0.3 && lx < winW * 0.7 && ly > winH * 0.2 && ly < winH * 0.8;
       if (inCenter) { setPaused((p) => !p); return; }
+      // Any tap that ISN'T pause/play gives up on the hint for this sitting —
+      // "twenty seconds without other taps" means exactly this. Someone working
+      // the controls is exploring already and does not need to be interrupted
+      // with a tip; pausing is not that, which is why it falls out above.
+      // Given up on, not spent: none of the three are consumed.
+      hintSpentRef.current = true;
       if (controlsVisibleRef.current) hideControls();
       else revealControls();
     });
@@ -1333,6 +1353,91 @@ export default function ReelScreen() {
     else revealControls();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [landscapeFullscreen, holdControls]);
+
+  // ── "Swipe sideways for the next video" ─────────────────────────────────────
+  // Turning the phone gets you a fullscreen video, and nothing about that says
+  // another one is one swipe away. The hint says it once, to people who have not
+  // found it — see lib/landscapeSwipeHint for the three-times-ever and
+  // once-a-day limits, and for the retirement the moment anyone swipes.
+  //
+  // TWO ways in, because there are two ways to be someone who has not found it.
+  // Twenty seconds of uninterrupted playback is the settled watcher; ten seconds
+  // paused is the one who stopped and is looking at the screen wondering what
+  // else it does. Either reads as a good moment to be told.
+  //
+  // Only ever the FIRST horizontal reel of a sitting: past that they have
+  // already moved between videos somehow, and the lesson is moot.
+  const [hintAllowed, setHintAllowed] = useState(false);
+  const [hintMounted, setHintMounted] = useState(false);
+  const hintOpacity = useRef(new Animated.Value(0)).current;
+  // Done with the hint for this landscape session — shown, or given up on.
+  const hintSpentRef = useRef(false);
+  const hintFirstIdRef = useRef<string | null>(null);
+  const hintPlayMsRef = useRef(0);
+  const hintPauseMsRef = useRef(0);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+
+  // Ask storage once per entry into landscape, and reset the session counters
+  // with it: leaving and coming back is a fresh chance for a hint that was
+  // interrupted, and no chance at all for one already shown (the day's wait).
+  useEffect(() => {
+    if (!landscapeFullscreen) {
+      hintSpentRef.current = false;
+      hintFirstIdRef.current = null;
+      hintPlayMsRef.current = 0;
+      hintPauseMsRef.current = 0;
+      return;
+    }
+    let alive = true;
+    canShowLandscapeSwipeHint().then((ok) => { if (alive) setHintAllowed(ok); });
+    return () => { alive = false; };
+  }, [landscapeFullscreen]);
+
+  const showSwipeHint = () => {
+    if (hintSpentRef.current) return;
+    hintSpentRef.current = true;
+    setHintMounted(true);
+    noteLandscapeSwipeHintShown();
+    Animated.sequence([
+      Animated.timing(hintOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
+      Animated.delay(4500),
+      Animated.timing(hintOpacity, { toValue: 0, duration: 500, useNativeDriver: true }),
+    ]).start();
+    // Deliberately NOT unmounted at the end of that fade. A setState landing on
+    // an animation's last frame is a dropped frame, and this one would land over
+    // a playing video every time. It stays mounted at opacity 0, costing a pill
+    // nobody can see or touch.
+  };
+  // The user found the gesture on their own → retire it for good. Hung off the
+  // drag, not off overlayId: autoplay-next changes the reel too, and learning
+  // nothing from that is the point.
+  const noteSwipedByHand = () => {
+    if (hintSpentRef.current && !hintMounted) return;
+    hintSpentRef.current = true;
+    retireLandscapeSwipeHint();
+  };
+
+  useEffect(() => {
+    if (!landscapeFullscreen || overlayAd || !hintAllowed || hintSpentRef.current || !overlayId) return;
+    if (!hintFirstIdRef.current) hintFirstIdRef.current = overlayId;
+    if (overlayId !== hintFirstIdRef.current) return;
+    const tick = setInterval(() => {
+      if (hintSpentRef.current) return;
+      if (pausedRef.current) {
+        hintPauseMsRef.current += HINT_TICK_MS;
+        if (hintPauseMsRef.current >= HINT_PAUSED_MS) showSwipeHint();
+      } else {
+        // Paused time does not count toward the playback path, but it does not
+        // erase it either — a pause is a break in watching, not a change of mind.
+        hintPauseMsRef.current = 0;
+        hintPlayMsRef.current += HINT_TICK_MS;
+        if (hintPlayMsRef.current >= HINT_PLAYING_MS) showSwipeHint();
+      }
+    }, HINT_TICK_MS);
+    return () => clearInterval(tick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [landscapeFullscreen, overlayAd, hintAllowed, overlayId]);
 
   // Collapse the caption again whenever a new horizontal reel is landed on.
   useEffect(() => { setCapExpanded(false); }, [overlayId]);
@@ -1871,7 +1976,7 @@ export default function ReelScreen() {
                 scrollEnabled={!zoomed}
                 // Hand-driven paging suppresses auto-advance for the gesture, so a
                 // manual sideways swipe and an autoplay-next can never stack.
-                onScrollBeginDrag={() => { overlayDraggingRef.current = true; }}
+                onScrollBeginDrag={() => { overlayDraggingRef.current = true; noteSwipedByHand(); }}
                 onScrollEndDrag={() => { overlayDraggingRef.current = false; }}
                 onMomentumScrollEnd={() => { overlayDraggingRef.current = false; }}
                 showsHorizontalScrollIndicator={false}
@@ -1894,6 +1999,18 @@ export default function ReelScreen() {
                 <View style={styles.pausedWrap} pointerEvents="none">
                   <Ionicons name="play" size={64} color="rgba(255,255,255,0.85)" />
                 </View>
+              )}
+              {/* The swipe hint. Bottom-centre, clear of the rail on the right
+                  and the back button top-left, and — now that the scrub bar
+                  fades too — over nothing that competes with it. Never
+                  interactive: it is a sentence, not a control, and a tap here
+                  should reach the video like a tap anywhere else. */}
+              {hintMounted && (
+                <Animated.View style={[styles.swipeHint, { bottom: insets.bottom + 34, opacity: hintOpacity }]} pointerEvents="none">
+                  <Ionicons name="chevron-back" size={13} color="rgba(255,255,255,0.55)" />
+                  <Text style={styles.swipeHintText}>{t('reel.swipeHint')}</Text>
+                  <Ionicons name="chevron-forward" size={13} color="rgba(255,255,255,0.55)" />
+                </Animated.View>
               )}
               {/* Engagement controls that flash in on land and fade after ~1s.
                   box-none lets taps fall through to the video/scrub bar except on
@@ -2068,6 +2185,17 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // in-tree View (not a Modal), so a zIndex here would bury it behind the overlay.
   fsOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000' },
   pausedWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  // Quiet on purpose. It is a note, not an announcement — a scrim dark enough to
+  // stay readable over a bright frame and no brighter than it needs to be, with
+  // the chevrons dimmer than the words so the shape reads before the arrows do.
+  swipeHint: {
+    position: 'absolute', alignSelf: 'center',
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: RADIUS.full,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.18)',
+  },
+  swipeHintText: { color: '#fff', fontSize: 13, fontWeight: '600', letterSpacing: -0.1 },
   bottomFade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 220 },
 
   rail: { position: 'absolute', right: SPACING.sm, alignItems: 'center', gap: SPACING.lg },
