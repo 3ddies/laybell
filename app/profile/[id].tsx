@@ -24,7 +24,8 @@ import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
 import SpotlightThumbBadge from '../../components/SpotlightThumbBadge';
 import TrackRow from '../../components/TrackRow';
-import { featuredTracks } from '../../lib/musicFeatured';
+import { type FeaturedItem, resolveFeatured } from '../../lib/musicFeatured';
+import FeaturedRotator from '../../components/FeaturedRotator';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import StoryAvatar from '../../components/StoryAvatar';
 import { openAvatarViewer } from '../../lib/imageViewer';
@@ -419,34 +420,13 @@ export default function PublicProfileScreen() {
     );
   }
 
-  // The artist's up-to-four pinned songs (Premium). Drawn from ALL their music,
-  // album tracks included: featuring one says "hear this first", not "move this".
-  function renderFeatured(list: any[]) {
-    if (list.length === 0) return null;
-    const q = list.map((tr) => ({
-      id: tr.id, uri: tr.media_url, caption: tr.caption,
-      artist: tr.profiles?.display_name ?? profile?.display_name ?? '', cover: tr.cover_url,
-    }));
-    return (
-      <View style={styles.albumShelf}>
-        <Text style={styles.albumShelfLabel}>{t('featured.shelf')}</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.albumShelfRow}>
-          {list.map((tr, i) => (
-            <TouchableOpacity key={tr.id} style={styles.albumCard} onPress={() => { playQueue(q, i); expand(); }} activeOpacity={0.85}>
-              {tr.cover_url ? (
-                <Image source={{ uri: tr.cover_url }} style={styles.albumCardCover} contentFit="cover" cachePolicy="memory-disk" />
-              ) : (
-                <View style={[styles.albumCardCover, styles.albumCardCoverEmpty]}>
-                  <Ionicons name="musical-note" size={26} color={colors.textTertiary} />
-                </View>
-              )}
-              <Text style={styles.albumCardTitle} numberOfLines={1}>{tr.caption || t('album.untitled')}</Text>
-              <Text style={styles.albumCardMeta} numberOfLines={1}>{profile?.display_name ?? ''}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-    );
+  // Opening a pick: a song plays and raises the player, an album opens its
+  // screen. Shared by both profiles through FeaturedRotator's onPress.
+  function openFeatured(item: FeaturedItem) {
+    if (item.kind === 'album') { router.push(`/album/${item.id}`); return; }
+    if (!item.uri) return;
+    playQueue([{ id: item.id, uri: item.uri, caption: item.title, artist: profile?.display_name ?? '', cover: item.cover }], 0);
+    expand();
   }
 
   function renderMusicList(data: any[]) {
@@ -455,7 +435,7 @@ export default function PublicProfileScreen() {
     // a heading over the same songs a second time.
     const inAlbum = new Set<string>();
     albums.forEach((a) => (a.tracks ?? []).forEach((tr) => inAlbum.add(tr.post_id)));
-    const featured = featuredTracks(data, (profile as any)?.music_featured);
+    const featured = resolveFeatured((profile as any)?.music_featured, data, albums);
     // Live-spotlighted tracks float to the TOP (newest-first among them), the
     // rest most-recent → least-recent.
     const singles = data.filter((p: any) => !inAlbum.has(p.id)).sort((a: any, b: any) => {
@@ -479,13 +459,18 @@ export default function PublicProfileScreen() {
     }));
     return (
       <View style={styles.musicList}>
-        {renderFeatured(featured)}
+        {featured.length > 0 && (
+          <View style={styles.featuredWrap}>
+            <Text style={styles.sectionLabel}>{t('featured.shelf')}</Text>
+            <FeaturedRotator items={featured} artist={profile?.display_name ?? ''} onPress={openFeatured} />
+          </View>
+        )}
         {renderAlbumShelf()}
         {/* The heading only appears when there are albums ABOVE it to be single
             in contrast to. On a profile with no albums every song is a single
             and saying so is noise. */}
         {singles.length > 0 && albums.length > 0 && (
-          <Text style={styles.albumShelfLabel}>{t('music.singles')}</Text>
+          <Text style={styles.sectionLabel}>{t('music.singles')}</Text>
         )}
         {singles.map((track: any, i: number) => (
           <TrackRow
@@ -883,6 +868,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Bleeds past the list's padding on both sides so the rail runs to the screen
   // edge — a horizontal scroller that stops short of it reads as a stuck list
   // rather than one with more in it.
+  // Section headings inside musicList, which already supplies the horizontal
+  // padding — so this one must NOT add its own. albumShelfLabel does, because
+  // the shelf bleeds past that padding to run its rail to the screen edge, and
+  // reusing it here indented Singles further than every other line on the tab.
+  sectionLabel: {
+    color: colors.textTertiary, fontSize: 12, fontWeight: '800',
+    letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: SPACING.xs,
+  },
+  featuredWrap: { marginBottom: SPACING.md },
   albumShelf: { marginHorizontal: -SPACING.md, marginBottom: SPACING.md },
   albumShelfLabel: {
     color: colors.textTertiary, fontSize: 12, fontWeight: '800',

@@ -21,7 +21,8 @@ import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useTabSwipeControl } from '../../contexts/PagerContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { usePremium } from '../../contexts/PremiumContext';
-import { featuredTracks } from '../../lib/musicFeatured';
+import { type FeaturedItem, resolveFeatured } from '../../lib/musicFeatured';
+import FeaturedRotator from '../../components/FeaturedRotator';
 import { useStories } from '../../contexts/StoriesContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
@@ -484,47 +485,28 @@ export default function ProfileScreen() {
     );
   }
 
-  // The Featured rail — the owner's up-to-four pinned songs. Drawn from ALL of
-  // their music, album tracks included: featuring one is "hear this first", not
-  // "move this", and a song can be both on a record and the thing you lead with.
-  function renderFeatured(list: any[], onEdit?: () => void) {
+  // Opening a pick: a song plays and raises the player, an album opens its
+  // screen. The rotator itself is shared with the visited profile.
+  function openFeatured(item: FeaturedItem) {
+    if (item.kind === 'album') { router.push(`/album/${item.id}`); return; }
+    if (!item.uri) return;
+    playQueue([{ id: item.id, uri: item.uri, caption: item.title, artist: profile?.display_name ?? '', cover: item.cover }], 0);
+    expand();
+  }
+
+  function renderFeatured(list: FeaturedItem[], onEdit?: () => void) {
     if (list.length === 0 && !onEdit) return null;
-    const q = list.map((tr) => ({
-      id: tr.id, uri: tr.media_url, caption: tr.caption,
-      artist: tr.profiles?.display_name ?? profile?.display_name ?? '', cover: tr.cover_url,
-    }));
     return (
-      <View style={styles.albumShelf}>
+      <View style={styles.featuredWrap}>
         <View style={styles.shelfHead}>
-          <Text style={styles.albumShelfLabel}>{t('featured.shelf')}</Text>
+          <Text style={styles.sectionLabel}>{t('featured.shelf')}</Text>
           {!!onEdit && (
             <TouchableOpacity onPress={onEdit} hitSlop={8}>
               <Text style={styles.shelfAction}>{list.length ? t('common.edit') : t('featured.choose')}</Text>
             </TouchableOpacity>
           )}
         </View>
-        {list.length > 0 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.albumShelfRow}>
-            {list.map((tr, i) => (
-              <TouchableOpacity
-                key={tr.id}
-                style={styles.albumCard}
-                onPress={() => { playQueue(q, i); expand(); }}
-                activeOpacity={0.85}
-              >
-                {tr.cover_url ? (
-                  <Image source={{ uri: tr.cover_url }} style={styles.albumCardCover} contentFit="cover" cachePolicy="memory-disk" />
-                ) : (
-                  <View style={[styles.albumCardCover, styles.albumCardCoverEmpty]}>
-                    <Ionicons name="musical-note" size={26} color={colors.textTertiary} />
-                  </View>
-                )}
-                <Text style={styles.albumCardTitle} numberOfLines={1}>{tr.caption || t('album.untitled')}</Text>
-                <Text style={styles.albumCardMeta} numberOfLines={1}>{profile?.display_name ?? ''}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
+        <FeaturedRotator items={list} artist={profile?.display_name ?? ''} onPress={openFeatured} />
       </View>
     );
   }
@@ -536,7 +518,7 @@ export default function ProfileScreen() {
     // something rather than being a heading over the same songs again.
     const inAlbum = new Set<string>();
     albums.forEach((a) => (a.tracks ?? []).forEach((tr) => inAlbum.add(tr.post_id)));
-    const featured = featuredTracks(data, (profile as any)?.music_featured);
+    const featured = resolveFeatured((profile as any)?.music_featured, data, albums);
     // Live-spotlighted tracks float to the top (newest-first among them), the
     // rest most-recent → least-recent.
     const singles = data.filter((p) => !inAlbum.has(p.id)).sort((a, b) => {
@@ -574,7 +556,7 @@ export default function ProfileScreen() {
         {renderFeatured(featured, canFeature ? () => router.push('/music-featured') : undefined)}
         {renderAlbumShelf()}
         {singles.length > 0 && albums.length > 0 && (
-          <Text style={styles.albumShelfLabel}>{t('music.singles')}</Text>
+          <Text style={styles.sectionLabel}>{t('music.singles')}</Text>
         )}
         {singles.map((track, i) => (
           <TrackRow
@@ -1138,6 +1120,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   postsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
   // ── Album shelf ─────────────────────────────────────────────────────────────
   // Identical to the visited profile's, on purpose — see renderAlbumShelf.
+  // Section headings inside musicList, which already supplies the horizontal
+  // padding — so this one must NOT add its own. albumShelfLabel does, because
+  // the shelf bleeds past that padding to run its rail to the screen edge, and
+  // reusing it here indented Singles further than every other line on the tab.
+  sectionLabel: {
+    color: colors.textTertiary, fontSize: 12, fontWeight: '800',
+    letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: SPACING.xs,
+  },
+  featuredWrap: { marginBottom: SPACING.md },
   albumShelf: { marginHorizontal: -SPACING.md, marginBottom: SPACING.md },
   albumShelfLabel: {
     color: colors.textTertiary, fontSize: 12, fontWeight: '800',
@@ -1147,8 +1138,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   albumShelfRow: { paddingHorizontal: SPACING.md, gap: SPACING.md },
   // Label and its owner-only action on one line, so the action reads as part of
   // the section rather than a control floating above the tab.
-  shelfHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: SPACING.md },
-  shelfAction: { color: colors.primaryLight, fontSize: 13, fontWeight: '700', marginBottom: SPACING.sm },
+  shelfHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  shelfAction: { color: colors.primaryLight, fontSize: 13, fontWeight: '700', marginBottom: SPACING.xs },
   albumCard: { width: 124 },
   albumCardCover: { width: 124, height: 124, borderRadius: RADIUS.md, backgroundColor: colors.surfaceLight },
   albumCardCoverEmpty: { alignItems: 'center', justifyContent: 'center' },
