@@ -1308,7 +1308,10 @@ export default function ReelScreen() {
 
   // Controls stay pinned while the video is paused or a rail sheet is open.
   const railSheetOpen = commentsFor != null || sheetsOpen;
-  const holdControls = paused || railSheetOpen;
+  // `scrubbing` joins the hold now that the scrub bar fades WITH the controls:
+  // the 2s timer would otherwise take the bar away mid-drag, and a seek would
+  // end with the user's finger on nothing.
+  const holdControls = paused || railSheetOpen || scrubbing;
   holdControlsRef.current = holdControls;
 
   // Reveal the controls for their initial 2s when a horizontal reel is landed on
@@ -1922,23 +1925,40 @@ export default function ReelScreen() {
                 </Animated.View>
               )}
               {/* One bar layered on top of the pager. Because it sits above the
-                  FlatList (not inside it), the whole bottom band is scrub-only —
+                  FlatList (not inside it), its band is scrub-only while it is up —
                   taps there never page, and no scrollEnabled toggle is needed so
                   the video never shifts/flashes while scrubbing. Hidden while the
-                  TV ad cover is up. */}
+                  TV ad cover is up.
+
+                  It now fades WITH the controls rather than standing over the
+                  film for its whole runtime. Sideways is where a video is watched
+                  rather than scrolled past, and a permanent white line across the
+                  bottom of it is the one piece of chrome nothing dismisses — so
+                  it goes when the rest goes, and a tap brings back the whole set.
+
+                  pointerEvents follows the opacity, which is the part that has to
+                  be right: an invisible bar still holding the bottom band would
+                  swallow the very tap meant to summon it. Faded out, the band
+                  belongs to the pager and the tap handler like any other part of
+                  the screen. */}
               {!overlayAd && (
-                <VideoScrubBar
-                  ref={overlayScrubRef}
-                  bottomInset={insets.bottom + 6}
-                  reachAbove={16}
-                  onScrubbingChange={setScrubbing}
-                  onSeek={(sec) => {
-                    const oid = overlayIdRef.current ?? '';
-                    const s = clampToTrim(landscapeReelsRef.current.find((p: any) => p.id === oid), sec);
-                    markManualSeek(s);
-                    overlayRefs.current.get(oid)?.seek(s);
-                  }}
-                />
+                <Animated.View
+                  style={[StyleSheet.absoluteFill, { opacity: controlsOpacity }]}
+                  pointerEvents={controlsVisible ? 'box-none' : 'none'}
+                >
+                  <VideoScrubBar
+                    ref={overlayScrubRef}
+                    bottomInset={insets.bottom + 6}
+                    reachAbove={16}
+                    onScrubbingChange={setScrubbing}
+                    onSeek={(sec) => {
+                      const oid = overlayIdRef.current ?? '';
+                      const s = clampToTrim(landscapeReelsRef.current.find((p: any) => p.id === oid), sec);
+                      markManualSeek(s);
+                      overlayRefs.current.get(oid)?.seek(s);
+                    }}
+                  />
+                </Animated.View>
               )}
               <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')}
                 style={[styles.back, { top: insets.top + 8 }]}
