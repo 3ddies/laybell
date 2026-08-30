@@ -66,13 +66,33 @@ const HANDOFF_EDGE_MS = 1500;
  */
 export function handoffPositionMs(wantMs: number, songMs: number, sourceMs: number): number {
   if (!(wantMs > HANDOFF_EDGE_MS) || !(songMs > 0) || !(sourceMs > 0)) return 0;
-  // Lengths must agree before positions can mean anything. A video running to a
-  // different length is either not this song at all, or carries an intro the song
-  // does not — and in that second case the difference IS the drift the handoff
-  // would introduce, so both failures are caught by the same test.
-  const tolerance = Math.min(10_000, Math.max(3_000, songMs * 0.05));
-  if (Math.abs(sourceMs - songMs) > tolerance) return 0;
   if (wantMs >= songMs - HANDOFF_EDGE_MS) return 0;
+
+  // A video that outruns its song is AMBIGUOUS, and refusing it outright threw
+  // away the common case to avoid the rare one. The extra footage is either a
+  // tail — an outro, credits, a held last shot, none of which touch the mapping,
+  // since they happen after the music has stopped — or an intro, where the song
+  // begins late and a 1:1 handoff lands early by however long that intro ran.
+  // Nothing in the durations tells those two apart. But they do BOUND the second
+  // one, and the bound is what makes the decision.
+  const mismatch = Math.abs(sourceMs - songMs);
+
+  // Past here the two are not the same recording at any offset — a clip
+  // crediting a track it excerpts, a vlog wearing a song for the promotion.
+  if (mismatch > Math.min(45_000, Math.max(15_000, songMs * 0.3))) return 0;
+
+  // Within it, the mismatch IS the worst case: at most that much of the video
+  // can be material the song has no part in, so at most that far out a 1:1
+  // handoff could land. Restarting costs wantMs outright — the whole position.
+  // So take the position only when it is the smaller of the two errors.
+  //
+  // That comparison happens to encode the right instinct about intros as well.
+  // Tapped ten seconds into a video running twenty seconds long, the handoff
+  // declines, because ten seconds in may well still be the intro. Tapped two
+  // minutes into the same video it accepts, because by then any intro is long
+  // past and a restart would be throwing away two minutes to dodge twenty
+  // seconds of risk.
+  if (mismatch >= wantMs) return 0;
   return Math.round(wantMs);
 }
 
