@@ -2176,26 +2176,54 @@ export default function PostScreen() {
         ) : audioFile ? (
           <View style={styles.audioPickArea}>
             <View style={styles.audioSelected}>
-              {/* Borderless filled-circle glyph, same as Today's Pick */}
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel={isPreviewPlaying ? t('a11y.pause') : t('a11y.play')} onPress={togglePreview} activeOpacity={0.8} hitSlop={6}>
-                <Ionicons name={isPreviewPlaying ? 'pause-circle' : 'play-circle'} size={72} color={colors.text} />
+              {/* A real disc rather than the play-circle glyph. This is the one
+                  thing on the screen worth touching before Next, and a flat icon
+                  the same weight as the text beside it did not say so. Drawn as
+                  a view so it can carry a shadow and lift off the page. */}
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={isPreviewPlaying ? t('a11y.pause') : t('a11y.play')}
+                onPress={togglePreview}
+                activeOpacity={0.85}
+                hitSlop={10}
+                style={styles.audioPlayBtn}
+              >
+                <Ionicons
+                  name={isPreviewPlaying ? 'pause' : 'play'}
+                  size={38}
+                  color={colors.background}
+                  // A play triangle's optical centre sits left of its bounding
+                  // box, so centring it geometrically leaves it looking shoved
+                  // left. Pause is symmetric and needs no help.
+                  style={isPreviewPlaying ? undefined : styles.audioPlayGlyph}
+                />
               </TouchableOpacity>
               <Text style={styles.audioPickTitle} numberOfLines={1}>{audioFile.name || t('post.audioSelected')}</Text>
               <Text style={styles.audioPickSub}>
                 {audioDuration != null ? `${fmtClock(audioDuration)} · ` : ''}{isPreviewPlaying ? t('post.playing') : t('post.tapToPreview')}
               </Text>
+              {/* No icons. A cloud and a mic beside two words that already say
+                  Replace and Record new were decoration doing a job the words
+                  had done — and the pair reads as one control now that they are
+                  equal halves rather than two different widths. */}
               <View style={styles.audioSelBtns}>
                 <TouchableOpacity style={styles.audioSelBtn} onPress={pickAudio} activeOpacity={0.85}>
-                  <Ionicons name="cloud-upload-outline" size={16} color={colors.text} />
                   <Text style={styles.audioSelBtnText}>{t('post.replace')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.audioSelBtn} onPress={() => { setAudioFile(null); setAudioDuration(null); startRecording(); }} activeOpacity={0.85}>
-                  <Ionicons name="mic" size={16} color={colors.text} />
                   <Text style={styles.audioSelBtnText}>{t('post.recordNew')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
-            <Text style={[styles.audioPickSub, { marginTop: SPACING.lg, textAlign: 'center' }]}>
+            {/* Pinned to the floor, and held to ONE line. It is a footnote about
+                limits — wrapping to two put it in the middle of the page arguing
+                with the track for attention. */}
+            <Text
+              style={styles.audioPickHint}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+            >
               {t('post.audioLimitsHint', { music: fmtMins(MUSIC_MAX_SEC), spoken: fmtMins(SPOKEN_MAX_SEC) })}
             </Text>
           </View>
@@ -2644,8 +2672,23 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1.5, borderColor: colors.border, borderStyle: 'dashed', borderRadius: RADIUS.lg,
     width: '100%',
   },
-  audioPickTitle: { color: colors.text, fontSize: 16, fontWeight: '700', textAlign: 'center' },
-  audioPickSub: { color: colors.textTertiary, fontSize: 13, textAlign: 'center' },
+  // The filename is the headline of this screen — it is what the user is about
+  // to post — so it is sized like one, and the line under it recedes to say so.
+  audioPickTitle: {
+    color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5,
+    textAlign: 'center', marginTop: SPACING.lg,
+  },
+  audioPickSub: { color: colors.textTertiary, fontSize: 13, textAlign: 'center', marginTop: 5 },
+  // A footnote, at the floor. Absolute rather than in flow so it cannot push the
+  // track off centre, and one line so it never grows into a paragraph.
+  // Flush to the parent's padding edge rather than inset again: 55 characters of
+  // English (and more in German and Russian) need every point of width to hold
+  // one line, and adjustsFontSizeToFit should be the fallback, not the plan.
+  audioPickHint: {
+    position: 'absolute', left: 0, right: 0, bottom: SPACING.sm,
+    paddingHorizontal: SPACING.xs,
+    color: colors.textTertiary, fontSize: 12, textAlign: 'center',
+  },
 
   // Record / Upload as two halves split by a shallow diagonal. The board is
   // oversized + rotated and clipped by the rounded card, so its centre seam reads
@@ -2688,16 +2731,33 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   stopBtnText: { color: colors.error, fontSize: 15, fontWeight: '800' },
 
-  audioSelected: {
-    alignItems: 'center', gap: SPACING.sm, padding: SPACING.xl, width: '100%',
+  audioSelected: { alignItems: 'center', paddingHorizontal: SPACING.xl, width: '100%' },
+  // 92pt of solid ink with a shadow under it. The old 72pt glyph sat flat on the
+  // page at the same visual weight as the words beneath it, which is not what a
+  // "press this" looks like.
+  audioPlayBtn: {
+    width: 92, height: 92, borderRadius: 46,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.text,
+    shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 16, shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
-  audioSelBtns: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.md },
+  audioPlayGlyph: { marginLeft: 5 },
+  // Equal halves of one row, capped so they do not sprawl on a tablet. The pair
+  // reading as a single control is most of what makes it look finished.
+  audioSelBtns: {
+    flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.xl,
+    width: '100%', maxWidth: 360,
+  },
   audioSelBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingVertical: SPACING.sm + 1, paddingHorizontal: SPACING.lg,
-    borderRadius: RADIUS.full, backgroundColor: colors.surfaceLight,
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 13, borderRadius: RADIUS.full,
+    backgroundColor: colors.surfaceLight,
+    // The border is what gives these an edge. On the light theme a pale fill on
+    // a pale page has none, which is why they read as absent rather than quiet.
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong,
   },
-  audioSelBtnText: { color: colors.text, fontSize: 13.5, fontWeight: '700' },
+  audioSelBtnText: { color: colors.text, fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
 
   // details
   detailsContent: { padding: SPACING.md, gap: SPACING.md, paddingBottom: SPACING.xxl },
