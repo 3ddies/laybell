@@ -15,6 +15,7 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import Spinner from '../../components/Spinner';
 import {
   type Album, fetchAlbums, createAlbum, addTrack as addAlbumTrack,
 } from '../../lib/albums';
@@ -305,6 +306,20 @@ export default function PostScreen() {
   const [showFeaturesModal, setShowFeaturesModal] = useState(false);
   // Album this track is part of (audio only). Null = a standalone single, which
   // is the default and stays the common case: most songs are not on a record.
+  // True from the tap until the photo sheet has been and gone.
+  const [coverBusy, setCoverBusy] = useState(false);
+  // expo-image-picker, resolved AHEAD of the tap. The dynamic import is
+  // deliberate — it keeps the picker off the startup path — but doing it inside
+  // the handler made the first tap pay for loading the module before the sheet
+  // could even start opening.
+  const imagePickerRef = useRef<any>(null);
+  useEffect(() => {
+    let alive = true;
+    import('expo-image-picker')
+      .then((m) => { if (alive) imagePickerRef.current = m; })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
   const [albumId, setAlbumId] = useState<string | null>(null);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [showAlbumPicker, setShowAlbumPicker] = useState(false);
@@ -1017,12 +1032,29 @@ export default function PostScreen() {
   }
 
   async function pickCover() {
-    const ImagePicker = await import('expo-image-picker');
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true, aspect: [1, 1], quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) setCoverUri(result.assets[0].uri);
+    if (coverBusy) return; // a second tap while the sheet is coming up opens two
+    // Shown BEFORE the await, which is the whole point. Presenting the system
+    // photo sheet is a native round trip that takes a beat on a large library,
+    // and until now the tap produced nothing at all in that time — no press
+    // state worth seeing on a 260pt image, no spinner, no dimming. The button
+    // read as dead, so people tapped it again.
+    setCoverBusy(true);
+    try {
+      // Warmed at mount (see the pre-warm effect); the await is the fallback for
+      // the case where that has not resolved yet.
+      const ImagePicker = imagePickerRef.current ?? await import('expo-image-picker');
+      imagePickerRef.current = ImagePicker;
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true, aspect: [1, 1], quality: 0.8,
+      });
+      if (!result.canceled && result.assets[0]) setCoverUri(result.assets[0].uri);
+    } catch {
+      // Cancelled, denied, or the module failed to load — nothing to say that
+      // the unchanged artwork does not already say.
+    } finally {
+      setCoverBusy(false);
+    }
   }
 
   function goNext() {
@@ -1830,7 +1862,7 @@ export default function PostScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>{t('post.coverArt')}</Text>
               <View style={styles.coverStage}>
-                <TouchableOpacity style={styles.coverBox} onPress={pickCover} activeOpacity={0.9}>
+                <TouchableOpacity style={styles.coverBox} onPress={pickCover} activeOpacity={0.75} disabled={coverBusy}>
                   {coverUri ? (
                     <Image source={{ uri: coverUri }} style={styles.coverBoxImage} />
                   ) : (
@@ -1843,9 +1875,17 @@ export default function PostScreen() {
                   {/* Only over a real image: on the empty state it would be a
                       button floating on instructions telling you to press the
                       thing underneath it. */}
-                  {!!coverUri && (
+                  {!!coverUri && !coverBusy && (
                     <View style={styles.coverChangeTag} pointerEvents="none">
                       <Text style={styles.coverChangeTagText}>{t('post.coverChangeHint')}</Text>
+                    </View>
+                  )}
+                  {/* The answer to "did that register?". It appears on the same
+                      frame as the press and stays until the system sheet has
+                      been and gone, so the wait belongs to something. */}
+                  {coverBusy && (
+                    <View style={styles.coverBusy} pointerEvents="none">
+                      <Spinner size={30} color="#fff" thickness={3} />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -3029,6 +3069,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
   },
   coverBoxImage: { width: '100%', height: '100%' },
+  // A scrim, not just a spinner: over a bright photo a white ring alone is hard
+  // to find, and dimming the artwork also says the press landed.
+  coverBusy: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
   coverBoxEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: SPACING.md },
   coverBoxTitle: { color: colors.text, fontSize: 15, fontWeight: '700', marginTop: 2 },
   coverBoxSub: { color: colors.textTertiary, fontSize: 12, textAlign: 'center' },
