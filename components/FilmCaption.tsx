@@ -39,10 +39,12 @@ type Props = {
 const COLLAPSED_LINES = 2;
 const LINE_H = 20;
 const BOX_H = LINE_H * COLLAPSED_LINES;
-// Long enough to actually read a description, short enough that scrolling past
-// at a normal pace still catches both halves.
-const HOLD_MS = 4200;
-const FADE_MS = 420;
+// Long enough to read a description without hurrying and to sit with a title
+// rather than watch it leave — a rotation that turns faster than the reader
+// does is just motion. Still short enough that scrolling past at a normal pace
+// catches both halves.
+const HOLD_MS = 6800;
+const FADE_MS = 520;
 
 export default function FilmCaption({ title, caption, tags, active = true }: Props) {
   const { t } = useTranslation();
@@ -171,5 +173,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   moreBtn: {
     color: colors.textTertiary, fontSize: 17, lineHeight: 18, fontWeight: '700',
     paddingRight: SPACING.xs,
+    // An ellipsis sits on the BASELINE, near the floor of its line box, so it
+    // reads as further from the text above than it measures. Pulled up to close
+    // that gap optically; the tags beside it keep their own alignment.
+    marginTop: -8,
   },
 });
