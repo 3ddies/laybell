@@ -66,13 +66,14 @@ function loadCover(songId: string): Promise<string | null> {
 
 // Both halves are long on purpose. Short and frequent turns the corner into a
 // blinking thing you learn to ignore — or resent — while the point is that the
-// video is what you came for and the song is what you might leave with. Seven
-// seconds is long enough to read a cover rather than register one; eighteen away
+// video is what you came for and the song is what you might leave with. Twelve
+// seconds is long enough to sit with a cover rather than catch it; eighteen away
 // is long enough that its return is a small event and not a metronome. On screen
-// roughly a quarter of the time, six or seven times across a three-minute video.
+// about two fifths of the time, six or so appearances across a three-minute
+// video.
 const PULSE_FIRST_MS = 2500; // let the video establish itself before anything appears
 const PULSE_IN_MS = 340;
-const PULSE_HOLD_MS = 7000;
+const PULSE_HOLD_MS = 12000;
 const PULSE_OUT_MS = 420;
 const PULSE_GAP_MS = 18000;
 
