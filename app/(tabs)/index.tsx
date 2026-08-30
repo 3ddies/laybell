@@ -193,6 +193,8 @@ import MentionText from '../../components/MentionText';
 import TranslatableText from '../../components/TranslatableText';
 import TaggedPeopleButton from '../../components/TaggedPeopleButton';
 import CommunityTag from '../../components/CommunityTag';
+import FilmCaption from '../../components/FilmCaption';
+import { isFilm } from '../../lib/tv';
 import { parseSlides, isSlideshow } from '../../lib/slideshow';
 import { useStories } from '../../contexts/StoriesContext';
 import { usePostMusicActions, usePostMusicMuted } from '../../contexts/PostMusicContext';
@@ -219,6 +221,9 @@ type Post = {
   cover_url?: string | null;
   thumbnail_url?: string | null;
   duration_seconds?: number | null;
+  // The movie-shelf display name, set only on films (Premium+). Present at
+  // runtime already — the feed query selects *.
+  film_title?: string | null;
   // 'processing' until Cloudflare finishes encoding — the card shows an
   // honest pill instead of mounting a player whose manifest would 404.
   video_status?: string | null;
@@ -544,22 +549,55 @@ const PostCard = memo(function PostCard({
         </View>
       )}
 
-      {/* Caption + community hashtag on the SAME line (wrapping row): the tag
-          sits right after the caption when it fits on one line and drops to the
-          next line only when the caption itself wraps. The media above opens the
-          post; the tag opens its community. */}
-      {(!!item.caption || (item.community_tags?.length ?? 0) > 0) && !isAudioPost(item.type) && (
-        <TranslatableText
-          text={item.caption ?? ''}
-          render={(s) => (
-            <View style={styles.captionRow}>
-              {!!s && <MentionText style={styles.caption} numberOfLines={3} text={s} />}
-              {(item.community_tags ?? []).map((ct, i) => (
-                <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} leading={i === 0 && !!s} />
-              ))}
-            </View>
-          )}
-        />
+      {/* A FILM has two pieces of writing where every other post has one, so it
+          gets its own block that alternates between them (see FilmCaption).
+          Without a film_title there is nothing to alternate with, and it falls
+          back to the ordinary caption row like anything else. */}
+      {isFilm(item) && !!item.film_title?.trim() ? (
+        item.caption ? (
+          <TranslatableText
+            text={item.caption}
+            render={(s) => (
+              <FilmCaption
+                key={item.id}
+                title={item.film_title}
+                caption={s}
+                active={isVisibleVideo}
+                tags={(item.community_tags ?? []).map((ct) => (
+                  <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} />
+                ))}
+              />
+            )}
+          />
+        ) : (
+          // TranslatableText returns null for empty text, which would drop the
+          // title along with the absent description.
+          <FilmCaption
+            key={item.id}
+            title={item.film_title}
+            tags={(item.community_tags ?? []).map((ct) => (
+              <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} />
+            ))}
+          />
+        )
+      ) : (
+        /* Caption + community hashtag on the SAME line (wrapping row): the tag
+           sits right after the caption when it fits on one line and drops to the
+           next line only when the caption itself wraps. The media above opens the
+           post; the tag opens its community. */
+        (!!item.caption || (item.community_tags?.length ?? 0) > 0) && !isAudioPost(item.type) && (
+          <TranslatableText
+            text={item.caption ?? ''}
+            render={(s) => (
+              <View style={styles.captionRow}>
+                {!!s && <MentionText style={styles.caption} numberOfLines={3} text={s} />}
+                {(item.community_tags ?? []).map((ct, i) => (
+                  <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} leading={i === 0 && !!s} />
+                ))}
+              </View>
+            )}
+          />
+        )
       )}
 
       {/* Actions */}
