@@ -32,6 +32,7 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 import ProfileQRModal from '../../components/ProfileQRModal';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
+import { type Album, albumCover, fetchAlbums } from '../../lib/albums';
 import { countLabel } from '../../lib/i18n';
 import { displayUrl } from '../../lib/profileOptions';
 import { useLinkGuard } from '../../contexts/LinkGuardContext';
@@ -78,6 +79,7 @@ export default function PublicProfileScreen() {
   const [posts, setPosts] = useState<any[]>([]);
   // Post ids with a LIVE spotlight → a subtle sparkle on their grid thumbnail.
   const [spotlightIds, setSpotlightIds] = useState<Set<string>>(new Set());
+  const [albums, setAlbums] = useState<Album[]>([]);
   const [reposts, setReposts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -236,6 +238,10 @@ export default function PublicProfileScreen() {
       setPosts(visible);
       fetchSpotlightedPostIds(visible.map((p: any) => p.id)).then(setSpotlightIds);
     }
+    // Albums. Fire-and-forget with a swallowed failure, because this is the ONE
+    // profile query that can fail on a database where albums.sql has not been
+    // run — and a shelf that is not there yet must not take the profile with it.
+    fetchAlbums(String(id)).then(setAlbums).catch(() => setAlbums([]));
     // Reposts are public — only surface the reposted posts that are themselves
     // public (so a private post can't leak through someone else's repost).
     setReposts((repostsRes.data ?? []).map((r: any) => r.posts).filter((p: any) => p && p.is_public));
@@ -368,12 +374,46 @@ export default function PublicProfileScreen() {
 
   // Music tab: scrollable spotify-style sound cards, newest first — not the
   // picture-thumbnail grid. The main Posts grid still renders audio as thumbnails.
+  // Albums sit ABOVE the tracks, as a shelf rather than a list. They are the
+  // artist's own framing of this same music, so they read as the headline and
+  // the tracks below as the full catalogue — and a horizontal rail says
+  // "there may be more of these" without spending vertical space on saying it.
+  function renderAlbumShelf() {
+    if (albums.length === 0) return null;
+    return (
+      <View style={styles.albumShelf}>
+        <Text style={styles.albumShelfLabel}>{t('album.shelf')}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.albumShelfRow}>
+          {albums.map((a) => {
+            const cover = albumCover(a);
+            return (
+              <TouchableOpacity key={a.id} style={styles.albumCard} onPress={() => router.push(`/album/${a.id}`)} activeOpacity={0.85}>
+                {cover ? (
+                  <Image source={{ uri: cover }} style={styles.albumCardCover} contentFit="cover" cachePolicy="memory-disk" />
+                ) : (
+                  <View style={[styles.albumCardCover, styles.albumCardCoverEmpty]}>
+                    <Ionicons name="disc" size={26} color={colors.textTertiary} />
+                  </View>
+                )}
+                <Text style={styles.albumCardTitle} numberOfLines={1}>{a.title}</Text>
+                <Text style={styles.albumCardMeta} numberOfLines={1}>{countLabel('track', a.track_count ?? 0)}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+    );
+  }
+
   function renderMusicList(data: any[]) {
     if (data.length === 0) {
       return (
-        <View style={styles.emptyGrid}>
-          <Ionicons name="musical-notes-outline" size={40} color={colors.textTertiary} />
-          <Text style={styles.emptyGridText}>{t('profile.noMusic')}</Text>
+        <View>
+          {renderAlbumShelf()}
+          <View style={styles.emptyGrid}>
+            <Ionicons name="musical-notes-outline" size={40} color={colors.textTertiary} />
+            <Text style={styles.emptyGridText}>{t('profile.noMusic')}</Text>
+          </View>
         </View>
       );
     }
@@ -395,6 +435,7 @@ export default function PublicProfileScreen() {
     }));
     return (
       <View style={styles.musicList}>
+        {renderAlbumShelf()}
         {tracks.map((track, i) => (
           <TrackRow
             hidePlayButton
@@ -787,6 +828,23 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   // 2px gutters between cells (gap needs pixel-sized items — thirds would overflow the row).
   postsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
+  // ── Album shelf ─────────────────────────────────────────────────────────────
+  // Bleeds past the list's padding on both sides so the rail runs to the screen
+  // edge — a horizontal scroller that stops short of it reads as a stuck list
+  // rather than one with more in it.
+  albumShelf: { marginHorizontal: -SPACING.md, marginBottom: SPACING.md },
+  albumShelfLabel: {
+    color: colors.textTertiary, fontSize: 12, fontWeight: '800',
+    letterSpacing: 0.6, textTransform: 'uppercase',
+    paddingHorizontal: SPACING.md, marginBottom: SPACING.sm,
+  },
+  albumShelfRow: { paddingHorizontal: SPACING.md, gap: SPACING.md },
+  albumCard: { width: 124 },
+  albumCardCover: { width: 124, height: 124, borderRadius: RADIUS.md, backgroundColor: colors.surfaceLight },
+  albumCardCoverEmpty: { alignItems: 'center', justifyContent: 'center' },
+  albumCardTitle: { color: colors.text, fontSize: 13.5, fontWeight: '700', marginTop: 7 },
+  albumCardMeta: { color: colors.textTertiary, fontSize: 12, marginTop: 1 },
+
   musicList: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: SPACING.sm },
   gridItem: { width: (SCREEN_W - 4) / 3, aspectRatio: 1 },
   gridImage: { width: '100%', height: '100%' },

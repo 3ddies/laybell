@@ -15,6 +15,9 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import {
+  type Album, fetchAlbums, createAlbum, addTrack as addAlbumTrack,
+} from '../../lib/albums';
 import { bumpBadge, publicPostLimit, rawTier, tierLabel } from '../../lib/badges';
 import { useProfile } from '../../contexts/ProfileContext';
 import { usePremium } from '../../contexts/PremiumContext';
@@ -300,6 +303,12 @@ export default function PostScreen() {
   const [tagged, setTagged] = useState<TaggedPerson[]>([]); // accounts tagged on this post (≤10)
   const [features, setFeatures] = useState<Feature[]>([]); // song collaborators (audio, ≤6)
   const [showFeaturesModal, setShowFeaturesModal] = useState(false);
+  // Album this track is part of (audio only). Null = a standalone single, which
+  // is the default and stays the common case: most songs are not on a record.
+  const [albumId, setAlbumId] = useState<string | null>(null);
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const [showAlbumPicker, setShowAlbumPicker] = useState(false);
+  const [newAlbumName, setNewAlbumName] = useState('');
   const [showTagModal, setShowTagModal] = useState(false);
   // Communities this post is attributed to (a post can belong to several). Only
   // communities the user is an active, non-muted member of are postable.
@@ -587,6 +596,10 @@ export default function PostScreen() {
     setVideoDuration(0); setTrimStart(0); setTrimEnd(0); setTopCaption(null); setBottomCaption(null); setVideoCaptions([]);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
     setCaption(''); setFilmTitle(''); setGenre(''); setSong(null); setMusicVideo(false); setTagged([]); setCommunities([]); setError(''); setStep('pick');
+    // features was MISSING here, which meant collaborators credited on one song
+    // silently rode onto the next one posted in the same sitting — and every
+    // one of them would have been notified they were on a track they are not.
+    setFeatures([]); setAlbumId(null); setNewAlbumName('');
     setAllowDownloads(true); setAllowGifs(true); setMature(false);
     // Abandoning the compose drops any parked spotlight handoff so it can't
     // silently attach to an unrelated later post — the paid campaign itself
@@ -1412,6 +1425,13 @@ export default function PostScreen() {
             if (f.id !== user.id) createNotification({ userId: f.id, actorId: user.id, type: 'tag', postId: newPost.id });
           }
         }
+        // Put the track on its album. Last, and NOT awaited into the publish
+        // result: the song is already live and correct at this point, and an
+        // album row that fails to write is a track missing from a shelf the
+        // owner can fix in two taps — not a reason to tell them the post failed.
+        if (postType === 'audio' && albumId) {
+          addAlbumTrack(albumId, newPost.id).catch(() => {});
+        }
       }
 
       // The "create a brand new post" spotlight path: attach the paid campaign
@@ -1801,38 +1821,69 @@ export default function PostScreen() {
             </View>
           )}
 
-          {/* Cover art (audio) */}
+          {/* Cover art (audio) — the artwork IS the release, so it gets to be
+              the size of one rather than a 72pt thumbnail on a settings row.
+              Features moved onto its bottom corner: crediting a collaborator is
+              a fact about this artwork's song, and it was competing for the eye
+              as a second identical row directly beneath. */}
           {postType === 'audio' && (
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>{t('post.coverArt')}</Text>
-              <TouchableOpacity style={styles.coverPicker} onPress={pickCover}>
-                {coverUri ? (
-                  <Image source={{ uri: coverUri }} style={styles.coverPreview} />
-                ) : (
-                  <View style={styles.coverPlaceholder}><Ionicons name="image-outline" size={24} color={colors.textTertiary} /></View>
-                )}
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.coverTitle}>{coverUri ? t('post.coverSelected') : t('post.addCoverArt')}</Text>
-                  <Text style={styles.coverSub}>{coverUri ? t('post.coverChangeHint') : t('post.coverHint')}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-              </TouchableOpacity>
+              <View style={styles.coverStage}>
+                <TouchableOpacity style={styles.coverBox} onPress={pickCover} activeOpacity={0.9}>
+                  {coverUri ? (
+                    <Image source={{ uri: coverUri }} style={styles.coverBoxImage} />
+                  ) : (
+                    <View style={styles.coverBoxEmpty}>
+                      <Ionicons name="image-outline" size={40} color={colors.textTertiary} />
+                      <Text style={styles.coverBoxTitle}>{t('post.addCoverArt')}</Text>
+                      <Text style={styles.coverBoxSub}>{t('post.coverHint')}</Text>
+                    </View>
+                  )}
+                  {/* Only over a real image: on the empty state it would be a
+                      button floating on instructions telling you to press the
+                      thing underneath it. */}
+                  {!!coverUri && (
+                    <View style={styles.coverChangeTag} pointerEvents="none">
+                      <Text style={styles.coverChangeTagText}>{t('post.coverChangeHint')}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.coverCornerBtn, features.length > 0 && styles.coverCornerBtnOn]}
+                  onPress={() => setShowFeaturesModal(true)}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('features.title')}
+                >
+                  <Ionicons name="people" size={15} color={features.length ? colors.background : colors.text} />
+                  <Text style={[styles.coverCornerBtnText, features.length > 0 && styles.coverCornerBtnTextOn]} numberOfLines={1}>
+                    {features.length ? features.map((f) => f.name).join(', ') : t('features.add')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 
-          {/* Features (audio) — credit Laybell collaborators on the song. */}
+          {/* Album (audio) — optional, and quiet about it. Most songs are
+              singles, so this is a row that says "no album" until someone means
+              otherwise, rather than a step that has to be dismissed. */}
           {postType === 'audio' && (
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>{t('features.title')}</Text>
-              <TouchableOpacity style={styles.coverPicker} onPress={() => setShowFeaturesModal(true)}>
-                <View style={styles.coverPlaceholder}><Ionicons name="people" size={22} color={features.length ? colors.primary : colors.textTertiary} /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.coverTitle} numberOfLines={1}>
-                    {features.length ? features.map((f) => f.name).join(', ') : t('features.add')}
-                  </Text>
-                  <Text style={styles.coverSub}>{features.length ? t('features.count', { count: features.length, max: 6 }) : t('features.sub')}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>{t('album.section')}</Text>
+              <TouchableOpacity
+                style={styles.dropdown}
+                onPress={async () => {
+                  setShowAlbumPicker(true);
+                  const { data: { user } } = await supabase.auth.getUser();
+                  if (user) { try { setAlbums(await fetchAlbums(user.id)); } catch { setAlbums([]); } }
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.dropdownText, !albumId && styles.dropdownPlaceholder]} numberOfLines={1}>
+                  {albums.find((a) => a.id === albumId)?.title ?? t('album.none')}
+                </Text>
+                <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
               </TouchableOpacity>
             </View>
           )}
@@ -2114,6 +2165,70 @@ export default function PostScreen() {
                     </TouchableOpacity>
                   );
                 })}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* Album picker — existing albums, or name a new one on the spot. The
+            create field is IN the sheet rather than behind another screen: the
+            moment someone wants an album is while posting the first track of
+            one, and sending them elsewhere to make it loses the post. */}
+        <Modal visible={showAlbumPicker} transparent animationType="fade" onRequestClose={() => setShowAlbumPicker(false)}>
+          <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setShowAlbumPicker(false)}>
+            <View style={styles.sheet}>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetTitle}>{t('album.section')}</Text>
+              <ScrollView contentContainerStyle={styles.albumSheetList} keyboardShouldPersistTaps="handled">
+                <TouchableOpacity
+                  style={[styles.albumOption, !albumId && styles.albumOptionActive]}
+                  onPress={() => { setAlbumId(null); setShowAlbumPicker(false); }}
+                >
+                  <Text style={[styles.albumOptionText, !albumId && styles.albumOptionTextActive]}>{t('album.none')}</Text>
+                  {!albumId && <Ionicons name="checkmark" size={17} color={colors.background} />}
+                </TouchableOpacity>
+                {albums.map((a) => {
+                  const on = albumId === a.id;
+                  return (
+                    <TouchableOpacity
+                      key={a.id}
+                      style={[styles.albumOption, on && styles.albumOptionActive]}
+                      onPress={() => { setAlbumId(a.id); setShowAlbumPicker(false); }}
+                    >
+                      <Text style={[styles.albumOptionText, on && styles.albumOptionTextActive]} numberOfLines={1}>{a.title}</Text>
+                      {on && <Ionicons name="checkmark" size={17} color={colors.background} />}
+                    </TouchableOpacity>
+                  );
+                })}
+                <View style={styles.albumNewRow}>
+                  <TextInput
+                    style={styles.albumNewInput}
+                    placeholder={t('album.newPlaceholder')}
+                    placeholderTextColor={colors.textTertiary}
+                    value={newAlbumName}
+                    onChangeText={setNewAlbumName}
+                    maxLength={120}
+                    returnKeyType="done"
+                  />
+                  <TouchableOpacity
+                    style={[styles.albumNewBtn, !newAlbumName.trim() && styles.albumNewBtnOff]}
+                    disabled={!newAlbumName.trim()}
+                    onPress={async () => {
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (!user) return;
+                      try {
+                        const made = await createAlbum(user.id, newAlbumName);
+                        setAlbums((prev) => [made, ...prev]);
+                        setAlbumId(made.id);
+                        setNewAlbumName('');
+                        setShowAlbumPicker(false);
+                      } catch { /* the sheet stays open, nothing is lost */ }
+                    }}
+                  >
+                    <Text style={styles.albumNewBtnText}>{t('album.create')}</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.albumSheetHint}>{t('album.sheetHint')}</Text>
               </ScrollView>
             </View>
           </TouchableOpacity>
@@ -2903,10 +3018,75 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.md, padding: SPACING.sm,
   },
+  // ── Cover art, at the size of a record sleeve ───────────────────────────────
+  // The stage is the positioning context for the corner button; the box is the
+  // artwork itself, square and centred, capped so it does not become a poster on
+  // a tablet.
+  coverStage: { alignSelf: 'center', width: '100%', maxWidth: 260 },
+  coverBox: {
+    width: '100%', aspectRatio: 1, borderRadius: RADIUS.md, overflow: 'hidden',
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  coverBoxImage: { width: '100%', height: '100%' },
+  coverBoxEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: SPACING.md },
+  coverBoxTitle: { color: colors.text, fontSize: 15, fontWeight: '700', marginTop: 2 },
+  coverBoxSub: { color: colors.textTertiary, fontSize: 12, textAlign: 'center' },
+  // Top-left, so it never collides with the features button in the other corner.
+  coverChangeTag: {
+    position: 'absolute', top: SPACING.sm, left: SPACING.sm,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: RADIUS.full,
+    paddingHorizontal: 10, paddingVertical: 4,
+  },
+  coverChangeTagText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  // Sits ON the artwork's bottom edge, overhanging it slightly so it reads as
+  // attached to the sleeve rather than printed on it. maxWidth keeps a long list
+  // of names from spanning the whole cover.
+  coverCornerBtn: {
+    position: 'absolute', right: -SPACING.xs, bottom: -SPACING.sm, maxWidth: '92%',
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: SPACING.md, paddingVertical: 9,
+    borderRadius: RADIUS.full, backgroundColor: colors.surfaceElevated,
+    borderWidth: 1, borderColor: colors.borderStrong,
+    shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  // Credited: the button fills in, because "who is on this" is answered rather
+  // than pending, and a filled chip is how the rest of the app says so.
+  coverCornerBtnOn: { backgroundColor: colors.text, borderColor: colors.text },
+  coverCornerBtnText: { color: colors.text, fontSize: 13, fontWeight: '700', flexShrink: 1 },
+  coverCornerBtnTextOn: { color: colors.background },
+
   coverPreview: { width: 72, height: 72, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceElevated },
   coverPlaceholder: { width: 72, height: 72, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
   coverTitle: { color: colors.text, fontSize: 14, fontWeight: '600' },
   coverSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+
+  // ── Album picker sheet ──────────────────────────────────────────────────────
+  // Full-width rows rather than the genre sheet's wrapping chips: album titles
+  // are sentences, not one-word tags, and a chip row of them wraps into rubble.
+  albumSheetList: { paddingHorizontal: SPACING.md, paddingBottom: SPACING.xl, gap: SPACING.sm },
+  albumOption: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: SPACING.sm,
+    paddingHorizontal: SPACING.md, paddingVertical: 13,
+    borderRadius: RADIUS.md, backgroundColor: colors.surfaceLight,
+  },
+  albumOptionActive: { backgroundColor: colors.text },
+  albumOptionText: { color: colors.text, fontSize: 15, fontWeight: '600', flexShrink: 1 },
+  albumOptionTextActive: { color: colors.background, fontWeight: '700' },
+  albumNewRow: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.sm },
+  albumNewInput: {
+    flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md, paddingVertical: 11,
+    color: colors.text, fontSize: 15, backgroundColor: colors.surfaceLight,
+  },
+  albumNewBtn: {
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: SPACING.lg, borderRadius: RADIUS.md, backgroundColor: colors.text,
+  },
+  albumNewBtnOff: { opacity: 0.4 },
+  albumNewBtnText: { color: colors.background, fontSize: 14, fontWeight: '700' },
+  albumSheetHint: { color: colors.textTertiary, fontSize: 12.5, lineHeight: 17, marginTop: SPACING.xs },
 
   // Genre chips — reused inside the genre picker bottom sheet.
   genreChip: {
