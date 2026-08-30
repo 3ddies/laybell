@@ -156,18 +156,26 @@ export default function SongAttribution({
   const [artReady, setArtReady] = useState(false);
 
   // ── Pulse state ─────────────────────────────────────────────────────────────
-  const [pulseCover, setPulseCover] = useState<string | null>(() => coverCache.get(songId) ?? null);
+  // STAMPED with the song it belongs to. This component is rendered inside a
+  // recycled feed cell, so `songId` can change under it without a remount — and
+  // the effect that reloads the cover runs a commit later than the render that
+  // changed the prop. Held as a bare url, that gap is a frame of the previous
+  // song's artwork on the new post's video.
+  const [pulseCover, setPulseCover] = useState<{ id: string; url: string | null } | null>(
+    () => (coverCache.has(songId) ? { id: songId, url: coverCache.get(songId) ?? null } : null),
+  );
   useEffect(() => {
     if (!pulse) return;
     const hit = coverCache.get(songId);
-    if (hit !== undefined) { setPulseCover(hit); return; }
+    if (hit !== undefined) { setPulseCover({ id: songId, url: hit }); return; }
     let alive = true;
-    loadCover(songId).then((u) => { if (alive) setPulseCover(u); });
+    loadCover(songId).then((u) => { if (alive) setPulseCover({ id: songId, url: u }); });
     return () => { alive = false; };
   }, [pulse, songId]);
+  const pulseUrl = pulseCover?.id === songId ? pulseCover.url : null;
   // No artwork, no pulse — falling silently back to the pill is better than a
   // credit that is simply absent, and a song with no cover has nothing to show.
-  const pulsing = pulse && !inline && !!pulseCover;
+  const pulsing = pulse && !inline && !!pulseUrl;
   const pulseAnim = useRef(new Animated.Value(0)).current;
   // Drives pointerEvents only. Flipped at the START of each fade so the artwork
   // stops taking taps the moment it begins to leave, and no setState lands on an
@@ -380,7 +388,7 @@ export default function SongAttribution({
             {/* transition={0} for the same reason as the artwork card: the
                 pulse owns the fade, and expo-image's own cross-fade running
                 inside it reads as the picture stuttering on the way in. */}
-            <Image source={{ uri: pulseCover! }} style={styles.pulseImage} contentFit="cover" transition={0} />
+            <Image source={{ uri: pulseUrl! }} style={styles.pulseImage} contentFit="cover" transition={0} />
           </TouchableOpacity>
         </Animated.View>
       ) : (

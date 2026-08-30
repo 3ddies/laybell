@@ -34,7 +34,7 @@ import { useLinkGuard } from '../../contexts/LinkGuardContext';
 import { activeLayout, usedPostIds } from '../../lib/pageLayout';
 import ProfileLayoutGrid from '../../components/ProfileLayoutGrid';
 import { isAudioPost } from '../../lib/genres';
-import { slideshowThumb } from '../../lib/slideshow';
+import { slideshowThumb, isSlideshow } from '../../lib/slideshow';
 import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
 import SpotlightThumbBadge from '../../components/SpotlightThumbBadge';
@@ -481,10 +481,16 @@ export default function ProfileScreen() {
     );
   }
 
-  // Open an image/slideshow post or a reel, expanding out of the tapped cell
-  // (shared by the normal grid and the custom layout blocks).
+  // Open an image post, or a reel, expanding out of the tapped cell (shared by
+  // the normal grid and the custom layout blocks).
+  //
+  // A SLIDESHOW goes to reels here, the same as it does from the home feed and
+  // from another user's profile: tapping the same content in three places
+  // should not land in three different viewers. (No Listen-mode confirm on this
+  // screen — unlike the visited-profile copy, it never had one.)
   function openVisual(post: any, node?: any) {
-    const pathname = post.type === 'video' ? '/reel/[id]' : '/post/[id]';
+    const immersive = post.type === 'video' || isSlideshow(post.type);
+    const pathname = immersive ? '/reel/[id]' : '/post/[id]';
     const seed = JSON.stringify(post);
     if (node?.measureInWindow) {
       node.measureInWindow((x: number, y: number, width: number, height: number) =>
@@ -601,7 +607,8 @@ export default function ProfileScreen() {
                 );
               } else {
                 const node = gridRefs.current[post.id];
-                const pathname = post.type === 'video' ? '/reel/[id]' : '/post/[id]';
+                const immersive = post.type === 'video' || isSlideshow(post.type);
+                const pathname = immersive ? '/reel/[id]' : '/post/[id]';
                 const seed = JSON.stringify(post);
                 if (node?.measureInWindow) {
                   node.measureInWindow((x: number, y: number, width: number, height: number) =>

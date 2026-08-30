@@ -38,7 +38,7 @@ import { useLinkGuard } from '../../contexts/LinkGuardContext';
 import { useListenMode } from '../../contexts/ListenModeContext';
 import { activeLayout, usedPostIds } from '../../lib/pageLayout';
 import ProfileLayoutGrid from '../../components/ProfileLayoutGrid';
-import { slideshowThumb } from '../../lib/slideshow';
+import { slideshowThumb, isSlideshow } from '../../lib/slideshow';
 import { createNotification } from '../../lib/createNotification';
 import { hasOpenShop } from '../../lib/shop';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
@@ -418,10 +418,16 @@ export default function PublicProfileScreen() {
     );
   }
 
-  // Open an image/slideshow post or a reel, expanding out of the tapped cell
-  // (shared by the normal grid and the custom layout blocks).
+  // Open an image post, or a reel, expanding out of the tapped cell (shared by
+  // the normal grid and the custom layout blocks).
+  //
+  // A SLIDESHOW goes to reels here, the same as it does from the home feed:
+  // tapping the same content in two places should not land in two different
+  // viewers. (Reels itself still rarely SERVES slideshows — see the damping in
+  // lib/feedScorer — but arriving at one deliberately is a different thing.)
   function openVisual(post: any, node?: any) {
-    const pathname = post.type === 'video' ? '/reel/[id]' : '/post/[id]';
+    const immersive = post.type === 'video' || isSlideshow(post.type);
+    const pathname = immersive ? '/reel/[id]' : '/post/[id]';
     const seed = JSON.stringify(post);
     const go = () => {
       if (node?.measureInWindow) {
@@ -431,11 +437,12 @@ export default function PublicProfileScreen() {
         router.push({ pathname, params: { id: post.id, post: seed } });
       }
     };
-    // A reel is an immersive full-screen player with no docked mini-player, so it
-    // can't run inside a listen session — confirm the Listen-mode exit first (a
-    // no-op prompt-wise when Listen mode is off). Image/slideshow posts keep the
-    // side-chip mini-player and coexist fine, so they open straight away.
-    if (post.type === 'video') confirmLeaveListen(go);
+    // The reel viewer is an immersive full-screen player with no docked
+    // mini-player, so it can't run inside a listen session — confirm the
+    // Listen-mode exit first (a no-op prompt-wise when Listen mode is off).
+    // Slideshows go through it too now that they land there. Image posts keep
+    // the side-chip mini-player and coexist fine, so they open straight away.
+    if (immersive) confirmLeaveListen(go);
     else go();
   }
 
