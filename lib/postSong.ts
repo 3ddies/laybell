@@ -40,6 +40,42 @@ export function songIsLinkOnly(post: SongAttachable): boolean {
   return !!post?.song_id && post?.song_link_only === true;
 }
 
+// ── Handing a music video over to the real player ────────────────────────────
+//
+// Continuing the song from where the video had reached is only correct when the
+// two actually share a timeline, and there is no way to KNOW that they do. A
+// post is a music video because its author said so, and "the song gets promoted"
+// is reason enough for someone to say so about a video that is nothing of the
+// kind. A position taken on faith there is not a small error: 40 seconds into an
+// unrelated clip is 40 seconds into a song the listener has never heard, which
+// is worse than any restart.
+//
+// So the position is trusted only where the evidence supports it. Otherwise the
+// song starts at 0:00 — never wrong, merely less clever.
+
+/** Room a position needs at each end of the song to count as inside it. */
+const HANDOFF_EDGE_MS = 1500;
+
+/**
+ * Where the song should start when a music video hands over, in ms. 0 means
+ * "from the top", and is the answer to every doubt.
+ *
+ * @param wantMs   where the VIDEO had reached
+ * @param songMs   the song's real duration — known only once it has loaded
+ * @param sourceMs the video's duration
+ */
+export function handoffPositionMs(wantMs: number, songMs: number, sourceMs: number): number {
+  if (!(wantMs > HANDOFF_EDGE_MS) || !(songMs > 0) || !(sourceMs > 0)) return 0;
+  // Lengths must agree before positions can mean anything. A video running to a
+  // different length is either not this song at all, or carries an intro the song
+  // does not — and in that second case the difference IS the drift the handoff
+  // would introduce, so both failures are caught by the same test.
+  const tolerance = Math.min(10_000, Math.max(3_000, songMs * 0.05));
+  if (Math.abs(sourceMs - songMs) > tolerance) return 0;
+  if (wantMs >= songMs - HANDOFF_EDGE_MS) return 0;
+  return Math.round(wantMs);
+}
+
 // ── Titling a post that carries a name of its own ────────────────────────────
 //
 // A music video has a title the way a film does: the track it is a video of.

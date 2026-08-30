@@ -306,15 +306,15 @@ const PostCard = memo(function PostCard({
   const gestureSincePress = useRef(false);
   // Recycled into a different post mid-pinch: clear the lift, and release the
   // feed's scroll lock, or the list would stay frozen with no gesture running.
-  // Where this card's video has reached, in ms. A REF, not state: it changes on
-  // every timeUpdate and is read only when the artwork of a music video is
-  // tapped, so putting it in state would re-render the whole card several times
-  // a second to feed one tap handler.
-  const videoPosRef = useRef(0);
+  // Where this card's video has reached, and how long it runs, in ms. A REF, not
+  // state: it changes on every timeUpdate and is read only when the artwork of a
+  // music video is tapped, so holding it in state would re-render the whole card
+  // several times a second to feed one tap handler.
+  const videoPlaybackRef = useRef({ positionMs: 0, durationMs: 0 });
   useEffect(() => {
     setZooming(false);
     gestureSincePress.current = false;
-    videoPosRef.current = 0;
+    videoPlaybackRef.current = { positionMs: 0, durationMs: 0 };
     onMediaZoom?.(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id]);
@@ -538,7 +538,10 @@ const PostCard = memo(function PostCard({
                   // Feed watching counts toward views (muted autoplay included) —
                   // the tracker accumulates genuine watch time across surfaces and
                   // the server enforces the per-user/device caps.
-                  onProgress={(pos, dur) => { videoPosRef.current = pos; trackVideoProgress(item.id, pos, dur); }}
+                  onProgress={(pos, dur) => {
+                    videoPlaybackRef.current = { positionMs: pos, durationMs: dur };
+                    trackVideoProgress(item.id, pos, dur);
+                  }}
                 />
               )}
               {/* A row whose video is still ENCODING (its session died mid-wait
@@ -581,8 +584,10 @@ const PostCard = memo(function PostCard({
               pulse={!!songTitle}
               active={isVisibleVideo}
               // Tapping the artwork continues the song from where the video is,
-              // so the handoff is a change of surface rather than a restart.
-              getPositionMs={() => videoPosRef.current}
+              // so the handoff is a change of surface rather than a restart. The
+              // duration travels with it: it is what proves the two timelines
+              // correspond before any position is believed.
+              getHostPlayback={() => videoPlaybackRef.current}
             />
           )}
           <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />

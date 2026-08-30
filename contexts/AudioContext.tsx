@@ -13,6 +13,7 @@ import { resolveLocalUri, markInUse, clearInUse, autoCache } from '../lib/offlin
 import { recordListen } from '../lib/listenHistory';
 import { recordStream as recordStreamDurable } from '../lib/streamOutbox';
 import { meterPlayback, flushMeter } from '../lib/listenMeter';
+import { handoffPositionMs } from '../lib/postSong';
 import {
   pickAudioAd, recordAdImpression, recordAdComplete, recordAdSkip,
   firstAudioGateMs, nextAudioGateMs, adSkipAfterMs,
@@ -87,12 +88,13 @@ type AudioContextType = {
   isBuffering: boolean;
   play: (track: Track) => Promise<void>;
   /**
-   * play(), but continuing from `startAtMs` instead of 0:00 — the music-video
-   * handoff. Best effort by design: the position is honoured only when it falls
-   * inside the song, since a video and the track it is a video of do not always
-   * share a timeline. Out of range, it simply starts from the top.
+   * play(), but continuing from `atMs` instead of 0:00 — the music-video
+   * handoff. `sourceMs` is the HOST video's duration, and is the evidence: the
+   * position is honoured only where the two lengths agree, since nothing
+   * guarantees a post called a music video is one. See handoffPositionMs. Any
+   * doubt and it starts from the top.
    */
-  playFrom: (track: Track, startAtMs: number) => Promise<void>;
+  playFrom: (track: Track, atMs: number, sourceMs: number) => Promise<void>;
   playQueue: (tracks: Track[], startIndex?: number, loadMore?: QueueLoader) => Promise<void>;
   // Now Playing reports comment activity so a song ending at the end of the queue
   // doesn't tear the sheet away while the user is still engaged with the comments.
@@ -307,13 +309,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // instead of hearing the song restart under them.
   //
   // Applied from the progress handler rather than straight after load, because
-  // that is the first moment the DURATION is known — and without the duration
-  // there is no way to tell a legitimate position from one past the end of a
-  // song whose video was longer than it. Paired with the track id so a seek
-  // cannot land on whatever is playing by the time it resolves.
-  const pendingSeekMsRef = useRef(0);
-  const pendingSeekIdRef = useRef<string | null>(null);
-  const clearPendingSeek = () => { pendingSeekMsRef.current = 0; pendingSeekIdRef.current = null; };
+  // that is the first tick carrying the song's DURATION — and the duration is
+  // what handoffPositionMs needs to decide whether the two timelines correspond
+  // at all. Paired with the track id so a seek cannot land on whatever happens
+  // to be playing by the time it resolves.
+  const pendingSeekRef = useRef<{ atMs: number; sourceMs: number; id: string } | null>(null);
+  const clearPendingSeek = () => { pendingSeekRef.current = null; };
   // Genuine forward listen ms accrued toward the daily "music streaming" badge —
   // a SEPARATE accumulator from the per-post stream credit (listenMsRef), so it
   // sums across posts and isn't tied to any 24h per-post window. Flushed as whole
@@ -1140,18 +1141,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       if (!adPlayingRef.current) emitPosition(pos, dur);
       progressRef.current = dur > 0 ? pos / dur : 0;
 
-      // The music-video handoff, applied on the first tick that carries a real
-      // duration. The window is deliberately strict: a position inside the song
-      // by more than a second and a half at both ends. Outside it the video and
-      // the song plainly do not share a timeline — an intro the song does not
-      // have, an outro it ended before — and starting from 0:00 is the honest
-      // answer, far better than dropping someone into the last two seconds of a
-      // track they just asked to hear.
-      if (pendingSeekMsRef.current > 0 && dur > 0 && !adPlayingRef.current) {
-        const want = pendingSeekMsRef.current;
-        const forId = pendingSeekIdRef.current;
+      // The music-video handoff, resolved on the first tick that carries a real
+      // duration. handoffPositionMs answers 0 for everything it cannot vouch
+      // for, and 0 means "from the top" — so the failure mode of a mislabelled
+      // music video is an ordinary play, never a wrong seek.
+      const handoff = pendingSeekRef.current;
+      if (handoff && dur > 0 && !adPlayingRef.current) {
         clearPendingSeek();
-        if (forId === loadedIdRef.current && want > 1500 && want < dur - 1500) seekTo(want);
+        const at = handoffPositionMs(handoff.atMs, dur, handoff.sourceMs);
+        if (at > 0 && handoff.id === loadedIdRef.current) seekTo(at);
       }
 
       // Comment-hold: with native advance, a finishing track must be CAUGHT
@@ -1396,15 +1394,17 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function play(track: Track, fromQueue = false, suppressToggle = false, startAtMs = 0) {
+  async function play(
+    track: Track, fromQueue = false, suppressToggle = false,
+    handoff?: { atMs: number; sourceMs: number },
+  ) {
     pendingFinishRef.current = false;  // a fresh play cancels any deferred advance/close
     engagedNearEndRef.current = false; // and resets near-end engagement for the new track
     progressRef.current = 0;
     positionRef.current = 0;
     // Set (or cleared) on EVERY play, so an unused handoff can never sit around
     // waiting to hijack an unrelated song started later.
-    pendingSeekMsRef.current = startAtMs > 0 ? startAtMs : 0;
-    pendingSeekIdRef.current = startAtMs > 0 ? track.id : null;
+    pendingSeekRef.current = handoff && handoff.atMs > 0 ? { ...handoff, id: track.id } : null;
     // A fresh play supersedes any in-flight audio ad (e.g. tapping a feed track
     // while a playlist break is on screen) — tear the ad down like stop() does.
     if (adPlayingRef.current) {
@@ -1452,7 +1452,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     await startQueue(queueIndexRef.current);
   }
 
-  const playFrom = (track: Track, startAtMs: number) => play(track, false, false, startAtMs);
+  const playFrom = (track: Track, atMs: number, sourceMs: number) =>
+    play(track, false, false, { atMs, sourceMs });
 
   // Keep the now-playing module store + stable play accessor in sync, so
   // useNowPlaying() consumers (Explore grid, track rails) re-render on ONLY a

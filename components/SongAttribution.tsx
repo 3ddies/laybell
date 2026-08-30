@@ -78,7 +78,7 @@ const PULSE_OUT_MS = 420;
 const PULSE_GAP_MS = 18000;
 
 export default function SongAttribution({
-  songId, title, artist, artistId, style, inline = false, pulse = false, active = true, getPositionMs,
+  songId, title, artist, artistId, style, inline = false, pulse = false, active = true, getHostPlayback,
   onNavigate, onPauseHost, onResumeHost,
 }: {
   songId: string;
@@ -94,10 +94,11 @@ export default function SongAttribution({
   pulse?: boolean;
   // False while the card is off-screen, so the pulse doesn't run unwatched.
   active?: boolean;
-  // Where the HOST video has reached, in ms. Supplied by a music video so that
-  // opening the track continues it from here rather than restarting it — read
-  // at tap time, never rendered, so it costs nothing per frame.
-  getPositionMs?: () => number;
+  // The HOST video's position and duration, in ms. Supplied by a music video so
+  // opening the track can continue from here rather than restart — the duration
+  // is what lets AudioContext tell a real music video from a post merely called
+  // one. Read at tap time, never rendered, so it costs nothing per frame.
+  getHostPlayback?: () => { positionMs: number; durationMs: number };
   onNavigate?: () => void;
   onPauseHost?: () => void;
   // Fired when the song's 3-dot menu closes — a host paused via onPauseHost
@@ -274,7 +275,7 @@ export default function SongAttribution({
     busyRef.current = true;
     // Read BEFORE the await: by the time the song row comes back the video has
     // moved on, and the handoff should land on the moment that was tapped.
-    const at = Math.round(getPositionMs?.() ?? 0);
+    const host = getHostPlayback?.();
     try {
       onNavigate?.(); // close the host (post/reel/story) so the root player shows in front
       stopPostMusic(); // promote from ambient to the main mini-player
@@ -288,10 +289,11 @@ export default function SongAttribution({
         const track = { id: d.id, uri: d.media_url, caption: d.caption, artist: d.profiles?.display_name ?? artist ?? '', cover: d.cover_url };
         // A music video hands the listener OVER: the song picks up where the
         // video had reached, so the same music keeps going and only the surface
-        // playing it changes. AudioContext drops the position if it falls
-        // outside the song, so a video with an intro the track does not have
-        // simply starts from the top.
-        if (at > 0) playFrom(track, at); else play(track);
+        // playing it changes. AudioContext vets the position against the two
+        // durations and falls back to 0:00 on any doubt — a video that is not
+        // really this song simply plays it from the top.
+        if (host && host.positionMs > 0) playFrom(track, host.positionMs, host.durationMs);
+        else play(track);
         expand();
       }
     } finally {
