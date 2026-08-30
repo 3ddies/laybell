@@ -167,6 +167,10 @@ export default function ProfileScreen() {
       playlists: tabContent(publicPlaylists),
     },
     userPosts.length > 0,
+    // Same rule as the visited profile: a showcase with nothing in it is a
+    // labelled dead end. Neither tab creates anything — playlists are made and
+    // managed on the Music tab — so losing an empty one strands nobody.
+    ['playlists', 'reposts'],
   ), [userPosts, repostedPosts, publicPlaylists]);
   // The gesture handler is created once and reads refs, so the order it steps
   // through has to be a ref too.
@@ -176,6 +180,13 @@ export default function ProfileScreen() {
     () => orderedKeys.map((k) => TABS.find((tb) => tb.key === k)).filter(Boolean) as typeof TABS,
     [orderedKeys],
   );
+  // A tab can now VANISH under the owner — un-reposting the last repost, or
+  // making their only public playlist private, both while standing on that very
+  // tab. Left pointing at a key no longer in the strip, activeTab selects
+  // nothing and the page renders blank with no tab lit.
+  useEffect(() => {
+    if (!orderedKeys.includes(activeTab)) setActiveTab('posts');
+  }, [orderedKeys, activeTab]);
 
   // Slide the incoming sub-tab in from the travel direction (Music-pill style).
   const tabAnimX = useRef(new Animated.Value(0)).current;

@@ -15,7 +15,6 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import Spinner from '../../components/Spinner';
 import {
   type Album, fetchAlbums, createAlbum, addTrack as addAlbumTrack,
 } from '../../lib/albums';
@@ -306,7 +305,10 @@ export default function PostScreen() {
   const [showFeaturesModal, setShowFeaturesModal] = useState(false);
   // Album this track is part of (audio only). Null = a standalone single, which
   // is the default and stays the common case: most songs are not on a record.
-  // True from the tap until the photo sheet has been and gone.
+  // True from the tap until the photo sheet has been and gone. NO visual of its
+  // own: the pre-warm below is what actually made the tap feel instant, and a
+  // spinner on top of a picker that already opens promptly is noise. This is
+  // purely the re-entrancy guard — two taps in that gap opened two sheets.
   const [coverBusy, setCoverBusy] = useState(false);
   // expo-image-picker, resolved AHEAD of the tap. The dynamic import is
   // deliberate — it keeps the picker off the startup path — but doing it inside
@@ -1033,11 +1035,6 @@ export default function PostScreen() {
 
   async function pickCover() {
     if (coverBusy) return; // a second tap while the sheet is coming up opens two
-    // Shown BEFORE the await, which is the whole point. Presenting the system
-    // photo sheet is a native round trip that takes a beat on a large library,
-    // and until now the tap produced nothing at all in that time — no press
-    // state worth seeing on a 260pt image, no spinner, no dimming. The button
-    // read as dead, so people tapped it again.
     setCoverBusy(true);
     try {
       // Warmed at mount (see the pre-warm effect); the await is the fallback for
@@ -1875,17 +1872,9 @@ export default function PostScreen() {
                   {/* Only over a real image: on the empty state it would be a
                       button floating on instructions telling you to press the
                       thing underneath it. */}
-                  {!!coverUri && !coverBusy && (
+                  {!!coverUri && (
                     <View style={styles.coverChangeTag} pointerEvents="none">
                       <Text style={styles.coverChangeTagText}>{t('post.coverChangeHint')}</Text>
-                    </View>
-                  )}
-                  {/* The answer to "did that register?". It appears on the same
-                      frame as the press and stays until the system sheet has
-                      been and gone, so the wait belongs to something. */}
-                  {coverBusy && (
-                    <View style={styles.coverBusy} pointerEvents="none">
-                      <Spinner size={30} color="#fff" thickness={3} />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -3069,13 +3058,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
   },
   coverBoxImage: { width: '100%', height: '100%' },
-  // A scrim, not just a spinner: over a bright photo a white ring alone is hard
-  // to find, and dimming the artwork also says the press landed.
-  coverBusy: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
   coverBoxEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: SPACING.md },
   coverBoxTitle: { color: colors.text, fontSize: 15, fontWeight: '700', marginTop: 2 },
   coverBoxSub: { color: colors.textTertiary, fontSize: 12, textAlign: 'center' },

@@ -43,14 +43,26 @@ export function tabContent(rows: readonly any[] | null | undefined): TabContent 
  * @param hasPosts    false when the profile has no posts at all (never posted,
  *   or archived/removed everything) — the caller's cue to keep the default
  *   order rather than re-rank a profile with nothing to rank.
+ * @param hideWhenEmpty keys that should not EXIST at zero, rather than sit at
+ *   the end showing an empty state. A tab is a promise that there is something
+ *   behind it, and Playlists and Reposts are showcases — nothing is created or
+ *   managed from them, so an empty one is a dead end with a label on it. Posts
+ *   and Music are never passed here: they are what a profile IS, and their
+ *   emptiness is information rather than clutter.
+ *
+ *   Applied BEFORE the early return, so a profile with no posts still loses its
+ *   empty showcases.
  */
 export function orderProfileTabs(
   defaultKeys: readonly string[],
   content: Record<string, TabContent>,
   hasPosts: boolean,
+  hideWhenEmpty: readonly string[] = [],
 ): string[] {
-  if (!hasPosts || !defaultKeys.includes('posts')) return [...defaultKeys];
-  const rest = defaultKeys.filter((k) => k !== 'posts');
+  const hidden = new Set(hideWhenEmpty.filter((k) => (content[k] ?? EMPTY).count === 0));
+  const keys = defaultKeys.filter((k) => !hidden.has(k));
+  if (!hasPosts || !keys.includes('posts')) return keys;
+  const rest = keys.filter((k) => k !== 'posts');
   rest.sort((a, b) => {
     const A = content[a] ?? EMPTY;
     const B = content[b] ?? EMPTY;
@@ -59,5 +71,8 @@ export function orderProfileTabs(
     if (byRecency !== 0) return byRecency;                          // then freshest
     return defaultKeys.indexOf(a) - defaultKeys.indexOf(b);         // then as authored
   });
+  // Indexed against defaultKeys deliberately, not the filtered list: the
+  // tiebreak means "as the screen authored them", and removing a tab should not
+  // renumber the ones on either side of it.
   return ['posts', ...rest];
 }

@@ -119,6 +119,10 @@ export default function PublicProfileScreen() {
       playlists: tabContent(publicPlaylists),
     },
     posts.length > 0,
+    // Playlists and Reposts are SHOWCASES — nothing is created or managed from
+    // them — so an empty one is a labelled dead end. Music and Posts are never
+    // hidden: they are what a profile IS, and their emptiness is information.
+    ['playlists', 'reposts'],
   ), [posts, reposts, publicPlaylists]);
   const orderedKeysRef = useRef(orderedKeys);
   orderedKeysRef.current = orderedKeys;
@@ -126,6 +130,13 @@ export default function PublicProfileScreen() {
     () => orderedKeys.map((k) => TABS.find((tb) => tb.key === k)).filter(Boolean) as typeof TABS,
     [orderedKeys],
   );
+  // A tab can now VANISH under the reader — the profile's last repost removed,
+  // its only public playlist made private, or simply the data arriving after
+  // first paint. Left pointing at a key no longer in the strip, activeTab
+  // selects nothing and the page renders blank with no tab lit.
+  useEffect(() => {
+    if (!orderedKeys.includes(activeTab)) setActiveTab('posts');
+  }, [orderedKeys, activeTab]);
 
   // Slide the incoming sub-tab in from the travel direction (Music-pill style).
   const tabAnimX = useRef(new Animated.Value(0)).current;
