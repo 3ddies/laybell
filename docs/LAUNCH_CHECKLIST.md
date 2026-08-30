@@ -20,6 +20,21 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ## 0.0 ✅ THE CURRENT STATE — updated 2026-08-30 (end of session)
 
+> 🚨 **LIVE RIGHT NOW: A FAKE $456.00 IN @3ddie's WALLET.** Applied 2026-08-30
+> for the store screenshot. It is a WITHDRAWABLE balance, not a painted number —
+> with Stripe live, "Transfer to bank" would move $456 of real money against
+> value that never existed. It also carries four fake tips, one fake sale, a
+> fake listing and an ended fake live stream.
+>
+> ```
+> npx supabase db query --linked -f supabase/sql/_DEMO_wallet_456_REVERSE.sql
+> ```
+>
+> **Run that the moment the wallet screenshot is taken, and before ANY build is
+> submitted.** The $58 version of this had to be chased down on launch day; this
+> one is eight times larger. Expect every count in the verify block to come back
+> 0 — they were all 0 before it was applied, which is what makes that provable.
+
 **One-line status: the launch is DONE — Laybell is live on both stores. All work now is
 1.0.1, which is unreleased and lives only on `dev`.**
 
