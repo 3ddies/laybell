@@ -133,6 +133,11 @@ export const GRADIENTS = {
   avatar: ['#6B7C91', '#4E5D6E'] as const,
   gold: ['#F59E0B', '#D97706'] as const,
   diamond: ['#A5F3FC', '#67E8F9'] as const,
+  // MONEY ARRIVING. The same two greens the wallet's balance card already uses,
+  // lifted here so the tip alert and the wallet cannot drift apart — a viewer
+  // who sees this green over a live stream and then opens their wallet should be
+  // looking at the same colour, because it is the same fact.
+  money: ['#22C55E', '#16A34A'] as const,
 };
 
 export const SHADOWS = {

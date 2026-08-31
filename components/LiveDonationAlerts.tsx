@@ -96,7 +96,12 @@ export default function LiveDonationAlerts({ event, topOffset }: {
           },
         ]}
       >
-        <LinearGradient colors={GRADIENTS.primary as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.grad}>
+        {/* GREEN, not the brand orange. Orange is what this app uses for "do
+            something" — Share, Create, Follow back — so a tip alert wearing it
+            read as another prompt rather than as money that has already arrived.
+            Green is the one colour nobody has to be taught here: it is what the
+            wallet's balance card is, and this is that number going up. */}
+        <LinearGradient colors={GRADIENTS.money as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.grad}>
           {/* Sweep of light for emphasis. */}
           <Animated.View style={[styles.shimmer, { transform: [{ translateX: shimmerX }, { rotate: '18deg' }] }]} />
 
@@ -115,7 +120,7 @@ export default function LiveDonationAlerts({ event, topOffset }: {
               </Text>
             </View>
             <View style={styles.amountPill}>
-              <Ionicons name="gift" size={13} color={GRADIENTS.primary[0]} />
+              <Ionicons name="gift" size={13} color={GRADIENTS.money[1]} />
               <Text style={styles.amountText}>{amount}</Text>
             </View>
           </View>
@@ -157,6 +162,8 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: '#fff', borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 4,
   },
-  amountText: { color: GRADIENTS.primary[0], fontSize: 15, fontWeight: '900' },
+  // The pill stays white with GREEN ink, so the amount is the highest-contrast
+  // thing on the card. It is the one number anyone reads.
+  amountText: { color: GRADIENTS.money[1], fontSize: 15, fontWeight: '900' },
   message: { color: '#fff', fontSize: 14, fontWeight: '600', lineHeight: 19, marginLeft: 34 + SPACING.sm },
 });

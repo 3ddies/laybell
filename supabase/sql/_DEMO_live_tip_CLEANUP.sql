@@ -32,12 +32,19 @@ begin
 
   -- Mirror the tips: take the earnings back off the host, the fee off the
   -- platform, and return the credits to the donor so the debit is undone too.
+  --
+  -- available_at matches the HOLD, and must. A tip credits earnings at
+  -- now() + payout_hold_days, so it is not available yet; dating the reversal in
+  -- the PAST — which this file did at first — would have subtracted from the
+  -- available subset while the original sat outside it, and shown the host a
+  -- NEGATIVE available balance for fourteen days. The totals net to zero either
+  -- way, which is exactly why the invariant check would not have caught it.
   if v_spent > 0 then
     perform public.ledger_post(
       'adjustment',
       jsonb_build_array(
         jsonb_build_object('user', v_eddie,   'kind', 'earnings', 'amount_cents', -v_payout,
-                           'available_at', now() - interval '1 day'),
+                           'available_at', now() + (public.payout_hold_days() || ' days')::interval),
         jsonb_build_object('user', v_laybell, 'kind', 'credits',  'amount_cents',  v_spent),
         jsonb_build_object('user', null,      'kind', 'platform', 'amount_cents', -v_fee)),
       'manual', 'demo:live-tip:reversal', 'Reverses the live-tip screenshot demo');
@@ -73,10 +80,17 @@ select
      from ledger_accounts a join ledger_entries e on e.account_id = a.id
      join public.profiles p on p.id = a.user_id
     where lower(p.username) = 'laybell' and a.kind = 'credits')      as laybell_credits_want_0,
+  -- TOTAL, not the available subset: the tip and its reversal both sit behind
+  -- the hold, so they cancel in the total immediately and mature together.
   (select coalesce(sum(e.amount_cents), 0)
      from ledger_accounts a join ledger_entries e on e.account_id = a.id
      join public.profiles p on p.id = a.user_id
     where lower(p.username) = '3ddie' and a.kind = 'earnings')       as eddie_earnings_want_0,
+  (select coalesce(sum(e.amount_cents), 0)
+     from ledger_accounts a join ledger_entries e on e.account_id = a.id
+     join public.profiles p on p.id = a.user_id
+    where lower(p.username) = '3ddie' and a.kind = 'earnings'
+      and e.available_at <= now())                                   as eddie_available_want_0,
   (select count(*) from public.donations)                            as donations_want_0,
   (select count(*) from public.live_streams)                         as live_streams_want_0,
   (select count(*) from public.ledger_verify())                      as invariant_violations_want_0,
