@@ -20,28 +20,21 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ## 0.0 ✅ THE CURRENT STATE — updated 2026-08-30 (end of session)
 
-> 🚨 **DEMO MONEY IN PRODUCTION — one item live, one reversed.** Both are for
-> the 1.0.1 store screenshots (see `docs/STORE_SCREENSHOTS_1.0.1.md`).
+> ✅ **DEMO MONEY: ALL CLEAR as of 2026-08-31.** Both screenshot props are
+> reversed and verified; production holds no fabricated money.
 >
-> **LIVE NOW: $100.00 of credits on @laybell**, so it can send a real $80 tip on
-> camera for the "Go live" shot. Clean up with:
+> - **Live-tip demo** (`_DEMO_live_tip_*`) — cleaned up after the shot. All seven
+>   counters 0: laybell credits, @3ddie earnings (total AND the available
+>   subset), donations, live streams, invariant violations, global sum.
+> - **$456 wallet balance** (`_DEMO_wallet_456.sql`) — reversed. **Must be
+>   RE-APPLIED for the wallet reshoot**, which is still outstanding: the first
+>   capture caught the pre-correction figure of $231.31 from tips, which does not
+>   add up to $456.00 and would be spotted. Reverse it again straight after.
 >
-> ```
-> npx supabase db query --linked -f supabase/sql/_DEMO_live_tip_CLEANUP.sql
-> ```
+> Full health check after cleanup: every `_must_be_0` column 0, both guards
+> intact, 3 accounts / 23 posts / 70 storage objects.
 >
-> That file also reverses whatever tips were actually sent — it reads the real
-> amounts rather than assuming one take — deletes the donation rows and clears
-> ended demo broadcasts. Six counters, all expected to be 0.
->
-> **REVERSED 2026-08-30: the $456.00 wallet balance** (`_DEMO_wallet_456.sql`).
-> Verified clean: available, donations, shop orders, the demo listing, live
-> streams, invariant violations and the global sum all came back 0. It has to be
-> RE-APPLIED for the wallet reshoot, because the first capture caught the
-> pre-correction figure — it showed $231.31 from tips, which does not add up to
-> $456.00 and would be spotted.
->
-> **Neither may be live when a build is submitted.** These are WITHDRAWABLE
+> **Nothing may be live when a build is submitted.** These are WITHDRAWABLE
 > balances, not painted numbers: with Stripe live, "Transfer to bank" moves real
 > money against value that never existed. The $58 version had to be chased down
 > on launch day.
