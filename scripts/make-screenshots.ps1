@@ -68,7 +68,7 @@ $SCHEMES = @{
   brand    = @{ L = @(233, 30, 14);  R = @(255, 140, 0);   Ink = @(255, 255, 255); Edge = 70  }
   ember    = @{ L = @(122, 42, 16);  R = @(28, 22, 20);    Ink = @(255, 255, 255); Edge = 110 }
   graphite = @{ L = @(16, 15, 14);   R = @(38, 35, 32);    Ink = @(255, 255, 255); Edge = 140 }
-  paper    = @{ L = @(242, 241, 237); R = @(252, 251, 247); Ink = @(22, 22, 26);   Edge = 40  }
+  paper    = @{ L = @(242, 241, 237); R = @(252, 251, 247); Ink = @(22, 22, 26);   Edge = 65  }
 }
 $SC = $SCHEMES[$Bg]
 
@@ -79,16 +79,26 @@ $outPlay = Join-Path $repo 'store\screenshots\play'
 $outTablet = Join-Path $repo 'store\screenshots\tablet'
 $outLand = Join-Path $repo 'store\screenshots\landscape'
 
-# Captions, in shot order, from docs/STORE_LISTING.md section 4.
+# Captions, in shot order, from docs/STORE_SCREENSHOTS_1.0.1.md.
+#
+# These are positional: caption N lands on raw file N, so REORDERING THE RAWS
+# WITHOUT REORDERING THIS SILENTLY MISLABELS THE GALLERY. The 1.0.0 order is
+# gone - it captioned the feed "Go live. Get tipped in real time." the moment
+# the 1.0.1 shots went in, because Live moved from 3 to 5.
+#
+# Frame 1 no longer promises "what you want heard first". That described the
+# Featured card, and the capture has none, so it read as a caption pointing at
+# something not on screen - the same mistake as telling a reviewer to turn the
+# phone sideways for Films.
 $CAPTIONS = @(
-  'Music first. Not an afterthought.',
+  'Albums and singles, not just posts.',
   'A whole shelf of films.',
+  'Real songs. Not fifteen-second clips.',
+  'A player built for listening.',
   'Go live. Get tipped in real time.',
-  'Your profile is your storefront.',
   'Sell beats. Buyers get the files instantly.',
-  'Run a session. Bring an audience.',
-  'Communities that stay about the music.',
-  'Your earnings, in one wallet.'
+  'Your earnings, in one wallet.',
+  'A real catalogue, not a feed.'
 )
 
 if (-not (Test-Path $rawDir)) { New-Item -ItemType Directory -Force $rawDir | Out-Null }
@@ -193,6 +203,37 @@ function Build-Frame($srcPath, $caption, $canvasW, $canvasH, $destPath) {
   $path.AddArc($dx, $dy + $dh - 2 * $r, 2 * $r, 2 * $r, 90, 90)
   $path.CloseFigure()
 
+  # Soft drop shadow, drawn UNDER the capture. A rim alone cannot rescue a light
+  # capture on a light ground or a dark one on a dark ground, and this set is
+  # half each - frames 1/6/7/8 are light mode, 2/3/4/5 are dark. Without this,
+  # picking a scheme means picking which half of the gallery goes flat: paper
+  # loses the light shots, ember loses the dark ones. A shadow lifts the device
+  # whatever its own brightness, so the scheme goes back to being taste.
+  #
+  # GDI+ has no blur, so it is faked: concentric rounded rects, largest first,
+  # each barely visible. They accumulate toward the device and fall off outward,
+  # which is what a blur looks like. Nudged down by half the spread so the light
+  # reads as coming from above.
+  $spread = [int](16 * $s)
+  for ($i = $spread; $i -ge 1; $i--) {
+    $a = [int](7 * [Math]::Pow(1 - ($i / ($spread + 1)), 2))
+    if ($a -le 0) { continue }
+    $sx = $dx - $i
+    $sy = $dy - $i + [int]($i / 2)
+    $sw = $dw + 2 * $i
+    $sh = $dh + 2 * $i
+    $sr = $r + $i
+    $sp = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $sp.AddArc($sx, $sy, 2 * $sr, 2 * $sr, 180, 90)
+    $sp.AddArc($sx + $sw - 2 * $sr, $sy, 2 * $sr, 2 * $sr, 270, 90)
+    $sp.AddArc($sx + $sw - 2 * $sr, $sy + $sh - 2 * $sr, 2 * $sr, 2 * $sr, 0, 90)
+    $sp.AddArc($sx, $sy + $sh - 2 * $sr, 2 * $sr, 2 * $sr, 90, 90)
+    $sp.CloseFigure()
+    $sb = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb($a, 0, 0, 0))
+    $g.FillPath($sb, $sp)
+    $sb.Dispose(); $sp.Dispose()
+  }
+
   $state = $g.Save()
   $g.SetClip($path)
   $g.DrawImage($src, $dx, $dy, $dw, $dh)
@@ -258,5 +299,15 @@ foreach ($f in $raws) {
 }
 
 Write-Output ''
+if ($preview) {
+  # Preview mode writes ONLY to preview/<scheme>/. It used to fall through to
+  # both lines below, so it claimed to have built all three size sets and then
+  # ran the Play normaliser over whatever the last real build had left there -
+  # reporting the old set as freshly OK, and exiting non-zero when a file it
+  # expected was not there. A preview must not touch what gets uploaded.
+  Write-Output "Built $i preview frame(s) in store\screenshots\preview\$Bg\ - nothing else was touched."
+  return
+}
+
 Write-Output "Built $($raws.Count) frame(s) for each store."
 node (Join-Path $repo 'scripts\normalize-store-assets.mjs')
