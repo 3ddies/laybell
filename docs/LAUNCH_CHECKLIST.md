@@ -233,6 +233,26 @@ so nothing else needs bumping. **Every code item that was blocking is now closed
 environment has no simulator. Typecheck is clean across `app/`, `components/`, `lib/`,
 `contexts/`, `hooks/`.
 
+### 📋 PLAY CONSOLE FLAGS — carry into 1.0.2, none block a release (noted 2026-08-31)
+
+Google's release dashboard reports these against the LIVE `4 (1.0.0)` build. They
+are analysis of what shipped, not a gate on the next upload.
+
+- ⚠️ **Restricted foreground service types** — "apps targeting Android 15+ cannot
+  use BOOT_COMPLETED broadcast receivers to launch certain foreground service
+  types", naming `expo.modules.audio.service.AudioRecordingService` and
+  `AudioControlsService`. **It comes from `expo-audio ~1.1.1`, not from this
+  repo: BOOT_COMPLETED appears nowhere in `app/`, `components/`, `lib/`,
+  `contexts/` or `app.json`.** Google flags that the library's manifest makes the
+  pattern possible; the crash needs a service actually launched from a boot
+  broadcast, which nothing here does, and Android has been live since 08-28 with
+  no crash signal. **First thing to try in 1.0.2: bump expo-audio and re-check.**
+- 3 recommended, all native-side and all needing a prebuild — so all needing the
+  owner's say-so before any dependency moves: deprecated edge-to-edge APIs,
+  large-screen resizability/orientation, and **16 KB native library alignment**
+  (this one becomes a Play requirement in a future policy window, so it is the
+  one with a deadline attached).
+
 **Release notes are written and length-checked:** `docs/RELEASE_NOTES_1.0.1.md`, one version per
 store because Play caps "what's new" at **500 characters** and App Store at 4000. Play rejects an
 over-length note at submission, so `node scripts/check-release-notes.mjs` asserts both and exits

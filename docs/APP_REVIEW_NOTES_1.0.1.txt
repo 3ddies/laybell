@@ -1,0 +1,39 @@
+Laybell is a music-focused social platform for independent artists and the people who listen to them. Sign-in is required for all features.
+
+DEMO ACCOUNT
+Email: 3ddiemusic@gmail.com / Password: review1
+Sign in with the EMAIL above, not a username. Pre-loaded with posts, a shop listing and a credit balance, with both subscription tiers active, so every paid feature is reachable without a purchase.
+
+USER-GENERATED CONTENT (Guideline 1.2)
+All four required protections are implemented:
+- Automated filtering of objectionable terms on captions and comments.
+- Reporting: the "..." menu on any post, profile, comment or message > Report, with a reason list and a free-text step.
+- Blocking: the "..." menu on any post > Block. A blocked user's posts disappear from the blocker's feed and Explore, and they cannot make contact. Unblock from Settings > Blocked.
+- Published contact information in the app and at laybell.app.
+
+MINORS
+Users under 18 are identified at signup. For them the app disables location capture and targeted advertising, defaults posts to friends-only, restricts incoming direct messages to accounts they follow, blocks livestream broadcasting, and hides posts and stories marked mature. The messaging restriction and the mature-content gate are enforced server-side in the database, not only in the interface.
+
+PURCHASES (Guideline 3.1.1)
+All digital purchases use In-App Purchase. Consumable credit packs at $4.99, $9.99, $19.99, $49.99 and $99.99 - Settings > Credits. Credits are spent in-app on tips, Shop purchases and promoting a post. They cannot be converted back into money or transferred between users. Creator earnings are a separate balance, paid out by bank transfer through Stripe, and never redeemable as credits.
+
+SUBSCRIPTION
+Two auto-renewing tiers in one group - Laybell Premium at $9.99/month and Laybell Premium+ at $19.99/month - Settings > Promotion Tools > the Premium card. Premium+ is the higher service level and adds Films (landscape video up to one hour), removal of all advertising, and unlimited offline downloads. Title, length and price appear on the purchase sheet, with links to the Terms of Use and Privacy Policy.
+
+FILMS
+Films are landscape videos longer than nine minutes, available to Premium+ subscribers, on their own shelf inside Laybell TV. To reach it: open the Explore tab (the magnifying glass in the bottom bar), then tap the TV icon at the top right of that screen, beside the Communities icon. The demo account has Premium+ active, so this is reachable without a purchase.
+
+LIVESTREAMING
+The LIVE button sits beside the home logo. Our streaming provider serves live playback out of its recording pipeline, so a broadcast is necessarily recorded while it is live. That recording is deleted automatically when the broadcast ends; no replay is retained, published or offered for download.
+
+MUSIC LICENSING
+Laybell does not license, host or distribute a commercial music catalogue. All audio is uploaded by users, who warrant they own or control the rights. Laybell LLC additionally holds BMI and ASCAP public performance licences. A DMCA agent is registered with the U.S. Copyright Office, and a repeat-infringer termination policy is published in the Terms of Service and enforced.
+
+EXTERNAL SERVICES
+Supabase (auth, database, storage); RevenueCat (entitlements); Cloudflare Stream (video, live); LiveKit (studio audio); Stripe Connect (payouts to bank accounts only); Resend (parental-consent email); Google Cloud Translation; Tenor (GIFs); Expo/EAS (build, push). No AI services.
+
+AVAILABILITY AND TRACKING
+Available in the United States only, and functions identically for every user there. The app does not track users across other companies' apps or websites, so no App Tracking Transparency prompt appears. Ad personalisation is opt-in and off by default.
+
+CONTACT
+support@laybell.app
