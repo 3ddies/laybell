@@ -182,9 +182,27 @@ export default function PublicProfileScreen() {
     }
   };
 
+  // While a finger is on a horizontal rail inside the page — currently the
+  // albums shelf — the page responder stands down so the rail scrolls instead of
+  // stepping the sub-tab.
+  //
+  // Same-axis competitors: a horizontal scroller inside a horizontal gesture
+  // owner. No threshold can separate them, because the two gestures are the same
+  // gesture; one has to declare itself out. This screen had no such guard at
+  // all, so flicking through albums stepped the sub-tab — and on the FIRST tab a
+  // rightward flick runs the exit branch above, which pops the screen. Scrolling
+  // a shelf could navigate away from the profile.
+  //
+  // Set on touch start, cleared on end AND cancel — cancel being the one that
+  // matters, since a rail that loses the touch gets a cancel rather than an end
+  // and a flag stuck true would silently disable sub-tab swiping. Same set/clear
+  // the tabs row uses on the own-profile screen.
+  const hRailTouchRef = useRef(false);
+
   const pageSwipePan = useRef(PanResponder.create({
     // Forgiving dominance bar (1.25×) so slightly diagonal side-swipes register.
     onMoveShouldSetPanResponder: (_e, g) =>
+      !hRailTouchRef.current &&
       Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.25,
     onPanResponderGrant: () => { swipeFiredRef.current = false; },
     // Once claimed, never surrender mid-gesture — a child stealing the responder
@@ -398,7 +416,16 @@ export default function PublicProfileScreen() {
     return (
       <View style={styles.albumShelf}>
         <Text style={styles.albumShelfLabel}>{t('album.shelf')}</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.albumShelfRow}>
+        {/* Stands the page responder down for the length of the touch, so a
+            flick along the albums scrolls the shelf instead of changing tab. */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.albumShelfRow}
+          onTouchStart={() => { hRailTouchRef.current = true; }}
+          onTouchEnd={() => { hRailTouchRef.current = false; }}
+          onTouchCancel={() => { hRailTouchRef.current = false; }}
+        >
           {albums.map((a) => {
             const cover = albumCover(a);
             return (

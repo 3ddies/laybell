@@ -230,9 +230,30 @@ export default function ProfileScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-  // While a finger is on the tabs PILL ROW, the page responder stands down so
-  // the row scrolls (traversal) instead of stepping the sub-tab.
-  const tabsRowTouchRef = useRef(false);
+  // While a finger is on ANY horizontal rail inside the page — the tabs pill
+  // row, the albums shelf — the page responder stands down so the rail scrolls
+  // instead of stepping the sub-tab.
+  //
+  // This is the same-axis problem: a horizontal scroller inside a horizontal
+  // gesture owner. Crossed axes sort themselves out; same-axis competitors never
+  // do, and no threshold separates them because the two gestures ARE the same
+  // gesture. The only fix is for one to declare itself out, which is what this
+  // ref does. It started life guarding the tabs row alone and is named for the
+  // category now, because the albums shelf was the second rail and will not be
+  // the last: any future horizontal rail wires the same three handlers.
+  //
+  // Set on touch start, cleared on end AND cancel. Cancel is the load-bearing
+  // one: when a rail loses the touch to something else it gets a cancel, not an
+  // end, and clearing on end alone would leave the flag stuck true and silently
+  // kill sub-tab swiping for the rest of the screen's life. A root-level reset
+  // would make that unwedgeable, but React Native has no capture-phase touch
+  // handler (onTouchStartCapture is a DOM prop and does not typecheck here), and
+  // routing it through onStartShouldSetPanResponderCapture would depend on
+  // responder capture running before a child's onTouchStart - true in the
+  // classic event plugin order, not something worth betting the gesture on
+  // under Fabric without a device to prove it. This is the same set/clear the
+  // tabs row has shipped with.
+  const hRailTouchRef = useRef(false);
   // One step per gesture — armed on grant, spent the moment a step fires.
   const swipeFiredRef = useRef(false);
 
@@ -259,7 +280,7 @@ export default function ProfileScreen() {
     // drag) — claiming them here would kill its finger tracking.
     onMoveShouldSetPanResponder: (_e, g) =>
       Platform.OS !== 'android' && // Android: stepper never claims — pager owns swipes, sub-tabs are taps
-      !tabsRowTouchRef.current &&
+      !hRailTouchRef.current &&
       !(activeTabRef.current === 'posts' && g.dx > 0) &&
       Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.25,
     // A LEFTWARD step claimed on Posts must shut the outer pager off for the
@@ -463,7 +484,17 @@ export default function ProfileScreen() {
     return (
       <View style={styles.albumShelf}>
         <Text style={styles.albumShelfLabel}>{t('album.shelf')}</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.albumShelfRow}>
+        {/* Same stand-down as the tabs row: without it, flicking along the
+            albums also steps to the next sub-tab, because the page responder
+            and this shelf are competing for the identical gesture. */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.albumShelfRow}
+          onTouchStart={() => { hRailTouchRef.current = true; }}
+          onTouchEnd={() => { hRailTouchRef.current = false; }}
+          onTouchCancel={() => { hRailTouchRef.current = false; }}
+        >
           {albums.map((a) => {
             const cover = albumCover(a);
             return (
@@ -949,9 +980,9 @@ export default function ProfileScreen() {
         onLayout={(e) => setTabsViewportW(e.nativeEvent.layout.width)}
         onContentSizeChange={(w) => setTabsContentW(w)}
         contentContainerStyle={tabsFit ? styles.tabsContentFit : undefined}
-        onTouchStart={() => { tabsRowTouchRef.current = true; }}
-        onTouchEnd={() => { tabsRowTouchRef.current = false; }}
-        onTouchCancel={() => { tabsRowTouchRef.current = false; }}
+        onTouchStart={() => { hRailTouchRef.current = true; }}
+        onTouchEnd={() => { hRailTouchRef.current = false; }}
+        onTouchCancel={() => { hRailTouchRef.current = false; }}
       >
         <View style={[styles.tabsRow, tabsFit && styles.tabsRowFit]}>
           {orderedTabs.map((tab) => (
