@@ -56,8 +56,9 @@ param(
   #             dark one gets white. The set is half and half, so any single
   #             scheme flattens one half - see the drop-shadow note below. This
   #             inverts instead, so every frame is maximum contrast.
-  [ValidateSet('auto', 'brand', 'ember', 'graphite', 'paper')]
-  [string]$Bg = 'auto',
+  #   black     DEFAULT. Near-black under every frame, light or dark.
+  [ValidateSet('black', 'auto', 'brand', 'ember', 'graphite', 'paper')]
+  [string]$Bg = 'black',
   # Render only the first N shots, into store/screenshots/preview/<Bg>/ - for
   # comparing schemes without rebuilding all three size sets.
   [int]$PreviewCount = 0
@@ -81,6 +82,12 @@ $SCHEMES = @{
   # as deliberate at tile size while still saying black and white.
   onLight  = @{ L = @(8, 8, 10);     R = @(30, 30, 34);    Ink = @(255, 255, 255); Edge = 130; EdgeInk = @(255, 255, 255) }
   onDark   = @{ L = @(255, 255, 255); R = @(243, 242, 239); Ink = @(9, 9, 12);     Edge = 60;  EdgeInk = @(0, 0, 0) }
+
+  # One ground for the whole set. A dark capture on it has almost no luminance
+  # to separate against, so the rim carries more here than in any other scheme -
+  # see the halo in Build-Frame, which replaces a shadow that would be black on
+  # black and therefore nothing at all.
+  black    = @{ L = @(8, 8, 10);     R = @(30, 30, 34);    Ink = @(255, 255, 255); Edge = 150; EdgeInk = @(255, 255, 255) }
 }
 $SC = if ($Bg -eq 'auto') { $null } else { $SCHEMES[$Bg] }
 
@@ -278,13 +285,25 @@ function Build-Frame($srcPath, $caption, $canvasW, $canvasH, $destPath) {
   # does on iOS. No SF face ships with Windows. GDI+ silently substitutes a
   # default for an unknown family rather than failing, so the fallback is
   # explicit: an unnoticed substitution would quietly change every caption.
-  $fontSize = [single](74 * $s)
+  # Segoe UI Black is the heaviest face Windows ships, and it is asked for at
+  # REGULAR weight - the family is already black, so adding Bold on top makes
+  # GDI+ synthesise a smeared fake weight rather than pick a heavier cut. Each
+  # candidate is checked with IsStyleAvailable, because GDI+ substitutes silently
+  # for a family or style it does not have; a caption set that quietly fell back
+  # to Microsoft Sans Serif would still render, just wrong.
+  $fontSize = [single](86 * $s)
+  $fontPicks = @(
+    @{ Fam = 'Segoe UI Black';            Style = [System.Drawing.FontStyle]::Regular },
+    @{ Fam = 'Segoe UI Variable Display'; Style = [System.Drawing.FontStyle]::Bold },
+    @{ Fam = 'Segoe UI';                  Style = [System.Drawing.FontStyle]::Bold }
+  )
   $font = $null
-  foreach ($fam in @('Segoe UI Variable Display', 'Segoe UI Semibold', 'Segoe UI')) {
+  foreach ($p in $fontPicks) {
     try {
-      $test = New-Object System.Drawing.FontFamily($fam)
-      $font = New-Object System.Drawing.Font($test, $fontSize, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
-      $test.Dispose()
+      $ff = New-Object System.Drawing.FontFamily($p.Fam)
+      if (-not $ff.IsStyleAvailable($p.Style)) { $ff.Dispose(); continue }
+      $font = New-Object System.Drawing.Font($ff, $fontSize, $p.Style, [System.Drawing.GraphicsUnit]::Pixel)
+      $ff.Dispose()
       break
     } catch { }
   }
@@ -294,10 +313,12 @@ function Build-Frame($srcPath, $caption, $canvasW, $canvasH, $destPath) {
   # padding lands inside every hand-placed glyph once tracking is on.
   $fmt = [System.Drawing.StringFormat]::GenericTypographic.Clone()
   $fmt.FormatFlags = $fmt.FormatFlags -bor [System.Drawing.StringFormatFlags]::MeasureTrailingSpaces
-  $track = [single](-0.018 * $fontSize)
+  # Heavier and larger type needs MORE negative tracking, not the same: at 86px
+  # black weight the default sidebearings read as gaps.
+  $track = [single](-0.026 * $fontSize)
 
   $lines = Get-CaptionLines $g $caption $font $maxTextW $fmt $track
-  $lineH = [int]($fontSize * 1.14)
+  $lineH = [int]($fontSize * 1.10)
   $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, $sc.Ink[0], $sc.Ink[1], $sc.Ink[2]))
 
   $y = $capTop
@@ -340,9 +361,21 @@ function Build-Frame($srcPath, $caption, $canvasW, $canvasH, $destPath) {
   # each barely visible. They accumulate toward the device and fall off outward,
   # which is what a blur looks like. Nudged down by half the spread so the light
   # reads as coming from above.
+  # A SHADOW OR A HALO, whichever the pairing needs. A black shadow under a dark
+  # capture on a black ground is a shadow nobody can see - the frames that need
+  # lifting most would get nothing. So when both are dark the same falloff is
+  # drawn in white, and the device reads as sitting slightly proud of the ground
+  # instead of dissolving into it. Bright capture on black needs neither: its own
+  # luminance is the separation.
+  $groundLuma = (0.2126 * ($sc.L[0] + $sc.R[0]) + 0.7152 * ($sc.L[1] + $sc.R[1]) + 0.0722 * ($sc.L[2] + $sc.R[2])) / 2.0
+  $capLuma = Get-ChromeLuma $src
+  $halo = ($groundLuma -lt 90) -and ($capLuma -lt 128)
+  $glowInk = if ($halo) { 255 } else { 0 }
+  $glowMax = if ($halo) { 6 } else { 7 }
+
   $spread = [int](16 * $s)
   for ($i = $spread; $i -ge 1; $i--) {
-    $a = [int](7 * [Math]::Pow(1 - ($i / ($spread + 1)), 2))
+    $a = [int]($glowMax * [Math]::Pow(1 - ($i / ($spread + 1)), 2))
     if ($a -le 0) { continue }
     $sx = $dx - $i
     $sy = $dy - $i + [int]($i / 2)
@@ -355,7 +388,7 @@ function Build-Frame($srcPath, $caption, $canvasW, $canvasH, $destPath) {
     $sp.AddArc($sx + $sw - 2 * $sr, $sy + $sh - 2 * $sr, 2 * $sr, 2 * $sr, 0, 90)
     $sp.AddArc($sx, $sy + $sh - 2 * $sr, 2 * $sr, 2 * $sr, 90, 90)
     $sp.CloseFigure()
-    $sb = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb($a, 0, 0, 0))
+    $sb = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb($a, $glowInk, $glowInk, $glowInk))
     $g.FillPath($sb, $sp)
     $sb.Dispose(); $sp.Dispose()
   }
