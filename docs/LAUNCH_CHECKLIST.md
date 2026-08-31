@@ -56,8 +56,36 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 > money against value that never existed. The $58 version had to be chased down
 > on launch day.
 
-**One-line status: the launch is DONE — Laybell is live on both stores. All work now is
-1.0.1, which is unreleased and lives only on `dev`.**
+**One-line status: 1.0.1 IS SUBMITTED TO BOTH STORES (2026-08-31) and is waiting on review.**
+
+## 📮 1.0.1 — SUBMITTED 2026-08-31, build `1.0.1 (7)` from commit `2831cec`
+
+| | iOS | Android |
+|---|---|---|
+| Submitted | ✅ via `eas submit` | ✅ via console upload |
+| Release control | **Manual release — HELD** | **Full rollout, publishes ON APPROVAL** |
+| Screenshots | ✅ new 8-frame set live | ⏳ still the 1.0.0 set |
+| Release notes | ✅ pasted | ✅ pasted |
+
+**The two stores behave differently on approval and that is deliberate.** Apple is held on
+manual release. **Google is NOT** — managed publishing is *off* for this app, so approval
+publishes immediately with no second button. Expect Android to go live first.
+
+**When Apple approves:** install `1.0.1 (7)` from TestFlight and check the two things no one
+has run on a production binary — **Edit Profile's Save with the keyboard up**, and the
+**premium screen**. Then release. With no OTA that window is the only chance to catch
+something before the JS is frozen.
+
+⏳ **Still to do:** replace the Play screenshots (Grow → Store presence → Main store listing,
+from `store/screenshots/play/`). Separate from the release and reviewed separately.
+
+**Three things went wrong submitting, all now fixed and worth not repeating:**
+1. **Screenshots carried an alpha channel** — 21 of 24. `System.Drawing` always writes ARGB
+   and the normaliser strips it, but a run piped through a filter flattened 3 files and
+   stopped. `make-screenshots.ps1` now re-reads the bytes and exits non-zero.
+2. **The reviewer note gave the wrong route to Films** — twice. See `docs/STORE_LISTING.md`.
+3. **App Review notes overran Apple's 4000-char cap.** The submitted text is saved verbatim at
+   `docs/APP_REVIEW_NOTES_1.0.1.txt` (3857 chars).
 
 # 🎉🎉 **LIVE ON BOTH STORES.**
 
