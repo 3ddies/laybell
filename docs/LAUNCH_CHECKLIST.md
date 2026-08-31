@@ -196,9 +196,48 @@ so nothing else needs bumping. **Every code item that was blocking is now closed
   and left `mutedRef` a render behind — so muting could credit up to a 500ms tick of MUTED
   listening toward the 30s that earns an ambient stream.
 
+### Added after the owner's testing pass (08-31, later)
+
+- ✅ **Premium screen, four rounds.** Each tier's buy button moved under its own description
+  (both used to come out of one `packages.map()` at the page bottom, so nothing said which
+  button bought which on a page selling $9.99 beside $19.99). Then "What you get" became **one
+  grouped panel** rather than six separately-bordered cards — because a button attached to the
+  last card read as bolted to "arrange your music" specifically. "Earn Money" lost its accent
+  border: inside a grouped panel, a second outline around one row is the very thing being
+  removed. Glow dropped from both buttons — `plusCard` sets `overflow:'hidden'`, so a glow on
+  the button now inside it would clip while Premium's stayed intact.
+- ✅ **The verify screen said "6-digit"; the code is 8.** `CODE_LEN = 8`, Supabase issues 8, the
+  input accepts 8 — and all ten locales said six, so anyone counting typed six and waited.
+  Fixed everywhere including `docs/EMAIL_SETUP.md` (four times — that is the runbook for
+  configuring the email template). English also needed "a" → "an": a digit swap does not know
+  that eight starts with a vowel sound.
+- ✅ **Notifications' empty state** was the last one still drawing a tinted box around its icon,
+  in brand orange, on the emptiest screen in the app. Now the bare 64pt `textTertiary` glyph
+  that Messages and the Music tab already use.
+- ✅ **Stories tray backfills with suggested accounts** below 3 stories from people you follow,
+  up to 10. They are not dressed as stories: `StoryAvatar` rings only a user who genuinely has
+  an active story, so a suggestion with nothing to watch opens their profile and one that IS
+  posting opens the story — `hasStory()` reads the app-wide flag map, and
+  `fetchActiveStoryFlags` has no follow filter, which `stories.sql`'s "anyone can view active
+  stories" permits.
+- 🔴 **AND IT FOUND A BUG THAT PREDATES IT.** `fetchSuggestedAccounts` returned `[]` before
+  reaching its own backfill whenever contacts, mutuals and nearby were all empty — the exact
+  case the backfill exists for, per its own comment. **Zero signals is every account that skips
+  the onboarding permission prompts**, so the newest user got an empty Explore rail and nothing
+  in the logs, because `[]` is also what "nobody to suggest" legitimately looks like. Found only
+  because the tray put the same engine somewhere the owner would look. Verified against
+  production: `profiles` and `follows` both carry `USING (true)` SELECT policies, so a new
+  account can read what the backfill needs.
+
 **None of the above is device-verified** — all three are touch/audio behaviours and the
 environment has no simulator. Typecheck is clean across `app/`, `components/`, `lib/`,
 `contexts/`, `hooks/`.
+
+**Release notes are written and length-checked:** `docs/RELEASE_NOTES_1.0.1.md`, one version per
+store because Play caps "what's new" at **500 characters** and App Store at 4000. Play rejects an
+over-length note at submission, so `node scripts/check-release-notes.mjs` asserts both and exits
+non-zero — it can gate the submit step. Currently 456/500 and 1978/4000. **They still have to be
+pasted into each console by hand;** `eas submit` sends the binary and nothing else.
 
 **Store screenshots are FINAL** (8 frames, `store/screenshots/{appstore,play,tablet}/`). All
 eight on a near-black ground with Segoe UI Black captions at 86px, tracked in 2.6%; a white
