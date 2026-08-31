@@ -138,6 +138,15 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   const activeSongRef = useRef<string | null>(null);
   const mutedRef = useRef(false); mutedRef.current = muted;
   const mainPlayingRef = useRef(false); mainPlayingRef.current = mainPlaying;
+  // Mirrored for playSong, which is not a render path and so cannot read the
+  // state. The [suspended] effect below fires only on TRANSITIONS, so it can
+  // never re-pause a song that starts after it ran — playSong has to check for
+  // itself. Declared here with the other mirrors rather than beside the effect,
+  // because playSong (above it) is the reason both exist.
+  const suspendedRef = useRef(false); suspendedRef.current = suspended;
+  // True only when WE paused the ambient song for a suspend, so the resume path
+  // never revives a song the user stopped and never fights the main player.
+  const suspendPausedRef = useRef(false);
   const urlCache = useRef<Map<string, string>>(new Map()).current;
 
   // ─── ambient stream accounting (per song, rolling 24h window) ────────────────
@@ -413,16 +422,42 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
       // else: prefetchSong already staged these bytes during the approach —
       // play() on the buffered source is the instant start.
       player.muted = mutedRef.current;
+
+      // DO NOT START UNDER A SUSPEND. A suspend is a takeover — a Cast or
+      // AirPlay session, the GIF maker — and during a cast the feed keeps
+      // scrolling, so this line is genuinely reached while suspended. The
+      // [suspended] effect cannot save it: that fires on transitions, and this
+      // start happens after it already ran.
+      //
+      // app/tv/airplay.tsx says suspend() "pauses feed videos + the ambient song
+      // player". Videos honour it (AppVideo/FeedVideo/ReelVideo each read
+      // `suspended` on their own render path); the ambient player only honoured
+      // it for a song already playing when the suspend began. Scroll onto a song
+      // post mid-cast and it played out of the phone, over the cast.
+      //
+      // Marked as suspend-paused rather than dropped, so the song is staged and
+      // starts when the takeover ends — the same outcome as one paused BY the
+      // suspend, which is what it would have been a moment earlier.
+      if (suspendedRef.current) { suspendPausedRef.current = true; return; }
       player.play();
     } catch {}
   }
 
   function toggleMuted() {
-    setMuted((m) => {
-      const next = !m;
-      try { if (soundRef.current) soundRef.current.muted = next; } catch {}
-      return next;
-    });
+    // Computed from the ref and applied OUTSIDE the updater. A state updater has
+    // to be pure — React may call it more than once for a single update (it does
+    // in StrictMode), and each extra call flipped the native player again, so the
+    // mute button and the audio could end up disagreeing.
+    //
+    // Writing mutedRef here also closes a real accounting hole: it used to be
+    // assigned during render, one render behind the native mute, and the
+    // accrual listener reads it on a 500ms tick. Muting could therefore credit
+    // up to a tick of MUTED listening toward the 30s that earns a stream — which
+    // the file's own contract says never counts.
+    const next = !mutedRef.current;
+    mutedRef.current = next;
+    try { if (soundRef.current) soundRef.current.muted = next; } catch {}
+    setMuted(next);
   }
 
   // When the main player starts (e.g. the user tapped a song name → it's
@@ -461,7 +496,6 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   // to the TV must not leave its attached song looping on the phone — then
   // resume the SAME song when the suspend lifts. Only touches a song WE paused,
   // so it never revives one the user stopped, and never fights the main player.
-  const suspendPausedRef = useRef(false);
   useEffect(() => {
     const p = soundRef.current;
     if (suspended) {
