@@ -9,7 +9,7 @@ import { usePremium } from '../contexts/PremiumContext';
 import SwipeBackPager from '../components/SwipeBackPager';
 // PLUS_RED lives in the theme — the Settings promo row wears the same brand
 // when the member holds plus.
-import { SPACING, RADIUS, GRADIENTS, SHADOWS, PLUS_RED, PLUS_RED_ACCENT, PLUS_RED_LIGHT, type ThemePalette } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, SHADOWS, PLUS_RED, PLUS_RED_ACCENT, PLUS_RED_LIGHT, isDarkPalette, type ThemePalette } from '../constants/theme';
 import type { Pkg } from '../lib/purchases';
 import { DONATION_FEE_RATE_PREMIUM, DONATION_FEE_RATE_STANDARD } from '../lib/donations';
 import { Skeleton, SkeletonLine } from '../components/Skeleton';
@@ -450,7 +450,22 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // separate it from the label was dimming the price against a lighter ground.
   subscribePrice: { color: '#fff', fontSize: 14, fontWeight: '800' },
   restoreBtn: { alignItems: 'center', paddingVertical: SPACING.sm },
-  restoreText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
+  // Restore: Laybell yellow (primaryLight, the yellow end of the logo gradient)
+  // on dark. NOT on light, and this is measured rather than taste — #FAB525 on
+  // the light theme's #F2F1ED ground is 1.59:1, which is not dim, it is
+  // illegible; WCAG asks 4.5:1 for text this size. No yellow in the brand clears
+  // it on an off-white page: even the deeper `gold` #F59E0B only reaches 1.90:1.
+  // So light keeps the orange it had. The owner runs the light theme, so this
+  // choice is the one they will actually see — it is flagged rather than
+  // silently applied.
+  restoreText: {
+    color: isDarkPalette(colors) ? colors.primaryLight : colors.primary,
+    fontSize: 14, fontWeight: '700',
+  },
   legal: { color: colors.textTertiary, fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: SPACING.xs },
-  legalLink: { color: colors.primary, fontWeight: '700' },
+  // Terms and Privacy: white on dark, orange on light, as asked. colors.text
+  // rather than a literal '#fff' so the grey theme gets its own white (#FFFFFF)
+  // and dark gets its off-white (#F5F5F5) — a hardcoded white would be the one
+  // pure-white thing on a page that deliberately has none.
+  legalLink: { color: isDarkPalette(colors) ? colors.text : colors.primary, fontWeight: '700' },
 });
