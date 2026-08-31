@@ -87,7 +87,12 @@ export default function PremiumScreen() {
       {/* Plus packages sell on the red theme, matching their card. */}
       <LinearGradient colors={(isPlusPkg(pkg) ? PLUS_RED : GRADIENTS.primary) as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.subscribeInner}>
         <Text style={styles.subscribeText}>{t(isPlusPkg(pkg) ? 'premium.subscribePlus' : 'premium.subscribe')}</Text>
-        <Text style={styles.subscribePrice}>{pkg.priceString}</Text>
+        {/* The price in a chip rather than as a second run of text. Two strings
+            side by side read as a label that ran on; a chip reads as the price,
+            and it is the number someone is looking for on this screen. */}
+        <View style={styles.pricePill}>
+          <Text style={styles.subscribePrice}>{pkg.priceString}</Text>
+        </View>
       </LinearGradient>
     </TouchableOpacity>
   );
@@ -127,16 +132,20 @@ export default function PremiumScreen() {
                 </View>
               </View>
             ))}
-          </View>
 
-          {/* Premium's button, under Premium's perks and nothing else. The
-              skeleton sits in the same slot so the page does not shuffle when
-              the store call lands. */}
-          {loading ? (
-            <View style={styles.ctaSlot}><Skeleton width="100%" height={50} radius={RADIUS.full} /></View>
-          ) : canBuyBase ? (
-            <View style={styles.ctaSlot}>{basePackages.map(renderCta)}</View>
-          ) : null}
+            {/* INSIDE the perks stack, as its last child. Sitting below the
+                stack it was a pill floating between two sections, belonging to
+                neither. As the closing row it picks up the stack's own gap, so
+                it reads as where the list arrives — and the spacing is the
+                container's rather than a margin tuned to match it, which is one
+                fewer thing to drift.
+
+                The skeleton takes the same place so the page does not reshuffle
+                when the store call lands. */}
+            {loading ? (
+              <Skeleton width="100%" height={54} radius={RADIUS.full} />
+            ) : canBuyBase ? basePackages.map(renderCta) : null}
+          </View>
 
           {/* ── Premium+ — the tier above: Films, no ads, badge freeze, unlimited
                  downloads. Cinematic red with the same rising bubbles as the
@@ -194,17 +203,23 @@ export default function PremiumScreen() {
                 <Text style={styles.plusActiveText}>{t('premium.plusActive')}</Text>
               </View>
             )}
-          </View>
 
-          {/* Premium+'s button, under Premium+'s card. This one slot now serves
-              both the new subscriber and the $9.99 member upgrading — they were
-              two separate renderings of the same button before, which is how
-              they came to sit in different places. */}
-          {loading ? (
-            <View style={styles.ctaSlot}><Skeleton width="100%" height={50} radius={RADIUS.full} /></View>
-          ) : canBuyPlus ? (
-            <View style={styles.ctaSlot}>{plusPackages.map(renderCta)}</View>
-          ) : null}
+            {/* INSIDE the card, below the terms, behind a hairline. Nothing
+                argues about which tier this buys when it is literally part of
+                the Premium+ card — and the divider says "this is the action" the
+                way the perks above are the pitch.
+
+                One slot serves both the new subscriber and the $9.99 member
+                upgrading; those were two separate renderings of the same button
+                before, which is how they ended up in different places. */}
+            {(loading || canBuyPlus) && (
+              <View style={styles.plusFooter}>
+                {loading
+                  ? <Skeleton width="100%" height={54} radius={RADIUS.full} />
+                  : plusPackages.map(renderCta)}
+              </View>
+            )}
+          </View>
 
           {isPremium ? (
             <View style={styles.buy}>
@@ -351,17 +366,38 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   activeBody: { color: colors.textTertiary, fontSize: 13, lineHeight: 19, textAlign: 'center' },
 
   buy: { gap: SPACING.md },
-  // A tier's button sits tight under its own description and clear of the next
-  // card, so the gap above it reads as "belongs to that" and the gap below as
-  // "new section". Even spacing would leave it floating between the two.
-  ctaSlot: { gap: SPACING.sm, marginTop: SPACING.xs, marginBottom: SPACING.lg },
-  subscribeBtn: { borderRadius: RADIUS.full, overflow: 'hidden', ...SHADOWS.glow },
+
+  // The Premium+ button's home, inside the card. The hairline separates action
+  // from pitch; the padding matches plusPerks so the button lines up with the
+  // perk text above rather than sitting a few pixels proud of it.
+  plusFooter: {
+    borderTopWidth: 1, borderTopColor: colors.border,
+    padding: SPACING.md, gap: SPACING.sm,
+  },
+
+  // NO GLOW. It was ...SHADOWS.glow, which plusCard's overflow:'hidden' clips —
+  // that card has to clip, it is what rounds the red hero and the bubbles — so
+  // the two buttons would have glowed differently now that one lives inside it,
+  // on the one screen where the tiers must look like one family. Dropped from
+  // both and the presence put back as size and contrast instead: taller, a
+  // brighter label, and the price in a chip. A flat pill inside a grouped card
+  // is also what the platform's own subscription sheets do.
+  subscribeBtn: { borderRadius: RADIUS.full, overflow: 'hidden' },
   subscribeInner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
-    paddingVertical: SPACING.md + 2,
+    paddingVertical: SPACING.md + 4,
   },
-  subscribeText: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  subscribePrice: { color: '#fff', fontSize: 14, fontWeight: '700', opacity: 0.9 },
+  // Translucent white over either gradient, so one chip works on the orange and
+  // the red without a per-tier colour.
+  pricePill: {
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderRadius: RADIUS.full,
+    paddingHorizontal: SPACING.sm + 2, paddingVertical: 3,
+  },
+  subscribeText: { color: '#fff', fontSize: 16.5, fontWeight: '900', letterSpacing: -0.2 },
+  // Full opacity now: it sits on the chip's own tint, so the 0.9 that used to
+  // separate it from the label was dimming the price against a lighter ground.
+  subscribePrice: { color: '#fff', fontSize: 14, fontWeight: '800' },
   restoreBtn: { alignItems: 'center', paddingVertical: SPACING.sm },
   restoreText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
   legal: { color: colors.textTertiary, fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: SPACING.xs },

@@ -1,7 +1,7 @@
 # Email verification & deliverability — release setup
 
 The app side is done: signup routes to a "Confirm your email" screen where the
-user types the 6-digit code from the email (`app/(auth)/verify-email.tsx`),
+user types the 8-digit code from the email (`app/(auth)/verify-email.tsx`),
 with resend + cooldown, spam-folder hint, and login-side recovery for
 unconfirmed accounts. **None of that matters if the email itself is throttled
 or lands in spam** — that part is Supabase dashboard + DNS config, and it MUST
@@ -49,7 +49,7 @@ Supabase Dashboard → **Auth → Email Templates → Confirm signup**:
 - Subject: `Your Laybell code: {{ .Token }}`
   (a concrete subject with the code both helps users find it and avoids
   vague marketing-ish subjects that spam filters dislike)
-- Body must include **both** `{{ .Token }}` (the 6-digit code the app's
+- Body must include **both** `{{ .Token }}` (the 8-digit code the app's
   verify screen consumes) and `{{ .ConfirmationURL }}` (fallback path).
 
 Suggested body:
@@ -84,7 +84,7 @@ Dashboard → **Auth → Providers → Email**:
       address — email arrives in the **inbox** (not spam) on all three.
 - [ ] Send a signup email to the address from **mail-tester.com** — score ≥ 9/10
       (it checks SPF/DKIM/DMARC alignment and content spamminess).
-- [ ] Code path: type the 6-digit code in the app → lands in onboarding.
+- [ ] Code path: type the 8-digit code in the app → lands in onboarding.
 - [ ] Link path: tap the email link instead → browser confirms → log in from
       the app works (no "Email not confirmed" error).
 - [ ] Resend: button disabled for 60s, then works; second code verifies.
@@ -97,7 +97,7 @@ Dashboard → **Auth → Providers → Email**:
   `/(auth)/verify-email?email=…`; detects Supabase's obfuscated
   repeat-signup response (user with zero identities) and shows
   "already exists" instead of waiting for an email that won't come.
-- `app/(auth)/verify-email.tsx` — 6-digit input (auto-submits, supports
+- `app/(auth)/verify-email.tsx` — 8-digit input (auto-submits, supports
   iOS one-time-code autofill), `verifyOtp` type `signup` with `email`
   fallback, resend with 60s cooldown, spam-folder hint, links back to
   login/signup. On success the session fires the root auth listener →

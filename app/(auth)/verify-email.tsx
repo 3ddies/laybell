@@ -131,7 +131,7 @@ export default function VerifyEmailScreen() {
             </View>
           )}
 
-          {/* NOT an AuthField, deliberately. This is a six-digit code, and the
+          {/* NOT an AuthField, deliberately. This is an 8-digit code, and the
               wide letter-spaced centred digits are what make it legible as one
               at a glance; an icon on the left and 15px body text would make it
               look like an ordinary text box that happens to want numbers. It

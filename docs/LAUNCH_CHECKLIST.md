@@ -1982,7 +1982,7 @@ safe move is to **run the whole list top to bottom** rather than guess what's ap
 - ✅ **[OWNER] AUTH SMTP DONE 2026-07-28 — signup emails now deliver.** Resend on
       `laybell.app`; DKIM (`resend._domainkey`), MX + SPF on the `send` subdomain, all four
       records verified resolving from outside. Template carries `{{ .Token }}`, so the in-app
-      6-digit screen works.
+      8-digit screen works.
 
       **Three things went wrong, worth recording:**
       1. GoDaddy Domain Connect reported *"successfully connected"* and wrote **nothing**.
