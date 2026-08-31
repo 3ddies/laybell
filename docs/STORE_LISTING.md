@@ -252,7 +252,7 @@ SUBSCRIPTION
 Two auto-renewing tiers in one subscription group: Laybell Premium at $9.99/month and Laybell Premium+ at $19.99/month. Premium+ is the higher service level and adds Films (landscape video up to one hour), no advertising anywhere in the app, and unlimited offline downloads. Terms and Privacy Policy links are in the app description and inside the app before purchase.
 
 FILMS
-Films are landscape videos longer than nine minutes, available to Premium+ subscribers and shown on their own shelf inside Laybell TV. Open it with the TV entry beside the home logo. The demo account has Premium+ active, so this is reachable without a purchase.
+Films are landscape videos longer than nine minutes, available to Premium+ subscribers and shown on their own shelf inside Laybell TV. To reach it: open the Explore tab (the magnifying glass in the bottom bar), then tap the TV icon at the top right of that screen, beside the Communities icon. Films has its own shelf on the page that opens. The demo account has Premium+ active, so this is reachable without a purchase.
 
 LIVESTREAMING
 The LIVE button sits next to the home logo. The demo account can start a broadcast. Our streaming provider serves live playback out of its recording pipeline, so a broadcast is necessarily recorded while it is live. That recording is deleted automatically when the broadcast ends — no replay is retained, published or offered for download.
@@ -287,7 +287,19 @@ Laybell has that a generic social app does not:
 7. Communities
 8. Wallet and earnings
 
-⚠️ **CORRECTED 2026-08-31.** This used to say to shoot #2 in landscape, because
+⚠️ **CORRECTED TWICE, AND THE SECOND CORRECTION WAS ALSO WRONG (2026-08-31).**
+The FILMS note above first told the reviewer to turn the device sideways. That
+was replaced with "the TV entry beside the home logo" — which is ALSO wrong, and
+the owner caught it. **That icon opens LIVES** (`app/(tabs)/index.tsx:2295`
+routes to `/live`; its own comment says so). The only route to `/tv` in the app
+is `app/(tabs)/explore.tsx:551`, from the Explore header.
+
+Both icons are a `tv` glyph, which is how they got confused twice. **Verify a
+reviewer instruction against the router, not against memory** — a wrong route
+sends the reviewer looking for the feature that justifies the $19.99 tier and
+finding nothing, which is what a Guideline 2.1 request is made of.
+
+⚠️ **ALSO CORRECTED 2026-08-31.** This used to say to shoot #2 in landscape, because
 "a portrait screenshot of a landscape feature undersells it". **Laybell TV does
 not rotate.** `app/tv/index.tsx` contains no orientation handling at all — the
 word "landscape" appears in that file only to describe the SHAPE of the video
