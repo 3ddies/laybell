@@ -29,7 +29,9 @@ select public.ledger_post(
                        'available_at', now() - interval '1 day'),
     jsonb_build_object('user', null, 'kind', 'platform', 'amount_cents', 45600)),
   'manual',
-  'demo:wallet-456-screenshot:reversal',
+  -- Must match the take in _DEMO_wallet_456.sql. Bump both together: a reversal
+  -- reusing a spent id posts nothing, silently, and leaves the demo money live.
+  'demo:wallet-456-screenshot:take2:reversal',
   'Reverses the store-screenshot demo balance'
 ) as transaction_id;
 

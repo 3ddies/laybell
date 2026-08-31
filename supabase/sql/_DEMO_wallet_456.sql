@@ -108,7 +108,13 @@ select public.ledger_post(
                        'available_at', now() - interval '1 day'),
     jsonb_build_object('user', null, 'kind', 'platform', 'amount_cents', -45600)),
   'manual',
-  'demo:wallet-456-screenshot',
+  -- ⚠️ BUMP THIS (and the matching one in the REVERSE file) FOR EVERY RETAKE.
+  -- ledger_post is idempotent on external_id, which is what stops a double-run
+  -- from minting twice — and it means re-applying after a reversal with the same
+  -- id does NOTHING. It does not error either: the tips and shop rows reappear,
+  -- the headline stays at $0.00, and the only way to notice is that the verify
+  -- block below says 0 where it should say 45600. Keep the two files in step.
+  'demo:wallet-456-screenshot:take2',
   'DEMO BALANCE for the store screenshot - REVERSE IMMEDIATELY'
 ) as transaction_id;
 
