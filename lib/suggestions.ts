@@ -153,8 +153,22 @@ export async function fetchSuggestedAccounts(
   }
 
   // Candidate ids = union of all signals. Reason = highest-priority signal present.
+  //
+  // NO EARLY RETURN ON AN EMPTY SET. There used to be `if (ids.size === 0)
+  // return []` here, and it cancelled the popular-accounts backfill below —
+  // which exists for exactly this case, and says so: "discovery is never empty
+  // even with zero contacts/location/mutual signals".
+  //
+  // Zero signals is not a rare edge. It is every account that skips the
+  // onboarding permission steps: no contacts, nobody followed yet, no location.
+  // So the one user who most needs suggesting to was the one guaranteed to get
+  // none — on Explore's rail and now the stories tray, both silently empty with
+  // nothing in the logs, because returning [] is what "nothing to suggest"
+  // legitimately looks like.
+  //
+  // Everything below tolerates an empty set: the fetch loop skips, the map loop
+  // does not run, and the backfill sees out.length 0 < max and fills it.
   const ids = new Set<string>([...contactIds, ...mutualCount.keys(), ...nearby.keys()]);
-  if (ids.size === 0) return [];
 
   const reasonOf = (id: string): SuggestionReason =>
     contactIds.has(id) ? 'contacts' : mutualCount.has(id) ? 'mutual' : 'nearby';
