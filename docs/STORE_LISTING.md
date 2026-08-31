@@ -88,7 +88,7 @@ GO LIVE
 Broadcast to your followers from your phone, or run a listening session from the studio with real vocal presets. Fans can tip you live, and everyone in the room sees it. Cast the whole thing to your TV.
 
 LAYBELL TV AND FILMS
-Turn your phone sideways for a full landscape feed built for watching, not scrolling. Films sit on their own shelf — full-length work up to an hour, from creators who make more than clips. Cast any of it to your TV.
+A whole shelf of full-length work — up to an hour, from creators who make more than clips. Open Laybell TV from Explore to watch films, lives and long videos in one place. Cast any of it to your TV.
 
 SELL YOUR WORK
 List beats and songs on your own storefront. Sell them outright, lease them, or give them away to fans who follow you. Buyers get the files instantly.
