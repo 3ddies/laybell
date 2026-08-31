@@ -52,8 +52,12 @@ param(
   #             dark ground risks reading as one dark blob at tile size.
   #   paper     the light theme's off-white with dark caption text. Highest
   #             contrast against a dark-UI capture; pops hardest in a grid.
-  [ValidateSet('brand', 'ember', 'graphite', 'paper')]
-  [string]$Bg = 'brand',
+  #   auto      DEFAULT. Picks per frame: a light capture gets a black ground, a
+  #             dark one gets white. The set is half and half, so any single
+  #             scheme flattens one half - see the drop-shadow note below. This
+  #             inverts instead, so every frame is maximum contrast.
+  [ValidateSet('auto', 'brand', 'ember', 'graphite', 'paper')]
+  [string]$Bg = 'auto',
   # Render only the first N shots, into store/screenshots/preview/<Bg>/ - for
   # comparing schemes without rebuilding all three size sets.
   [int]$PreviewCount = 0
@@ -65,12 +69,20 @@ Add-Type -AssemblyName System.Drawing
 # most on the dark schemes: a near-black capture on a near-black ground needs a
 # rim to read as a device rather than a hole.
 $SCHEMES = @{
-  brand    = @{ L = @(233, 30, 14);  R = @(255, 140, 0);   Ink = @(255, 255, 255); Edge = 70  }
-  ember    = @{ L = @(122, 42, 16);  R = @(28, 22, 20);    Ink = @(255, 255, 255); Edge = 110 }
-  graphite = @{ L = @(16, 15, 14);   R = @(38, 35, 32);    Ink = @(255, 255, 255); Edge = 140 }
-  paper    = @{ L = @(242, 241, 237); R = @(252, 251, 247); Ink = @(22, 22, 26);   Edge = 65  }
+  brand    = @{ L = @(233, 30, 14);  R = @(255, 140, 0);   Ink = @(255, 255, 255); Edge = 70;  EdgeInk = @(255, 255, 255) }
+  ember    = @{ L = @(122, 42, 16);  R = @(28, 22, 20);    Ink = @(255, 255, 255); Edge = 110; EdgeInk = @(255, 255, 255) }
+  graphite = @{ L = @(16, 15, 14);   R = @(38, 35, 32);    Ink = @(255, 255, 255); Edge = 140; EdgeInk = @(255, 255, 255) }
+  paper    = @{ L = @(242, 241, 237); R = @(252, 251, 247); Ink = @(22, 22, 26);   Edge = 65;  EdgeInk = @(0, 0, 0) }
+
+  # The two AUTO grounds, named for the capture they are used UNDER, not for
+  # their own colour - the inversion is the whole point and reading these the
+  # wrong way round is easy. Near-black and near-white rather than #000/#fff: a
+  # dead-flat ground looks like a rendering error, and a hair of gradient reads
+  # as deliberate at tile size while still saying black and white.
+  onLight  = @{ L = @(8, 8, 10);     R = @(30, 30, 34);    Ink = @(255, 255, 255); Edge = 130; EdgeInk = @(255, 255, 255) }
+  onDark   = @{ L = @(255, 255, 255); R = @(243, 242, 239); Ink = @(9, 9, 12);     Edge = 60;  EdgeInk = @(0, 0, 0) }
 }
-$SC = $SCHEMES[$Bg]
+$SC = if ($Bg -eq 'auto') { $null } else { $SCHEMES[$Bg] }
 
 $repo = Split-Path -Parent $PSScriptRoot
 $rawDir = Join-Path $repo 'store\screenshots\raw'
@@ -118,29 +130,117 @@ if ($raws.Count -eq 0) {
 # Draws the gradient one column at a time. A GDI+ LinearGradientBrush tiles
 # past the rectangle it was built for and leaves a visible seam; per-column
 # strips cannot.
-function Paint-Gradient($g, $w, $h) {
+function Paint-Gradient($g, $w, $h, $sc) {
   for ($x = 0; $x -lt $w; $x++) {
     $t = $x / [double]($w - 1)
-    $r = [int]($SC.L[0] + ($SC.R[0] - $SC.L[0]) * $t)
-    $gr = [int]($SC.L[1] + ($SC.R[1] - $SC.L[1]) * $t)
-    $b = [int]($SC.L[2] + ($SC.R[2] - $SC.L[2]) * $t)
+    $r = [int]($sc.L[0] + ($sc.R[0] - $sc.L[0]) * $t)
+    $gr = [int]($sc.L[1] + ($sc.R[1] - $sc.L[1]) * $t)
+    $b = [int]($sc.L[2] + ($sc.R[2] - $sc.L[2]) * $t)
     $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(255, $r, $gr, $b))
     $g.DrawLine($pen, $x, 0, $x, $h)
     $pen.Dispose()
   }
 }
 
+# Mean luminance of the capture's BORDER RING, not the whole image. The ring is
+# app chrome - nav bar, tab bar, side margins - and the middle is user content.
+# A dark-mode feed full of bright photos averages out to 69 over the whole
+# frame, which is nearly the threshold; its ring is 26, which is not close to
+# anything. Measured across this set the two groups land at 11-102 and 241, so
+# the call is never marginal.
+function Get-ChromeLuma($img) {
+  $w = 40; $h = 80
+  $tb = New-Object System.Drawing.Bitmap($w, $h)
+  $tg = [System.Drawing.Graphics]::FromImage($tb)
+  $tg.InterpolationMode = 'HighQualityBicubic'
+  $tg.DrawImage($img, 0, 0, $w, $h)
+  $tg.Dispose()
+  $bw = [int]($w * 0.14); $bh = [int]($h * 0.10)
+  $vals = New-Object System.Collections.ArrayList
+  for ($y = 0; $y -lt $h; $y++) {
+    for ($x = 0; $x -lt $w; $x++) {
+      if ($x -lt $bw -or $x -ge ($w - $bw) -or $y -lt $bh -or $y -ge ($h - $bh)) {
+        $p = $tb.GetPixel($x, $y)
+        [void]$vals.Add(0.2126 * $p.R + 0.7152 * $p.G + 0.0722 * $p.B)
+      }
+    }
+  }
+  $tb.Dispose()
+  $sorted = $vals | Sort-Object
+  return [int]$sorted[[int]($sorted.Count / 2)]
+}
+
+# Per-character advances derived from PREFIX widths, so kerning pairs survive.
+# Measuring each glyph alone loses kerning and returns nonsense for a space
+# under GenericTypographic; measuring prefixes costs one extra call per
+# character and is simply correct.
+function Get-Advances($g, $text, $font, $fmt) {
+  $adv = New-Object System.Collections.ArrayList
+  $prev = 0.0
+  for ($i = 1; $i -le $text.Length; $i++) {
+    $w = $g.MeasureString($text.Substring(0, $i), $font, [System.Drawing.PointF]::new(0, 0), $fmt).Width
+    [void]$adv.Add($w - $prev)
+    $prev = $w
+  }
+  return $adv
+}
+
+function Measure-Tracked($g, $text, $font, $fmt, $track) {
+  if ($text.Length -eq 0) { return 0.0 }
+  $w = $g.MeasureString($text, $font, [System.Drawing.PointF]::new(0, 0), $fmt).Width
+  return $w + ($track * ($text.Length - 1))
+}
+
+# iOS display type is tracked TIGHTER than the metrics a font ships with. GDI+
+# has no tracking, so each glyph is placed by hand.
+function Draw-TrackedLine($g, $text, $font, $brush, $centerX, $y, $fmt, $track) {
+  $adv = Get-Advances $g $text $font $fmt
+  $total = Measure-Tracked $g $text $font $fmt $track
+  $x = $centerX - ($total / 2.0)
+  for ($i = 0; $i -lt $text.Length; $i++) {
+    $g.DrawString($text.Substring($i, 1), $font, $brush, [single]$x, [single]$y, $fmt)
+    $x += $adv[$i] + $track
+  }
+}
+
 # Word-wraps to at most 2 lines at the widest font that still fits.
-function Get-CaptionLines($g, $text, $font, $maxW) {
+function Get-CaptionLines($g, $text, $font, $maxW, $fmt, $track) {
   $words = $text.Split(' ')
   $lines = New-Object System.Collections.ArrayList
   $cur = ''
   foreach ($w in $words) {
     $try = if ($cur -eq '') { $w } else { "$cur $w" }
-    if ($g.MeasureString($try, $font).Width -le $maxW) { $cur = $try }
+    # Wrap against the TRACKED width. Wrapping on untracked metrics and drawing
+    # tracked means the two disagree, and the line that only just fitted spills.
+    if ((Measure-Tracked $g $try $font $fmt $track) -le $maxW) { $cur = $try }
     else { [void]$lines.Add($cur); $cur = $w }
   }
   if ($cur -ne '') { [void]$lines.Add($cur) }
+
+  # BALANCE a two-line caption. Greedy wrapping fills line one and leaves
+  # whatever is left, which at 74px strands single words: "Albums and singles,
+  # not just / posts." A lone word under a full line reads as a mistake at any
+  # size and is glaring at gallery scale. Try every split, keep the evenest one
+  # that still fits. Only for two lines - three or more are rare here and
+  # balancing them is a different problem.
+  if ($lines.Count -eq 2) {
+    $best = $null
+    $bestDiff = [double]::MaxValue
+    for ($k = 1; $k -lt $words.Count; $k++) {
+      $a = ($words[0..($k - 1)] -join ' ')
+      $b = ($words[$k..($words.Count - 1)] -join ' ')
+      $wa = Measure-Tracked $g $a $font $fmt $track
+      $wb = Measure-Tracked $g $b $font $fmt $track
+      if ($wa -le $maxW -and $wb -le $maxW) {
+        $d = [Math]::Abs($wa - $wb)
+        if ($d -lt $bestDiff) { $bestDiff = $d; $best = @($a, $b) }
+      }
+    }
+    if ($best) {
+      $lines = New-Object System.Collections.ArrayList
+      [void]$lines.Add($best[0]); [void]$lines.Add($best[1])
+    }
+  }
   return $lines
 }
 
@@ -152,7 +252,12 @@ function Build-Frame($srcPath, $caption, $canvasW, $canvasH, $destPath) {
   $g.InterpolationMode = 'HighQualityBicubic'
   $g.TextRenderingHint = 'ClearTypeGridFit'
 
-  Paint-Gradient $g $canvasW $canvasH
+  # AUTO: invert against the capture. Light shot -> black ground, dark -> white.
+  $sc = if ($SC) { $SC } else {
+    if ((Get-ChromeLuma $src) -ge 128) { $SCHEMES.onLight } else { $SCHEMES.onDark }
+  }
+
+  Paint-Gradient $g $canvasW $canvasH $sc
 
   # Everything below scales off the canvas's SHORT side, so the Apple and Play
   # frames are the same design rather than two that merely resemble each other.
@@ -161,22 +266,43 @@ function Build-Frame($srcPath, $caption, $canvasW, $canvasH, $destPath) {
   # needed, leaving the screenshot stranded at a third of the frame. Portrait is
   # unaffected - its width IS its short side.
   $s = [Math]::Min($canvasW, $canvasH) / 1320.0
-  $capTop = [int](140 * $s)
-  $sideMargin = [int](110 * $s)
-  $fontSize = [single](58 * $s)
-  $font = New-Object System.Drawing.Font('Segoe UI', $fontSize, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
+  $capTop = [int](128 * $s)
+  $sideMargin = [int](96 * $s)
+
+  # iOS large-title proportions: bigger, heavier, tracked in, lines close
+  # together. 58px read as a caption sitting above a picture; this reads as the
+  # headline it is, which is what a store gallery is actually made of.
+  #
+  # Segoe UI Variable Display is Microsoft's DISPLAY optical size - drawn tighter
+  # and with finer detail for large type, which is the same job SF Pro Display
+  # does on iOS. No SF face ships with Windows. GDI+ silently substitutes a
+  # default for an unknown family rather than failing, so the fallback is
+  # explicit: an unnoticed substitution would quietly change every caption.
+  $fontSize = [single](74 * $s)
+  $font = $null
+  foreach ($fam in @('Segoe UI Variable Display', 'Segoe UI Semibold', 'Segoe UI')) {
+    try {
+      $test = New-Object System.Drawing.FontFamily($fam)
+      $font = New-Object System.Drawing.Font($test, $fontSize, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
+      $test.Dispose()
+      break
+    } catch { }
+  }
   $maxTextW = $canvasW - (2 * $sideMargin)
 
-  $lines = Get-CaptionLines $g $caption $font $maxTextW
-  $lineH = [int]($fontSize * 1.25)
-  $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, $SC.Ink[0], $SC.Ink[1], $SC.Ink[2]))
-  $fmt = New-Object System.Drawing.StringFormat
-  $fmt.Alignment = 'Center'
+  # Typographic, not the default: GDI's default format pads each run, and that
+  # padding lands inside every hand-placed glyph once tracking is on.
+  $fmt = [System.Drawing.StringFormat]::GenericTypographic.Clone()
+  $fmt.FormatFlags = $fmt.FormatFlags -bor [System.Drawing.StringFormatFlags]::MeasureTrailingSpaces
+  $track = [single](-0.018 * $fontSize)
+
+  $lines = Get-CaptionLines $g $caption $font $maxTextW $fmt $track
+  $lineH = [int]($fontSize * 1.14)
+  $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, $sc.Ink[0], $sc.Ink[1], $sc.Ink[2]))
 
   $y = $capTop
   foreach ($ln in $lines) {
-    $rect = New-Object System.Drawing.RectangleF(0, $y, $canvasW, $lineH)
-    $g.DrawString($ln, $font, $brush, $rect, $fmt)
+    Draw-TrackedLine $g $ln $font $brush ($canvasW / 2.0) $y $fmt $track
     $y += $lineH
   }
 
@@ -239,8 +365,10 @@ function Build-Frame($srcPath, $caption, $canvasW, $canvasH, $destPath) {
   $g.DrawImage($src, $dx, $dy, $dw, $dh)
   $g.Restore($state)
 
-  $edgeInk = if ($Bg -eq 'paper') { @(0, 0, 0) } else { @(255, 255, 255) }
-  $edge = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb($SC.Edge, $edgeInk[0], $edgeInk[1], $edgeInk[2]), [single](3 * $s))
+  # Rim ink travels with the ground now. It used to be keyed off the scheme NAME
+  # ('paper' means black, everything else white), which cannot express a run
+  # where the ground changes frame to frame.
+  $edge = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb($sc.Edge, $sc.EdgeInk[0], $sc.EdgeInk[1], $sc.EdgeInk[2]), [single](3 * $s))
   $g.DrawPath($edge, $path)
 
   $bmp.Save($destPath, [System.Drawing.Imaging.ImageFormat]::Png)
@@ -267,7 +395,12 @@ foreach ($f in $raws) {
 
   $probe = [System.Drawing.Image]::FromFile($f.FullName)
   $isLandscape = $probe.Width -gt $probe.Height
+  $luma = Get-ChromeLuma $probe
   $probe.Dispose()
+
+  # Report the ground per frame. An automatic choice that is never shown is one
+  # nobody checks, and a misread capture would otherwise be found by eye later.
+  $ground = if ($Bg -ne 'auto') { $Bg } elseif ($luma -ge 128) { 'black' } else { 'white' }
 
   # A landscape capture gets a LANDSCAPE frame. Dropping one into the portrait
   # canvas leaves a thin band adrift in a field of gradient - at thumbnail size
@@ -294,7 +427,7 @@ foreach ($f in $raws) {
   }
 
   $tag = if ($isLandscape) { '   [landscape frame]' } else { '' }
-  Write-Output "$n  $($f.Name)  -> $caption$tag"
+  Write-Output ("{0}  {1,-8} luma {2,3}  {3,-5}  {4}{5}" -f $n, $f.Name, $luma, $ground, $caption, $tag)
   $i++
 }
 
