@@ -26,7 +26,7 @@ import LiveChatOverlay, { useBufferedChat } from '../../components/LiveChatOverl
 import LiveDonationAlerts from '../../components/LiveDonationAlerts';
 import FloatingReactions from '../../components/FloatingReactions';
 import LiveEarnedOverlay from '../../components/LiveEarnedOverlay';
-import { fetchDonationEarnings, fetchStreamEarnings, fmtCents } from '../../lib/donations';
+import { fetchStreamEarnings, fmtCents } from '../../lib/donations';
 
 // Go Live: two broadcast paths off one Cloudflare live input.
 //  • Phone — camera+mic published straight from the device over WHIP; viewers
@@ -121,12 +121,24 @@ export default function GoLiveScreen() {
   // celebratory "You Earned $X" overlay (with a cash-out shortcut) before exit.
   const [endedEarnings, setEndedEarnings] = useState<number | null>(null);
 
-  // While live, poll the donation take-home so the host sees tips roll in. Cheap
-  // RPC every 15s; stops the moment the broadcast ends.
+  // While live, poll THIS STREAM's take-home so the host sees tonight's tips
+  // roll in. Cheap RPC every 15s; stops the moment the broadcast ends.
+  //
+  // It used to poll fetchDonationEarnings(), which is LIFETIME tips across every
+  // stream ever — so the pill read one number all night and the "You earned"
+  // overlay at the end read a smaller one, with nothing to explain the gap. A
+  // host going live for the second time opened on a non-zero total that looked
+  // like tonight's, then watched it apparently shrink when they ended. Same
+  // question the overlay answers, so it has to be the same number: both now come
+  // from fetchStreamEarnings(stream.id).
   useEffect(() => {
     if (phase !== 'live' || !canEarn || !profile?.id) return;
     let alive = true;
-    const pull = () => fetchDonationEarnings().then((e) => { if (alive) setEarnedCents(e.totalCents); });
+    const pull = () => {
+      const id = streamRef.current?.id;
+      if (!id) return;
+      fetchStreamEarnings(id).then((cents) => { if (alive) setEarnedCents(cents); }).catch(() => {});
+    };
     pull();
     const iv = setInterval(pull, 15_000);
     return () => { alive = false; clearInterval(iv); };
