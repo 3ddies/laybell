@@ -4,7 +4,6 @@ import {
 } from 'react-native';
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { COLORS, SPACING, RADIUS, type ThemePalette } from '../constants/theme';
@@ -282,9 +281,12 @@ export default function NotificationsScreen() {
             )}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
-                <LinearGradient colors={[colors.primary + '24', colors.background]} style={styles.emptyIconWrap}>
-                  <Ionicons name="notifications-outline" size={40} color={colors.primary} />
-                </LinearGradient>
+                {/* Bare muted glyph, no container — the same empty state
+                    Messages and the Music tab already use. This screen was the
+                    last one still drawing a tinted box around its icon, which
+                    gave the emptiest view in the app its most decorated object,
+                    and in brand orange, on a screen with nothing to act on. */}
+                <Ionicons name="notifications-outline" size={64} color={colors.textTertiary} />
                 <Text style={styles.emptyTitle}>{t('notifications.emptyTitle')}</Text>
                 <Text style={styles.emptySubtitle}>{t('notifications.emptySub')}</Text>
               </View>
@@ -436,8 +438,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   expandThumb: { width: 56, height: 56, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceLight },
   expandThumbEmpty: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
 
-  emptyContainer: { alignItems: 'center', paddingTop: SPACING.xxl * 2, gap: SPACING.md, paddingHorizontal: SPACING.xl },
-  emptyIconWrap: { width: 90, height: 90, borderRadius: RADIUS.xl + 8, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { color: colors.text, fontSize: 20, fontWeight: '800' },
-  emptySubtitle: { color: colors.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 22 },
+  // Apple's empty-state shape, matched to Messages and the Music tab so the
+  // three read as one pattern rather than three takes on it: a large muted
+  // glyph, a title carrying the weight, a deliberately quieter line under it,
+  // and nothing drawn around any of it.
+  emptyContainer: { alignItems: 'center', paddingTop: SPACING.xxl * 1.5, gap: SPACING.sm, paddingHorizontal: SPACING.xl },
+  emptyTitle: { color: colors.text, fontSize: 19, fontWeight: '800', letterSpacing: -0.4, marginTop: SPACING.sm },
+  emptySubtitle: { color: colors.textTertiary, fontSize: 13.5, lineHeight: 19, textAlign: 'center', maxWidth: 260 },
 });
