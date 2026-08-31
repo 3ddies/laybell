@@ -97,6 +97,25 @@ export default function PremiumScreen() {
     </TouchableOpacity>
   );
 
+  // `joined` squares the bottom of the row and drops its bottom edge, so the CTA
+  // box below continues the same outline instead of starting a second one.
+  const renderPerkRow = (p: (typeof perks)[number], joined = false) => (
+    <View key={p.label} style={[styles.perkRow, p.highlight && styles.perkRowHighlight, joined && styles.perkRowJoined]}>
+      <View style={[styles.perkIcon, p.highlight && styles.perkIconHighlight]}>
+        <Ionicons name={p.icon} size={p.highlight ? 24 : 20} color={p.highlight ? '#fff' : colors.primary} />
+      </View>
+      <View style={styles.perkBody}>
+        <Text style={[styles.perkText, p.highlight && styles.perkTextHighlight]}>{p.label}</Text>
+        <Text style={styles.perkDesc}>{p.desc}</Text>
+      </View>
+    </View>
+  );
+
+  // Whether the button hangs off the last perk. When there is nothing to buy —
+  // already a member, store unreachable — the row closes normally instead of
+  // ending in a squared-off edge with nothing under it.
+  const attachCta = loading || canBuyBase;
+
   return (
     <SwipeBackPager>
       <View style={styles.container}>
@@ -121,30 +140,35 @@ export default function PremiumScreen() {
 
           <Text style={styles.perksTitle}>{t('premium.perksTitle')}</Text>
           <View style={styles.perks}>
-            {perks.map((p) => (
-              <View key={p.label} style={[styles.perkRow, p.highlight && styles.perkRowHighlight]}>
-                <View style={[styles.perkIcon, p.highlight && styles.perkIconHighlight]}>
-                  <Ionicons name={p.icon} size={p.highlight ? 24 : 20} color={p.highlight ? '#fff' : colors.primary} />
-                </View>
-                <View style={styles.perkBody}>
-                  <Text style={[styles.perkText, p.highlight && styles.perkTextHighlight]}>{p.label}</Text>
-                  <Text style={styles.perkDesc}>{p.desc}</Text>
+            {/* Every row but the last renders normally. */}
+            {perks.slice(0, -1).map((p) => renderPerkRow(p))}
+
+            {/* The last perk and the button share ONE grey outline, so the
+                button reads as the bottom of that box rather than a pill parked
+                under it — the same idea as the Premium+ card, where the button
+                lives inside the card behind a hairline. The row squares its
+                bottom and drops its bottom edge; the CTA box picks the outline
+                up, supplies the hairline as its own top border, and rounds off
+                the bottom.
+
+                They are wrapped rather than left as siblings of the stack
+                because `perks` sets a gap, which would apply between them and
+                leave a stripe of page showing through the middle of what is
+                meant to be one box. The wrapper has no gap, so the seam is a
+                hairline and nothing else.
+
+                The skeleton takes the button's exact place, so the page does not
+                reshuffle when the store call lands. */}
+            {attachCta ? (
+              <View>
+                {renderPerkRow(perks[perks.length - 1], true)}
+                <View style={styles.ctaAttached}>
+                  {loading
+                    ? <Skeleton width="100%" height={54} radius={RADIUS.full} />
+                    : basePackages.map(renderCta)}
                 </View>
               </View>
-            ))}
-
-            {/* INSIDE the perks stack, as its last child. Sitting below the
-                stack it was a pill floating between two sections, belonging to
-                neither. As the closing row it picks up the stack's own gap, so
-                it reads as where the list arrives — and the spacing is the
-                container's rather than a margin tuned to match it, which is one
-                fewer thing to drift.
-
-                The skeleton takes the same place so the page does not reshuffle
-                when the store call lands. */}
-            {loading ? (
-              <Skeleton width="100%" height={54} radius={RADIUS.full} />
-            ) : canBuyBase ? basePackages.map(renderCta) : null}
+            ) : renderPerkRow(perks[perks.length - 1])}
           </View>
 
           {/* ── Premium+ — the tier above: Films, no ads, badge freeze, unlimited
@@ -330,6 +354,27 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   perkIconHighlight: { backgroundColor: colors.primary },
   perkTextHighlight: { fontSize: 18, fontWeight: '900', color: colors.text },
+
+  // The last perk when the button hangs off it: square the bottom and drop the
+  // bottom edge, so ctaAttached below continues this same outline. Its own top
+  // border then becomes the hairline between the two — one line, not two
+  // stacked, which is what would read as a seam rather than a divider.
+  //
+  // ASSUMES THE LAST PERK IS NOT THE HIGHLIGHTED ONE. A highlighted row draws a
+  // 1.5px accent edge, and joining that to ctaAttached's 1px grey would step in
+  // both width and colour halfway down the box. Today "Earn Money" is
+  // highlighted and it leads the list deliberately, so this cannot happen —
+  // but reorder `perks` and it silently can.
+  perkRowJoined: { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottomWidth: 0 },
+  // Same fill and edge as a perk row, squared on top and rounded below, so the
+  // pair reads as a single box that happens to end in a button.
+  ctaAttached: {
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1, borderColor: colors.border,
+    borderTopLeftRadius: 0, borderTopRightRadius: 0,
+    borderBottomLeftRadius: RADIUS.lg, borderBottomRightRadius: RADIUS.lg,
+    padding: SPACING.md, gap: SPACING.sm,
+  },
 
   // Premium+ card — cinematic red (see PLUS_RED above) so the tier reads as
   // its own product while staying in Premium's warm family.
