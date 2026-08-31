@@ -249,6 +249,10 @@ export default function TVVideoList({ posts, featured, films, currentUserId, ref
       columnWrapperStyle={styles.rowWrap}
       contentContainerStyle={[styles.content, { paddingBottom: (bottomPad ?? 0) + SPACING.xxl }]}
       showsVerticalScrollIndicator={false}
+      // TV's search box autoFocuses, so this grid is tapped with the keyboard
+      // up whenever anyone searches — which is the only reason to type here.
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       ListHeaderComponent={header}
       onViewableItemsChanged={onViewableItemsChanged}
       viewabilityConfig={viewabilityConfig}

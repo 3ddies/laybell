@@ -360,6 +360,11 @@ export default function LaybellTVScreen() {
             data={lives}
             keyExtractor={(l) => l.id}
             contentContainerStyle={styles.livesContent}
+            // Search autoFocuses when opened, so results are tapped with the
+            // keyboard up — the whole point of searching. Same fix in
+            // TVVideoList, which renders the Videos half of this screen.
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}

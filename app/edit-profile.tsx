@@ -208,7 +208,22 @@ export default function EditProfileScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.inner}>
+    // keyboardShouldPersistTaps is not a nicety on THIS screen: Save lives in
+    // the header inside this scroller, so with a field focused the first tap was
+    // spent dismissing the keyboard and the button never fired. Editing a bio
+    // and pressing Save did nothing, and the fix looked like "press it again".
+    //
+    // automaticallyAdjustKeyboardInsets pairs with it, because the fields at the
+    // bottom - link, phone - sit under the keyboard once it is up. Insets rather
+    // than a KeyboardAvoidingView for the same reason the auth screens chose it:
+    // resizing the container re-lays out the form and makes it jump.
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.inner}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      automaticallyAdjustKeyboardInsets
+    >
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>

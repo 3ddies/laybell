@@ -202,6 +202,11 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
               data={playlists}
               keyExtractor={item => item.id}
               contentContainerStyle={styles.list}
+              // The create-playlist field above autoFocuses, so this list is
+              // routinely tapped with the keyboard up — and picking an existing
+              // playlist instead of finishing the new one is the obvious thing
+              // to do from that state. It took two taps.
+              keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => {
                 const isAdded = added.has(item.id);
                 const isAdding = adding === item.id;

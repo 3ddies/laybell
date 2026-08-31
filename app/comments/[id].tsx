@@ -138,6 +138,12 @@ export default function CommentsScreen() {
         data={comments}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
+        // The composer sits below this list, so the keyboard is up for most of
+        // the time anyone spends here. Without persistTaps the first tap on a
+        // comment - reply, like, the author's avatar - was spent closing the
+        // keyboard and never reached the row.
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="chatbubbles-outline" size={44} color={colors.textTertiary} />
