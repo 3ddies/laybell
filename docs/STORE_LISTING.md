@@ -252,7 +252,7 @@ SUBSCRIPTION
 Two auto-renewing tiers in one subscription group: Laybell Premium at $9.99/month and Laybell Premium+ at $19.99/month. Premium+ is the higher service level and adds Films (landscape video up to one hour), no advertising anywhere in the app, and unlimited offline downloads. Terms and Privacy Policy links are in the app description and inside the app before purchase.
 
 FILMS
-Films are landscape videos longer than nine minutes, available to Premium+ subscribers and shown on their own shelf inside Laybell TV (turn the device sideways, or use the TV entry beside the home logo). The demo account has Premium+ active, so this is reachable without a purchase.
+Films are landscape videos longer than nine minutes, available to Premium+ subscribers and shown on their own shelf inside Laybell TV. Open it with the TV entry beside the home logo. The demo account has Premium+ active, so this is reachable without a purchase.
 
 LIVESTREAMING
 The LIVE button sits next to the home logo. The demo account can start a broadcast. Our streaming provider serves live playback out of its recording pipeline, so a broadcast is necessarily recorded while it is live. That recording is deleted automatically when the broadcast ends — no replay is retained, published or offered for download.
@@ -278,8 +278,8 @@ in search results without anyone tapping through.
 Suggested order — the first two carry the whole listing, so they lead with what
 Laybell has that a generic social app does not:
 1. The feed, with real music posts — this is the product
-2. **Laybell TV in landscape, Films shelf visible** — the clearest "this is not
-   another short-video app" shot in the whole product
+2. **Laybell TV, Films shelf visible** — the clearest "this is not another
+   short-video app" shot in the whole product. PORTRAIT (see the correction below)
 3. Going live, with tips visible
 4. A profile with the shop button
 5. The shop listing screen
@@ -287,8 +287,16 @@ Laybell has that a generic social app does not:
 7. Communities
 8. Wallet and earnings
 
-Shoot #2 in landscape and let it fill the frame; a portrait screenshot of a
-landscape feature undersells it.
+⚠️ **CORRECTED 2026-08-31.** This used to say to shoot #2 in landscape, because
+"a portrait screenshot of a landscape feature undersells it". **Laybell TV does
+not rotate.** `app/tv/index.tsx` contains no orientation handling at all — the
+word "landscape" appears in that file only to describe the SHAPE of the video
+tiles. The screens that actually rotate are the reel viewer
+(`app/reel/[id].tsx`) and the two live screens.
+
+Shoot #2 in PORTRAIT. The argument it makes is that a shelf of films exists,
+which is structurally unlike a feed; the rotation was never the point, and a
+caption promising one the screen cannot perform is worse than no caption.
 
 Text overlays on screenshots consistently outperform bare captures. Keep them
 short enough to read at thumbnail size.
@@ -301,7 +309,7 @@ buys.
 | # | Overlay text | Reads as |
 |---|---|---|
 | 1 | `Music first. Not an afterthought.` | the whole positioning, in four words |
-| 2 | `Turn it sideways for Films.` | tells them the shot is landscape ON PURPOSE |
+| 2 | `A whole shelf of films.` | the differentiator is the catalogue, not a rotation the screen cannot do |
 | 3 | `Go live. Get tipped in real time.` | |
 | 4 | `Your profile is your storefront.` | |
 | 5 | `Sell beats. Buyers get the files instantly.` | |

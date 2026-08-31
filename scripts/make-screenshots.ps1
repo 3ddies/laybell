@@ -82,7 +82,7 @@ $outLand = Join-Path $repo 'store\screenshots\landscape'
 # Captions, in shot order, from docs/STORE_LISTING.md section 4.
 $CAPTIONS = @(
   'Music first. Not an afterthought.',
-  'Turn it sideways for Films.',
+  'A whole shelf of films.',
   'Go live. Get tipped in real time.',
   'Your profile is your storefront.',
   'Sell beats. Buyers get the files instantly.',

@@ -51,7 +51,7 @@ tapping through. They lead with what a generic social app cannot show.
 | # | Shot | Caption |
 |---|------|---------|
 | 1 | **Profile → Music tab**: Featured card, Albums shelf, Singles beneath | `Albums, singles, and what to hear first.` |
-| 2 | **Laybell TV, phone sideways**, Films shelf visible — shoot LANDSCAPE | `Turn it sideways for Films.` |
+| 2 | **Laybell TV**, Films shelf visible — PORTRAIT (see below) | `A whole shelf of films.` |
 | 3 | **Feed with a music video**: rotating title showing the song credit, artwork in the corner | `Real songs. Not fifteen-second clips.` |
 | 4 | **Immersive player**: full-bleed artwork, scrubber | `A player built for listening.` |
 | 5 | **Live**, with a tip landing | `Go live. Get tipped in real time.` |
@@ -69,6 +69,22 @@ Frame 1 changed from the feed to the profile Music tab deliberately. The feed is
 what every social app opens on and it is the frame that says the least; the
 Music tab with Featured, an album and singles is the one screen no other social
 app in the category can produce.
+
+⚠️ **LAYBELL TV DOES NOT ROTATE, and the 1.0.0 instruction to "turn it sideways
+for Films" was simply wrong.** `app/tv/index.tsx` contains no orientation
+handling whatsoever — the word "landscape" appears in it only to describe the
+SHAPE of the video tiles. The three screens that actually rotate are the reel
+viewer (`app/reel/[id].tsx`, which flips to a fullscreen horizontal pager on a
+landscape video) and the two live screens.
+
+So frame 2 is Laybell TV in PORTRAIT. The argument it makes is that a shelf of
+films exists at all, which is structurally different from a feed — the rotation
+was never the point, and a caption promising one the screen cannot perform is
+worse than no caption.
+
+If a landscape frame is still wanted for variety in a gallery of portrait ones,
+the honest source is the reel viewer rotated on an actual FILM. A rotated clip
+of something else is a landscape video, not the Films feature.
 
 ## Where the reshoot stands (2026-08-30)
 
