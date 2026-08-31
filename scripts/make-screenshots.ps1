@@ -477,3 +477,37 @@ if ($preview) {
 
 Write-Output "Built $($raws.Count) frame(s) for each store."
 node (Join-Path $repo 'scripts\normalize-store-assets.mjs')
+
+# ─── Verify the flatten actually happened ───────────────────────────────────
+# System.Drawing always writes 32bpp ARGB, so every frame leaves Build-Frame with
+# an alpha channel and the normaliser above is what removes it. Both stores
+# reject a screenshot that still has one - App Store Connect says "Images can't
+# contain alpha channels or transparencies" and shows a red placeholder.
+#
+# This check exists because that is EXACTLY what shipped: a run whose output was
+# piped through a filter flattened three of twenty-four files and stopped, and
+# nothing noticed until Apple did. The normaliser reports per file, but a report
+# nobody reads is not a check - so the bytes are re-read here, after the fact,
+# and a non-zero exit makes it impossible to miss.
+#
+# PNG layout: 8-byte signature, then the IHDR chunk. Byte 25 is the colour type,
+# where 4 is grey+alpha and 6 is RGBA.
+$alpha = @()
+foreach ($d in @($outApple, $outPlay, $outTablet, $outLand)) {
+  if (-not (Test-Path $d)) { continue }
+  foreach ($f in (Get-ChildItem $d -Filter *.png -File)) {
+    $fs = [System.IO.File]::OpenRead($f.FullName)
+    $buf = New-Object byte[] 26
+    [void]$fs.Read($buf, 0, 26)
+    $fs.Close()
+    if ($buf[25] -eq 4 -or $buf[25] -eq 6) { $alpha += $f.FullName.Replace("$repo\", '') }
+  }
+}
+if ($alpha.Count) {
+  Write-Output ''
+  Write-Output "FAILED: $($alpha.Count) frame(s) still carry an alpha channel. Both stores reject these."
+  foreach ($a in $alpha) { Write-Output "  $a" }
+  Write-Output 'Re-run scripts/normalize-store-assets.mjs and check its output is not being filtered.'
+  exit 1
+}
+Write-Output 'Verified: every frame is RGB with no alpha channel.'
