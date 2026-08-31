@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -97,10 +98,10 @@ export default function PremiumScreen() {
     </TouchableOpacity>
   );
 
-  // `joined` squares the bottom of the row and drops its bottom edge, so the CTA
-  // box below continues the same outline instead of starting a second one.
-  const renderPerkRow = (p: (typeof perks)[number], joined = false) => (
-    <View key={p.label} style={[styles.perkRow, p.highlight && styles.perkRowHighlight, joined && styles.perkRowJoined]}>
+  // A row inside the panel — no edge and no corners of its own now; the panel
+  // draws the only outline there is.
+  const renderPerkRow = (p: (typeof perks)[number]) => (
+    <View style={[styles.perkRow, p.highlight && styles.perkRowHighlight]}>
       <View style={[styles.perkIcon, p.highlight && styles.perkIconHighlight]}>
         <Ionicons name={p.icon} size={p.highlight ? 24 : 20} color={p.highlight ? '#fff' : colors.primary} />
       </View>
@@ -139,36 +140,39 @@ export default function PremiumScreen() {
           </LinearGradient>
 
           <Text style={styles.perksTitle}>{t('premium.perksTitle')}</Text>
-          <View style={styles.perks}>
-            {/* Every row but the last renders normally. */}
-            {perks.slice(0, -1).map((p) => renderPerkRow(p))}
+          {/* ONE panel, not six cards. Attaching the button to the last perk
+              only looked odd because the perks were six separately-bordered
+              cards floating on the page — so the button appeared bolted to
+              "arrange your music" specifically rather than to Premium. Grouping
+              them means the button closes the whole list, which is what it
+              actually buys, and it now matches the Premium+ card exactly:
+              one outline, rows inside, an action at the bottom. */}
+          <View style={styles.perksPanel}>
+            {perks.map((p, i) => (
+              <Fragment key={p.label}>
+                {/* Inset to the text, iOS-style, so the icon column reads as a
+                    column. Skipped after the highlighted row: its tint already
+                    ends there, and a rule on top of a colour change draws the
+                    same boundary twice. */}
+                {i > 0 && !perks[i - 1].highlight && <View style={styles.perkDivider} />}
+                {renderPerkRow(p)}
+              </Fragment>
+            ))}
 
-            {/* The last perk and the button share ONE grey outline, so the
-                button reads as the bottom of that box rather than a pill parked
-                under it — the same idea as the Premium+ card, where the button
-                lives inside the card behind a hairline. The row squares its
-                bottom and drops its bottom edge; the CTA box picks the outline
-                up, supplies the hairline as its own top border, and rounds off
-                the bottom.
-
-                They are wrapped rather than left as siblings of the stack
-                because `perks` sets a gap, which would apply between them and
-                leave a stripe of page showing through the middle of what is
-                meant to be one box. The wrapper has no gap, so the seam is a
-                hairline and nothing else.
+            {/* The action closes the panel, behind a FULL-WIDTH hairline — full
+                width because this is not another list row, and the inset rules
+                above should not be mistaken for it. Same structure as the
+                Premium+ card's footer.
 
                 The skeleton takes the button's exact place, so the page does not
                 reshuffle when the store call lands. */}
-            {attachCta ? (
-              <View>
-                {renderPerkRow(perks[perks.length - 1], true)}
-                <View style={styles.ctaAttached}>
-                  {loading
-                    ? <Skeleton width="100%" height={54} radius={RADIUS.full} />
-                    : basePackages.map(renderCta)}
-                </View>
+            {attachCta && (
+              <View style={styles.perksFooter}>
+                {loading
+                  ? <Skeleton width="100%" height={54} radius={RADIUS.full} />
+                  : basePackages.map(renderCta)}
               </View>
-            ) : renderPerkRow(perks[perks.length - 1])}
+            )}
           </View>
 
           {/* ── Premium+ — the tier above: Films, no ads, badge freeze, unlimited
@@ -332,11 +336,28 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     color: colors.textTertiary, fontSize: 11, fontWeight: '700',
     textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: SPACING.md, paddingHorizontal: SPACING.xs,
   },
-  perks: { gap: SPACING.sm, marginBottom: SPACING.lg },
+  // The whole "what you get" list as one grouped panel. overflow:'hidden' is
+  // load-bearing: the highlighted row paints a background, and without it that
+  // tint would square off the panel's top corners.
+  perksPanel: {
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
+    borderWidth: 1, borderColor: colors.border,
+    overflow: 'hidden', marginBottom: SPACING.lg,
+  },
   perkRow: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
-    borderWidth: 1, borderColor: colors.border, padding: SPACING.md,
+    padding: SPACING.md,
+  },
+  // Indented past the icon column so it starts under the text, which is what
+  // makes a grouped list read as a list rather than a stack of slabs.
+  // padding + icon + gap = the text's left edge.
+  perkDivider: {
+    height: StyleSheet.hairlineWidth, backgroundColor: colors.border,
+    marginLeft: SPACING.md + 44 + SPACING.md,
+  },
+  perksFooter: {
+    borderTopWidth: 1, borderTopColor: colors.border,
+    padding: SPACING.md, gap: SPACING.sm,
   },
   perkIcon: {
     width: 44, height: 44, borderRadius: RADIUS.full,
@@ -346,12 +367,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   perkBody: { flex: 1, gap: 2 },
   perkText: { color: colors.text, fontSize: 15, fontWeight: '700' },
   perkDesc: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
-  // "Earn Money" — the eye-catching lead perk: accent border/tint + a solid
-  // primary icon disc and a bigger, heavier label.
-  perkRowHighlight: {
-    borderColor: colors.primary, borderWidth: 1.5,
-    backgroundColor: colors.primary + '14',
-  },
+  // "Earn Money" — the eye-catching lead perk. It keeps the tint, the solid
+  // primary icon disc and the bigger, heavier label; it LOSES the accent border
+  // it used to draw, because inside a grouped panel a second outline around one
+  // row is exactly the "why is that boxed separately" this change removes. The
+  // tint alone still lands the eye first, and it now reads as the top band of
+  // the panel rather than a card that wandered in.
+  perkRowHighlight: { backgroundColor: colors.primary + '14' },
   perkIconHighlight: { backgroundColor: colors.primary },
   perkTextHighlight: { fontSize: 18, fontWeight: '900', color: colors.text },
 
@@ -359,22 +381,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // bottom edge, so ctaAttached below continues this same outline. Its own top
   // border then becomes the hairline between the two — one line, not two
   // stacked, which is what would read as a seam rather than a divider.
-  //
-  // ASSUMES THE LAST PERK IS NOT THE HIGHLIGHTED ONE. A highlighted row draws a
-  // 1.5px accent edge, and joining that to ctaAttached's 1px grey would step in
-  // both width and colour halfway down the box. Today "Earn Money" is
-  // highlighted and it leads the list deliberately, so this cannot happen —
-  // but reorder `perks` and it silently can.
-  perkRowJoined: { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottomWidth: 0 },
-  // Same fill and edge as a perk row, squared on top and rounded below, so the
-  // pair reads as a single box that happens to end in a button.
-  ctaAttached: {
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1, borderColor: colors.border,
-    borderTopLeftRadius: 0, borderTopRightRadius: 0,
-    borderBottomLeftRadius: RADIUS.lg, borderBottomRightRadius: RADIUS.lg,
-    padding: SPACING.md, gap: SPACING.sm,
-  },
 
   // Premium+ card — cinematic red (see PLUS_RED above) so the tier reads as
   // its own product while staying in Premium's warm family.
