@@ -1,12 +1,14 @@
 import {
-  View, Text, TextInput, TouchableOpacity, Image,
-  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Keyboard,
+  View, Text, TouchableOpacity, Image,
+  StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Keyboard,
 } from 'react-native';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import AuthBackdrop from '../../components/AuthBackdrop';
+import AuthField from '../../components/AuthField';
+import AuthSubmitButton from '../../components/AuthSubmitButton';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -65,9 +67,7 @@ export default function ResetPasswordScreen() {
             <Text style={styles.title}>{t('rpw.doneTitle')}</Text>
             <Text style={styles.body}>{t('rpw.doneBody')}</Text>
           </View>
-          <TouchableOpacity style={styles.button} onPress={() => router.replace('/(tabs)')}>
-            <Text style={styles.buttonText}>{t('rpw.continue')}</Text>
-          </TouchableOpacity>
+          <AuthSubmitButton label={t('rpw.continue')} onPress={() => router.replace('/(tabs)')} />
         </View>
       </View>
     );
@@ -108,48 +108,55 @@ export default function ResetPasswordScreen() {
             </View>
           )}
 
-          <View style={styles.inputWrap}>
-            <Ionicons name="lock-closed-outline" size={18} color={colors.textTertiary} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder={t('rpw.newPassword')}
-              placeholderTextColor={colors.textTertiary}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!show}
-              autoCapitalize="none"
-              editable={!saving}
-            />
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel={show ? t('a11y.hidePassword') : t('a11y.showPassword')}
-              onPress={() => setShow((s) => !s)}
-            >
-              <Ionicons name={show ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.textTertiary} />
-            </TouchableOpacity>
-          </View>
+          {/* AuthField, as login and signup already use: a hairline that turns
+              neutral-on-focus, a fill that lifts a step, and an icon that goes
+              full-strength while the field is live. This screen and verify-email
+              were the last two hand-rolling their own inputs, which is how the
+              focus state existed on two of the four auth screens.
 
-          <View style={styles.inputWrap}>
-            <Ionicons name="lock-closed-outline" size={18} color={colors.textTertiary} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder={t('auth.confirmPassword')}
-              placeholderTextColor={colors.textTertiary}
-              value={confirm}
-              onChangeText={setConfirm}
-              secureTextEntry={!show}
-              autoCapitalize="none"
-              editable={!saving}
-            />
-          </View>
+              textContentType/autoComplete say NEW password, not password: that
+              is what makes iOS offer a generated one and save it afterwards, and
+              it is the difference between a reset screen the keychain
+              understands and one it treats as a login it cannot place. */}
+          <AuthField
+            icon="lock-closed-outline"
+            placeholder={t('rpw.newPassword')}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!show}
+            autoCapitalize="none"
+            textContentType="newPassword"
+            autoComplete="new-password"
+            editable={!saving}
+            right={(
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={show ? t('a11y.hidePassword') : t('a11y.showPassword')}
+                onPress={() => setShow((s) => !s)}
+              >
+                <Ionicons name={show ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.textMeta} />
+              </TouchableOpacity>
+            )}
+          />
 
-          <TouchableOpacity
-            style={[styles.button, saving && styles.buttonDisabled]}
+          <AuthField
+            icon="lock-closed-outline"
+            placeholder={t('auth.confirmPassword')}
+            value={confirm}
+            onChangeText={setConfirm}
+            secureTextEntry={!show}
+            autoCapitalize="none"
+            textContentType="newPassword"
+            autoComplete="new-password"
+            editable={!saving}
+          />
+
+          <AuthSubmitButton
+            label={t('rpw.save')}
             onPress={submit}
+            loading={saving}
             disabled={saving}
-          >
-            {saving ? <ActivityIndicator color={colors.text} /> : <Text style={styles.buttonText}>{t('rpw.save')}</Text>}
-          </TouchableOpacity>
+          />
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -173,18 +180,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.error + '18', borderRadius: RADIUS.md, padding: SPACING.sm + 2 },
   errorText: { color: colors.error, fontSize: 13, flex: 1 },
 
-  inputWrap: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md, height: 50,
-  },
-  inputIcon: { width: 20 },
-  input: { flex: 1, color: colors.text, fontSize: 15 },
-
-  button: {
-    backgroundColor: colors.primary, borderRadius: RADIUS.md,
-    height: 50, alignItems: 'center', justifyContent: 'center', marginTop: SPACING.xs,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  // The input and button styles that used to live here are gone with the
+  // hand-rolled controls — AuthField and AuthSubmitButton own them now.
 });

@@ -1,12 +1,13 @@
 import {
   View, Text, TextInput, TouchableOpacity, Image,
-  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Keyboard,
+  StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Keyboard,
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import AuthBackdrop from '../../components/AuthBackdrop';
+import AuthSubmitButton from '../../components/AuthSubmitButton';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -35,6 +36,9 @@ export default function VerifyEmailScreen() {
   // The signup (or login retry) that brought us here just sent an email, so
   // the resend button starts on cooldown — Supabase rate-limits resends anyway.
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_S);
+  // Local, because the code field is not an AuthField and so does not get the
+  // focus handling for free — see the note beside it.
+  const [focused, setFocused] = useState(false);
   const verifyingRef = useRef(false);
 
   useEffect(() => {
@@ -127,27 +131,34 @@ export default function VerifyEmailScreen() {
             </View>
           )}
 
+          {/* NOT an AuthField, deliberately. This is a six-digit code, and the
+              wide letter-spaced centred digits are what make it legible as one
+              at a glance; an icon on the left and 15px body text would make it
+              look like an ordinary text box that happens to want numbers. It
+              does take AuthField's focus language, though, so the four auth
+              screens agree on what a live field looks like. */}
           <TextInput
-            style={styles.codeInput}
+            style={[styles.codeInput, focused && styles.codeInputFocused]}
             value={code}
             onChangeText={onChangeCode}
             placeholder={t('auth.codePlaceholder')}
-            placeholderTextColor={colors.textTertiary}
+            placeholderTextColor={colors.textMeta}
             keyboardType="number-pad"
             textContentType="oneTimeCode"
             autoComplete="one-time-code"
             maxLength={CODE_LEN}
             autoFocus
             editable={!verifying}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
           />
 
-          <TouchableOpacity
-            style={[styles.button, (verifying || code.length < CODE_LEN) && styles.buttonDisabled]}
+          <AuthSubmitButton
+            label={t('auth.verifyAction')}
             onPress={() => verify(code)}
+            loading={verifying}
             disabled={verifying || code.length < CODE_LEN}
-          >
-            {verifying ? <ActivityIndicator color={colors.text} /> : <Text style={styles.buttonText}>{t('auth.verifyAction')}</Text>}
-          </TouchableOpacity>
+          />
 
           <TouchableOpacity onPress={resend} disabled={cooldown > 0} style={styles.resendBtn}>
             <Text style={[styles.resendText, cooldown > 0 && styles.resendDisabled]}>
@@ -193,18 +204,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   noticeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.primary + '18', borderRadius: RADIUS.md, padding: SPACING.sm + 2 },
   noticeText: { color: colors.primary, fontSize: 13, flex: 1 },
 
+  // Rest state matches AuthField's: surface + hairline. It sat on surfaceLight
+  // at rest, which is AuthField's FOCUSED fill, so the field looked permanently
+  // active and had nowhere left to go when it actually was.
   codeInput: {
-    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.md, paddingVertical: SPACING.md, paddingHorizontal: SPACING.md,
     color: colors.text, fontSize: 24, fontWeight: '700', textAlign: 'center', letterSpacing: 8,
   },
-
-  button: {
-    backgroundColor: colors.primary, borderRadius: RADIUS.md,
-    paddingVertical: SPACING.md + 2, alignItems: 'center',
-  },
-  buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  codeInputFocused: { borderColor: colors.text, backgroundColor: colors.surfaceLight },
 
   resendBtn: { alignItems: 'center', paddingVertical: SPACING.xs },
   resendText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
