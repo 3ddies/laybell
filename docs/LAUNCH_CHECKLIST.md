@@ -18,7 +18,7 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ---
 
-## 0.0 ✅ THE CURRENT STATE — updated 2026-08-30 (end of session)
+## 0.0 ✅ THE CURRENT STATE — updated 2026-08-31 (end of session)
 
 > ✅ **DEMO MONEY: ALL CLEAR as of 2026-08-31.** Both screenshot props are
 > reversed and verified; production holds no fabricated money.
@@ -26,13 +26,30 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 > - **Live-tip demo** (`_DEMO_live_tip_*`) — cleaned up after the shot. All seven
 >   counters 0: laybell credits, @3ddie earnings (total AND the available
 >   subset), donations, live streams, invariant violations, global sum.
-> - **$456 wallet balance** (`_DEMO_wallet_456.sql`) — reversed. **Must be
->   RE-APPLIED for the wallet reshoot**, which is still outstanding: the first
->   capture caught the pre-correction figure of $231.31 from tips, which does not
->   add up to $456.00 and would be spotted. Reverse it again straight after.
+> - **$456 wallet balance** (`_DEMO_wallet_456.sql`) — reshot and reversed. The
+>   figures add up in the shipped frame: `$456.00` over `$304.00 from tips` +
+>   `$152.00 from shop`.
 >
-> Full health check after cleanup: every `_must_be_0` column 0, both guards
-> intact, 3 accounts / 23 posts / 70 storage objects.
+> **Two ways these files lied about their own success, both now fixed in the
+> files themselves:**
+>
+> 1. `ledger_post` is idempotent on `external_id`, so re-applying after a
+>    reversal is a SILENT no-op — the tips and shop rows reappear, the headline
+>    stays `$0.00`, and only the verify block says so. Both demo files now carry
+>    a `:take2` id and a note to bump them **together**. The dangerous half is
+>    the reversal: an apply that no-ops shows `$0.00` and anyone would notice, but
+>    a REVERSAL that no-ops leaves withdrawable money live and looks like success.
+> 2. The tip cleanup zeroed **@laybell** while **@laybellreview** held the $500 —
+>    the grant files name `laybell`, but the tip went from the account with a
+>    known password, the one that gets logged into on the second phone. It
+>    reported `laybell_credits_want_0 = 0` and looked green. Its verify now sums
+>    credits across the WHOLE ledger and names any holder: **a check that
+>    hardcodes the account it expects to be wrong cannot find the one nobody
+>    thought of.**
+>
+> Swept 2026-08-31: every ledger account nets to zero, no donations, no live
+> streams, no credits held by anyone. Health check clean — every `_must_be_0`
+> column 0, 3 accounts / 29 posts / 72 storage objects.
 >
 > **Nothing may be live when a build is submitted.** These are WITHDRAWABLE
 > balances, not painted numbers: with Stripe live, "Transfer to bank" moves real
@@ -153,10 +170,41 @@ cropping moved behind its own sheet; the slideshow reel was lifted OUT of the zo
 layer so only the vertical pager sits above it. Crossed axes nest cleanly. Same-axis
 competitors never do.
 
-**Before 1.0.1 can ship:** version bump, EAS build, submit — **to BOTH stores now**, which the
-old plan did not assume. Still open: `verify-email.tsx` / `reset-password.tsx` on the old
-inputs, the keyboard sweep across the other 41 `TextInput` files, and the `PostMusicContext`
-ambient-audio races (three claims, none re-verified).
+**Before 1.0.1 can ship: EAS build and submit — to BOTH stores.** The version is already
+`1.0.1` in `app.json`; build numbers come from `appVersionSource: remote` + `autoIncrement`,
+so nothing else needs bumping. **Every code item that was blocking is now closed (08-31):**
+
+- ✅ **The last two hand-rolled auth screens.** `reset-password` and `verify-email` now use
+  `AuthField` / `AuthSubmitButton` like login and signup, so the focus state exists on all four
+  rather than on two — and it was missing from the two you reach while locked out. Both
+  password fields declare `textContentType`/`autoComplete` as **new** password, so iOS offers a
+  generated one and saves it. `verify-email`'s code field had been sitting on `surfaceLight` at
+  rest, which is `AuthField`'s FOCUSED fill: it looked permanently active with nowhere to go.
+- ✅ **Keyboard sweep — all 41 `TextInput` files audited, five were broken.** The failure always
+  looks like a dead button: with the keyboard up the first tap on a scroller is spent dismissing
+  it. Worst was **edit-profile**, where Save sits in the header *inside* the scroller, so
+  editing a bio and pressing Save did nothing; it also lacked keyboard insets, leaving link and
+  phone under the keyboard. Also **comments**, **AddToPlaylistModal**, and **TV search** (both
+  halves — the Videos grid lives in `TVVideoList`).
+- ✅ **`PostMusicContext` — one of the three claims was not a bug; two were.** The deferred
+  handoff is sound (`AudioContext` clears `isPlaying` and `currentTrack` in one synchronous
+  block, so React batches them). But **`playSong` ignored a media suspend**: during a Cast or
+  AirPlay session the feed keeps scrolling, and the `[suspended]` effect only fires on
+  transitions, so landing on a song post mid-cast played its song out of the phone over the
+  cast — the exact thing `app/tv/airplay.tsx` says suspend prevents. And **`toggleMuted`
+  mutated the native player inside a `setState` updater**, which React may call more than once,
+  and left `mutedRef` a render behind — so muting could credit up to a 500ms tick of MUTED
+  listening toward the 30s that earns an ambient stream.
+
+**None of the above is device-verified** — all three are touch/audio behaviours and the
+environment has no simulator. Typecheck is clean across `app/`, `components/`, `lib/`,
+`contexts/`, `hooks/`.
+
+**Store screenshots are FINAL** (8 frames, `store/screenshots/{appstore,play,tablet}/`). All
+eight on a near-black ground with Segoe UI Black captions at 86px, tracked in 2.6%; a white
+halo replaces the drop shadow where a dark capture would otherwise dissolve into the ground.
+**The owner has declined the two possible reshoots** — frame 6 keeps its `SOS` status bar, and
+frame 1 has no Featured card. Do not raise them again.
 
 ⚠️ **THE i18n GAP IS MUCH BIGGER THAN THIS FILE USED TO SAY.** It claimed "four new
 `reel.filter.*` strings"; an audit on 2026-08-30 found **459 English keys missing from at least
