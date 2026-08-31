@@ -64,7 +64,7 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 |---|---|---|
 | Submitted | ✅ via `eas submit` | ✅ via console upload |
 | Release control | **Manual release — HELD** | **Full rollout, publishes ON APPROVAL** |
-| Screenshots | ✅ new 8-frame set live | ⏳ still the 1.0.0 set |
+| Screenshots | ✅ new 8-frame set | ✅ phone + 7in + 10in tablet |
 | Release notes | ✅ pasted | ✅ pasted |
 
 **The two stores behave differently on approval and that is deliberate.** Apple is held on
@@ -76,14 +76,21 @@ has run on a production binary — **Edit Profile's Save with the keyboard up**,
 **premium screen**. Then release. With no OTA that window is the only chance to catch
 something before the JS is frozen.
 
-⏳ **Still to do:** replace the Play screenshots (Grow → Store presence → Main store listing,
-from `store/screenshots/play/`). Separate from the release and reviewed separately.
+The Play submission carries **five** changes in one review: the release, the full description,
+and three screenshot sets (phone, 7-inch, 10-inch). Sending the listing restarted the binary
+review — Google warns about that, and it was the right trade because the binary was only ~30
+minutes in and the alternative was two reviews with a wrong description live between them.
 
 **Three things went wrong submitting, all now fixed and worth not repeating:**
 1. **Screenshots carried an alpha channel** — 21 of 24. `System.Drawing` always writes ARGB
    and the normaliser strips it, but a run piped through a filter flattened 3 files and
    stopped. `make-screenshots.ps1` now re-reads the bytes and exits non-zero.
-2. **The reviewer note gave the wrong route to Films** — twice. See `docs/STORE_LISTING.md`.
+2. **"Laybell TV rotates" was wrong in THREE places** — the reviewer note (twice), the repo
+   copy, and the public Play description, which opened its *Laybell TV and Films* section with
+   "Turn your phone sideways". It survived because the NEIGHBOURING sentence about rotating
+   your phone is true — of the reel viewer. The owner caught it both times; all three now say
+   Films is reached from the TV icon in the **Explore** header, which is the only route to
+   `/tv` in the app. See `docs/STORE_LISTING.md`.
 3. **App Review notes overran Apple's 4000-char cap.** The submitted text is saved verbatim at
    `docs/APP_REVIEW_NOTES_1.0.1.txt` (3857 chars).
 
