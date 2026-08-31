@@ -63,6 +63,35 @@ export default function PremiumScreen() {
     Alert.alert(t('premium.title'), ok ? t('premium.restoredOk') : t('premium.restoredNone'));
   }
 
+  // ── Each tier's button belongs under ITS OWN description ───────────────────
+  // Both used to come out of one packages.map() in a single block at the bottom
+  // of the page, which put two buttons under two descriptions with nothing
+  // saying which bought which. On a page selling $9.99 beside $19.99 that is a
+  // question about money, and the answer was "whichever order RevenueCat
+  // returned them in".
+  //
+  // So the list is split and each half rendered next to the card it pays for.
+  const plusPackages = packages.filter(isPlusPkg);
+  const basePackages = packages.filter((p) => !isPlusPkg(p));
+
+  // A Premium member still sees the Plus button — RevenueCat treats it as an
+  // upgrade within the same subscription group — but never the $9.99 one again.
+  const canBuyBase = configured && !loading && !isPremium && basePackages.length > 0;
+  const canBuyPlus = configured && !loading && !isPremiumPlus && plusPackages.length > 0;
+
+  // A function that RETURNS elements, deliberately not a component declared in
+  // render: calling it inlines the nodes, where <Cta/> would be a new component
+  // type every render and remount the button under the user's finger.
+  const renderCta = (pkg: Pkg) => (
+    <TouchableOpacity key={pkg.identifier} activeOpacity={0.85} onPress={() => buy(pkg)} style={styles.subscribeBtn}>
+      {/* Plus packages sell on the red theme, matching their card. */}
+      <LinearGradient colors={(isPlusPkg(pkg) ? PLUS_RED : GRADIENTS.primary) as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.subscribeInner}>
+        <Text style={styles.subscribeText}>{t(isPlusPkg(pkg) ? 'premium.subscribePlus' : 'premium.subscribe')}</Text>
+        <Text style={styles.subscribePrice}>{pkg.priceString}</Text>
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+
   return (
     <SwipeBackPager>
       <View style={styles.container}>
@@ -99,6 +128,15 @@ export default function PremiumScreen() {
               </View>
             ))}
           </View>
+
+          {/* Premium's button, under Premium's perks and nothing else. The
+              skeleton sits in the same slot so the page does not shuffle when
+              the store call lands. */}
+          {loading ? (
+            <View style={styles.ctaSlot}><Skeleton width="100%" height={50} radius={RADIUS.full} /></View>
+          ) : canBuyBase ? (
+            <View style={styles.ctaSlot}>{basePackages.map(renderCta)}</View>
+          ) : null}
 
           {/* ── Premium+ — the tier above: Films, no ads, badge freeze, unlimited
                  downloads. Cinematic red with the same rising bubbles as the
@@ -158,6 +196,16 @@ export default function PremiumScreen() {
             )}
           </View>
 
+          {/* Premium+'s button, under Premium+'s card. This one slot now serves
+              both the new subscriber and the $9.99 member upgrading — they were
+              two separate renderings of the same button before, which is how
+              they came to sit in different places. */}
+          {loading ? (
+            <View style={styles.ctaSlot}><Skeleton width="100%" height={50} radius={RADIUS.full} /></View>
+          ) : canBuyPlus ? (
+            <View style={styles.ctaSlot}>{plusPackages.map(renderCta)}</View>
+          ) : null}
+
           {isPremium ? (
             <View style={styles.buy}>
               {/* The member card names the tier the member actually holds — a
@@ -168,16 +216,6 @@ export default function PremiumScreen() {
                 <Text style={styles.activeTitle}>{t(isPremiumPlus ? 'premium.activePlus' : 'premium.active')}</Text>
                 <Text style={styles.activeBody}>{t('premium.activeBody')}</Text>
               </View>
-              {/* A $9.99 subscriber can still move up — RevenueCat treats the
-                  plus purchase as an upgrade of the same subscription group. */}
-              {!isPremiumPlus && configured && packages.filter(isPlusPkg).map((pkg) => (
-                <TouchableOpacity key={pkg.identifier} activeOpacity={0.85} onPress={() => buy(pkg)} style={styles.subscribeBtn}>
-                  <LinearGradient colors={PLUS_RED as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.subscribeInner}>
-                    <Text style={styles.subscribeText}>{t('premium.subscribePlus')}</Text>
-                    <Text style={styles.subscribePrice}>{pkg.priceString}</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ))}
             </View>
           ) : !configured ? (
             <View style={styles.activeCard}>
@@ -186,9 +224,9 @@ export default function PremiumScreen() {
               <Text style={styles.activeBody}>{t('premium.comingSoonBody')}</Text>
             </View>
           ) : loading ? (
+            // Only restore + legal are skeletoned here now; the two button
+            // skeletons moved up to sit in the slots their buttons will fill.
             <View style={styles.buy}>
-              <Skeleton width="100%" height={50} radius={RADIUS.full} />
-              <Skeleton width="100%" height={50} radius={RADIUS.full} />
               <View style={{ alignItems: 'center', paddingVertical: SPACING.sm }}>
                 <SkeletonLine w={90} h={14} />
               </View>
@@ -199,15 +237,6 @@ export default function PremiumScreen() {
             </View>
           ) : (
             <View style={styles.buy}>
-              {packages.map((pkg) => (
-                <TouchableOpacity key={pkg.identifier} activeOpacity={0.85} onPress={() => buy(pkg)} style={styles.subscribeBtn}>
-                  {/* Plus packages sell on the red theme, matching their card. */}
-                  <LinearGradient colors={(isPlusPkg(pkg) ? PLUS_RED : GRADIENTS.primary) as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.subscribeInner}>
-                    <Text style={styles.subscribeText}>{t(isPlusPkg(pkg) ? 'premium.subscribePlus' : 'premium.subscribe')}</Text>
-                    <Text style={styles.subscribePrice}>{pkg.priceString}</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ))}
               <TouchableOpacity style={styles.restoreBtn} onPress={onRestore}>
                 <Text style={styles.restoreText}>{t('premium.restore')}</Text>
               </TouchableOpacity>
@@ -322,6 +351,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   activeBody: { color: colors.textTertiary, fontSize: 13, lineHeight: 19, textAlign: 'center' },
 
   buy: { gap: SPACING.md },
+  // A tier's button sits tight under its own description and clear of the next
+  // card, so the gap above it reads as "belongs to that" and the gap below as
+  // "new section". Even spacing would leave it floating between the two.
+  ctaSlot: { gap: SPACING.sm, marginTop: SPACING.xs, marginBottom: SPACING.lg },
   subscribeBtn: { borderRadius: RADIUS.full, overflow: 'hidden', ...SHADOWS.glow },
   subscribeInner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
