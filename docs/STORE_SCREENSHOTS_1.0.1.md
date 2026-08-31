@@ -88,23 +88,36 @@ of something else is a landscape video, not the Films feature.
 
 ## Where the reshoot stands (2026-08-30)
 
-First pass captured. Two are keepers, the rest need another go.
+**Seven of eight captured. Only frame 2 is outstanding.**
 
-- ✅ **Immersive player** ("The lite") — dark, full-bleed, use it.
-- ✅ **Feed** (dark, Comeback Szn / Boba) — the best of the set. Real music
-  videos, real titles, dense with product.
-- ⚠️ **Wallet** — caught the pre-correction figure: `$231.31 from tips` against a
-  `$456.00` headline, which does not add up. Re-apply `_DEMO_wallet_456.sql`
-  and reshoot.
-- ⚠️ **Profile** — shot on the POSTS tab. Frame 1 wants the MUSIC tab: Featured
-  card, Albums shelf, Singles.
-- ⚠️ **Shop** — still "Begging cat type beat", a photo of a cat, described as
-  "This is just a smaple test". Same failure as "Tow truck jam" in the 1.0.0
-  set, typo included. Post one real listing with real artwork first.
-- ⚠️ **Landscape** — a cow video in the reel viewer, not Laybell TV with the
-  Films shelf. A landscape REEL undersells the feature the shot exists for.
-- ⏳ **Live + tip** — @laybell holds $100 of demo credits and can send the $80
-  tip whenever. Clean up with `_DEMO_live_tip_CLEANUP.sql` after.
+- ✅ **1 Profile → Music tab** — Albums shelf (*Tone Deaf*, *Schoolyard Rock*,
+  *Short Dreams*) over a Singles section. Shot logged out of the owner view, so
+  it shows Follow/Message rather than Edit — which is the public truth and the
+  better frame. No Featured card, because none is picked yet; adding one would
+  put the newest feature at the top of the lead screenshot.
+- ❌ **2 Laybell TV** — the only missing capture. PORTRAIT, Films shelf visible.
+- ✅ **3 Feed** (dark, Comeback Szn / Boba) — real music videos, real titles.
+- ✅ **4 Immersive player** ("The lite") — dark, full-bleed.
+- ✅ **5 Live + tip** — the $80 landing, green.
+- ✅ **6 Shop listing** — *The Return*, real cover art, real description. The
+  "smaple test" cat beat is gone.
+- ✅ **7 Wallet** — `$456.00`, and `$304.00 from tips` + `$152.00 from shop`
+  now adds up to it.
+- ✅ **8 Album screen** — *Short Dreams*, 7 tracks, 17 min.
+
+**All demo money is reversed as of 2026-08-30.** The wallet balance, the tip, the
+stream, the listing and the credits: every ledger account sums to zero, no
+donations, no live_streams, no credits held by anyone. Two bugs were found doing
+it, both recorded in the demo files themselves — a spent `external_id` makes a
+re-run a silent no-op, and the tip cleanup was zeroing @laybell while
+@laybellreview held the $500.
+
+### The captures still live on the phone
+
+`store/screenshots/raw/` holds the **1.0.0** set, dated 08-10. The script renders
+whatever is in that folder, so it cannot build the new frames until the eight new
+PNGs are copied off the phone and named `01.png`–`08.png` in the order above.
+Nothing else about the run changes.
 
 ## Background
 
