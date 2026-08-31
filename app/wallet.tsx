@@ -10,7 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SwipeBackPager from '../components/SwipeBackPager';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
+import { RADIUS, SPACING, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { reactionPop, notifySuccess } from '../lib/haptics';
@@ -34,7 +34,10 @@ import {
 // a creator can connect a bank before Laybell is ready to send money, and being
 // ready to receive is worth doing early.
 
-const GREEN: [string, string] = ['#22C55E', '#16A34A'];
+// One definition of money-green, in the theme. This pair was written out by
+// hand in three files; the tip alert becoming green made that a fourth, which
+// is one more than any colour should be able to drift in.
+const GREEN = GRADIENTS.money;
 
 export default function WalletScreen() {
   const styles = useThemedStyles(makeStyles);

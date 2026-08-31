@@ -573,7 +573,12 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   livePillText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
   viewerPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
   viewerText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  earnPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: c.primary, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
+  // GREEN, like every other place money appears — the alert that just landed,
+  // the "You earned" overlay at the end, the wallet. This pill is the host's
+  // running total as tips arrive, and it was the last orange one: on the
+  // RECEIVING side, which is exactly where the colour has to say "money", not
+  // "tap me".
+  earnPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: GRADIENTS.money[0], borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
   body: { flex: 1, justifyContent: 'flex-end', padding: 16, paddingBottom: Platform.OS === 'ios' ? 34 : 22 },
   card: { backgroundColor: c.surfaceElevated, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 16, gap: 12 },
   titleInput: { backgroundColor: c.surfaceLight, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: c.text, fontSize: 15 },

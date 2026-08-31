@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing } from 'reac
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
+import { RADIUS, SPACING, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { notifySuccess } from '../lib/haptics';
@@ -13,7 +13,10 @@ import { fmtCents } from '../lib/donations';
 // that made money — a full-screen green moment with a shortcut straight to the
 // Wallet to cash out. Dismiss returns the host to where End took them.
 
-const GREEN: [string, string] = ['#22C55E', '#16A34A'];
+// One definition of money-green, in the theme. This pair was written out by
+// hand in three files; the tip alert becoming green made that a fourth, which
+// is one more than any colour should be able to drift in.
+const GREEN = GRADIENTS.money;
 
 export default function LiveEarnedOverlay({ amountCents, onCashOut, onDone }: {
   amountCents: number;
