@@ -56,25 +56,29 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 > money against value that never existed. The $58 version had to be chased down
 > on launch day.
 
-**One-line status: 1.0.1 IS SUBMITTED TO BOTH STORES (2026-08-31) and is waiting on review.**
+**One-line status: 🎉 1.0.1 IS RELEASED ON THE APP STORE (2026-09-01). Android is still in review.**
 
-## 📮 1.0.1 — SUBMITTED 2026-08-31, build `1.0.1 (7)` from commit `2831cec`
+## 🎉 1.0.1 — build `1.0.1 (7)`, commit `2831cec`, tagged `v1.0.1-build7`
 
 | | iOS | Android |
 |---|---|---|
-| Submitted | ✅ via `eas submit` | ✅ via console upload |
-| Release control | **Manual release — HELD** | **Full rollout, publishes ON APPROVAL** |
+| Submitted | 2026-08-31 13:53 PDT | 2026-08-31 |
+| Approved | ✅ **2026-09-01 11:22** — under 24h | ⏳ in review |
+| Released | ✅ **manually released 2026-09-01** | publishes automatically on approval |
 | Screenshots | ✅ new 8-frame set | ✅ phone + 7in + 10in tablet |
-| Release notes | ✅ pasted | ✅ pasted |
+| Release notes | ✅ | ✅ |
 
-**The two stores behave differently on approval and that is deliberate.** Apple is held on
-manual release. **Google is NOT** — managed publishing is *off* for this app, so approval
-publishes immediately with no second button. Expect Android to go live first.
+Apple can take **up to 24 hours** after release for the version to appear publicly, so the store
+showing 1.0.0 for a while is not a fault.
 
-**When Apple approves:** install `1.0.1 (7)` from TestFlight and check the two things no one
-has run on a production binary — **Edit Profile's Save with the keyboard up**, and the
-**premium screen**. Then release. With no OTA that window is the only chance to catch
-something before the JS is frozen.
+**The manual-release hold paid for itself.** It bought a TestFlight pass on the four keyboard
+fixes, which were reasoned from the code and never run — Edit Profile's Save with the keyboard
+up, comments, TV search, and the playlist sheet. All confirmed working before release. With no
+OTA, that window was the only chance to catch a mistake before the JS froze for the release's
+lifetime.
+
+⚠️ **Still unverified on hardware:** the ambient-audio suspend fix needs a Chromecast or AirPlay
+target to exercise. Low risk, shipped, noted for 1.0.2.
 
 The Play submission carries **five** changes in one review: the release, the full description,
 and three screenshot sets (phone, 7-inch, 10-inch). Sending the listing restarted the binary
