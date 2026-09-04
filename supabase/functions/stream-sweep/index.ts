@@ -13,8 +13,13 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // storage was cleared, or the user simply never came back.
 //
 // SAFETY — an orphan must fail EVERY test before it is touched:
-//   • It is not referenced by posts.video_uid, posts.media_url, or
-//     ad_creatives.media_url (the only three places a uid can be recorded).
+//   • No row anywhere mentions it. Every candidate row is WALKED for Stream
+//     uids rather than checked against a list of known columns — posts (incl.
+//     the slides[] jsonb of a slideshow), ad_creatives, and the content
+//     snapshots on post_reports, which outlive the posts they describe.
+//     This comment previously read "the only three places a uid can be
+//     recorded", and it was wrong by three: video_hls_url, thumbnail_url and
+//     slides[] all hold uids, and a uid this function cannot see is deleted.
 //   • It is not a live recording (`liveInput` set) — those belong to the Live tab
 //     and are never referenced by a Stream video uid.
 //   • It is older than minAgeHours (default 24). A prewarm that is legitimately
@@ -55,11 +60,31 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body, null, 2), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
-const STREAM_UID = /cloudflarestream\.com\/([A-Za-z0-9]+)\//i;
-function uidFromUrl(url: string | null): string | null {
-  if (!url) return null;
-  const m = url.match(STREAM_UID);
-  return m ? m[1] : null;
+// Every Stream uid anywhere inside a row — walked recursively rather than read
+// from a list of known columns.
+//
+// The list-of-columns version read posts.video_uid and posts.media_url and
+// nothing else, which quietly missed THREE places a uid actually lives:
+// posts.video_hls_url, posts.thumbnail_url, and the slides[] jsonb of a
+// slideshow. A uid this function fails to see is indistinguishable from an
+// abandoned upload, and gets DELETED — so the miss is not a gap in coverage,
+// it is content destruction. Walking the whole row closes the class instead of
+// the three instances, and any column added later is covered on the day it is
+// added rather than the day someone remembers.
+const STREAM_UID_G = /cloudflarestream\.com\/([A-Za-z0-9]+)\//gi;
+function collectUids(value: unknown, into: Set<string>): void {
+  if (value === null || value === undefined) return;
+  if (typeof value === 'string') {
+    for (const m of value.matchAll(STREAM_UID_G)) into.add(m[1]);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) collectUids(v, into);
+    return;
+  }
+  if (typeof value === 'object') {
+    for (const v of Object.values(value as Record<string, unknown>)) collectUids(v, into);
+  }
 }
 
 // Every Stream uid the database knows about. Paginated because this grows with the
@@ -68,19 +93,57 @@ async function referencedUids(db: ReturnType<typeof createClient>): Promise<Set<
   const refs = new Set<string>();
   const PAGE = 1000;
 
+  // Widened to every post that COULD hold a uid, not just those that obviously
+  // do. A slideshow whose third slide is a video has no video_uid and a
+  // media_url pointing at slide one's image, so the old filter excluded the row
+  // outright and its video looked unreferenced.
+  //
+  // Columns are named explicitly (rather than '*') so the walker sees the jsonb,
+  // and the whole row is handed to collectUids so no column has to be
+  // remembered. If the select fails on a column this project has not migrated
+  // yet, fall back to the ones that have always existed — slides included,
+  // because that is the one whose absence deletes real media.
+  const FULL = 'video_uid, media_url, thumbnail_url, cover_url, video_hls_url, legacy_media_url, slides';
+  const SAFE = 'video_uid, media_url, thumbnail_url, slides';
+  let cols = FULL;
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await db
+    let { data, error } = await db
       .from('posts')
-      .select('video_uid, media_url')
-      .or('video_uid.not.is.null,media_url.ilike.*cloudflarestream.com*')
+      .select(cols)
+      .or('video_uid.not.is.null,media_url.ilike.*cloudflarestream.com*,type.eq.video,type.eq.slideshow')
       .range(from, from + PAGE - 1);
+    if (error && cols === FULL) {
+      cols = SAFE;
+      ({ data, error } = await db
+        .from('posts')
+        .select(cols)
+        .or('video_uid.not.is.null,media_url.ilike.*cloudflarestream.com*,type.eq.video,type.eq.slideshow')
+        .range(from, from + PAGE - 1));
+    }
     if (error) throw new Error(`posts read failed: ${error.message}`);
     for (const row of data ?? []) {
-      const r = row as { video_uid: string | null; media_url: string | null };
-      if (r.video_uid) refs.add(r.video_uid);
-      const u = uidFromUrl(r.media_url);
-      if (u) refs.add(u);
+      const r = row as Record<string, unknown>;
+      if (typeof r.video_uid === 'string' && r.video_uid) refs.add(r.video_uid);
+      collectUids(r, refs);
     }
+    if (!data || data.length < PAGE) break;
+  }
+
+  // Moderation evidence. A report's content_snapshot outlives the post it
+  // describes (ON DELETE SET NULL, so reports survive an account deletion on
+  // purpose — see supabase/functions/delete-account). Sweeping the video out
+  // from under a snapshot would destroy the evidence the snapshot exists to
+  // preserve, so anything a report still points at is referenced.
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await db
+      .from('post_reports')
+      .select('content_snapshot')
+      .range(from, from + PAGE - 1);
+    if (error) {
+      if (/relation .* does not exist|schema cache/i.test(error.message)) break;
+      throw new Error(`post_reports read failed: ${error.message}`);
+    }
+    for (const row of data ?? []) collectUids(row, refs);
     if (!data || data.length < PAGE) break;
   }
 
@@ -95,10 +158,7 @@ async function referencedUids(db: ReturnType<typeof createClient>): Promise<Set<
       if (/relation .* does not exist|schema cache/i.test(error.message)) break;
       throw new Error(`ad_creatives read failed: ${error.message}`);
     }
-    for (const row of data ?? []) {
-      const u = uidFromUrl((row as { media_url: string | null }).media_url);
-      if (u) refs.add(u);
-    }
+    for (const row of data ?? []) collectUids(row, refs);
     if (!data || data.length < PAGE) break;
   }
 
