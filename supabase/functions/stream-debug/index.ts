@@ -41,14 +41,19 @@ serve(async (req) => {
       // anyway because if it DOES answer, it names every recurring charge on the
       // account and the question is closed without a dashboard trip. A 403 here
       // is information too: it means the answer can only come from the dashboard.
-      const [usageRes, liveRes, subsRes] = await Promise.all([
+      const [usageRes, liveRes, subsRes, imgRes] = await Promise.all([
         fetch(`${base}/storage-usage`, { headers: auth }),
         fetch(`${base}/live_inputs`, { headers: auth }),
         fetch(`https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/subscriptions`, { headers: auth }),
+        // Cloudflare IMAGES, which shares the "Images Stream Basic" subscription
+        // with Stream. Stream's own usage cannot explain a bill above one block,
+        // so the other half of that bundle is the place left to look.
+        fetch(`https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/images/v1/stats`, { headers: auth }),
       ]);
       const usage = await usageRes.json().catch(() => null);
       const live = await liveRes.json().catch(() => null);
       const subs = await subsRes.json().catch(() => null);
+      const img = await imgRes.json().catch(() => null);
       return json({
         storageUsage: usageRes.ok ? usage?.result : { httpStatus: usageRes.status, errors: usage?.errors },
         liveInputs: liveRes.ok
@@ -63,6 +68,9 @@ serve(async (req) => {
               state: s?.state,
             }))
           : { httpStatus: subsRes.status, errors: subs?.errors, note: 'token likely lacks billing scope — read it from the dashboard' },
+        imagesStored: imgRes.ok
+          ? img?.result?.count
+          : { httpStatus: imgRes.status, errors: img?.errors },
       });
     }
 
