@@ -4,6 +4,7 @@ import {
   Dimensions, TextInput, Keyboard, Modal, Pressable, Alert,
 } from 'react-native';
 import { useState, useRef } from 'react';
+import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -82,6 +83,13 @@ export default function OnboardingScreen() {
   const [followed, setFollowed] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  // Profile photo (step 4). Onboarding never asked for one before — which is
+  // why 8 of the first 10 accounts had no avatar, and why the two that did were
+  // the ones that went on to post. Setting a picture is the first act of
+  // ownership someone takes over an account; skipping the question entirely
+  // meant most people never took it.
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   function toggleGenre(id: string) {
     setSelectedGenres(prev => {
@@ -239,7 +247,43 @@ export default function OnboardingScreen() {
     }
     setSuggestions(merged);
     setLoading(false);
+    // Step 4 is the profile photo. The suggestion fetch above stays here on
+    // purpose — it warms while the photo is being chosen, so the follow step
+    // renders instantly instead of spinning.
     setStep(4);
+  }
+
+  // Same upload path as edit-profile: pick square, push to the `avatars`
+  // bucket under the user's own id, then write the public URL to the profile.
+  // Failures are swallowed to a flag rather than an alert — this is onboarding,
+  // and a storage hiccup must never become a wall between someone and the app.
+  async function pickAvatar() {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'] as any, allowsEditing: true, aspect: [1, 1], quality: 0.8,
+      });
+      if (result.canceled || !result.assets[0]) return;
+
+      setUploadingAvatar(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setUploadingAvatar(false); return; }
+
+      const file = result.assets[0];
+      const ext = file.uri.split('.').pop() || 'jpg';
+      const name = `${Date.now()}.${ext}`;
+      const formData = new FormData();
+      formData.append('file', { uri: file.uri, name, type: file.mimeType || 'image/jpeg' } as any);
+
+      const { error: upErr } = await supabase.storage
+        .from('avatars')
+        .upload(`${user.id}/${name}`, formData, { contentType: file.mimeType || 'image/jpeg', upsert: true });
+      if (upErr) { setUploadingAvatar(false); return; }
+
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(`${user.id}/${name}`);
+      await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id);
+      setAvatarUri(publicUrl);
+    } catch {}
+    setUploadingAvatar(false);
   }
 
   async function handleFollow(userId: string) {
@@ -383,7 +427,7 @@ export default function OnboardingScreen() {
       <View style={styles.container}>
         <View style={styles.stepHeader}>
           <View style={styles.progressDots}>
-            {[0, 1, 2, 3].map(i => (
+            {[0, 1, 2, 3, 4].map(i => (
               <View key={i} style={[styles.dot, i === 0 && styles.dotActive]} />
             ))}
           </View>
@@ -507,7 +551,7 @@ export default function OnboardingScreen() {
       <View style={styles.container}>
         <View style={styles.stepHeader}>
           <View style={styles.progressDots}>
-            {[0, 1, 2, 3].map(i => (
+            {[0, 1, 2, 3, 4].map(i => (
               <View key={i} style={[styles.dot, i === 1 && styles.dotActive]} />
             ))}
           </View>
@@ -584,7 +628,7 @@ export default function OnboardingScreen() {
       <View style={styles.container}>
         <View style={styles.stepHeader}>
           <View style={styles.progressDots}>
-            {[0, 1, 2, 3].map(i => (
+            {[0, 1, 2, 3, 4].map(i => (
               <View key={i} style={[styles.dot, i === 2 && styles.dotActive]} />
             ))}
           </View>
@@ -648,13 +692,85 @@ export default function OnboardingScreen() {
     );
   }
 
-  // Step 4: Follow suggestions
+  // Step 4: Profile photo.
+  //
+  // The primary button is "Choose a photo" until there IS one, and only then
+  // becomes Continue — so the default path forward is setting a picture, and
+  // skipping is a decision rather than the easiest thing to do. Skip is still
+  // there: forcing a photo would trade a bounce at signup for a bounce here,
+  // and some people genuinely will not post their face.
+  if (step === 4) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.stepHeader}>
+          <View style={styles.progressDots}>
+            {[0, 1, 2, 3, 4].map(i => (
+              <View key={i} style={[styles.dot, i === 3 && styles.dotActive]} />
+            ))}
+          </View>
+          <Text style={styles.stepTitle}>{t('onboarding.photoTitle')}</Text>
+          <Text style={styles.stepSub}>{t('onboarding.photoSub')}</Text>
+        </View>
+
+        <View style={styles.photoStage}>
+          <TouchableOpacity
+            onPress={pickAvatar}
+            disabled={uploadingAvatar}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={t('onboarding.photoTitle')}
+          >
+            {avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={styles.photoCircle} />
+            ) : (
+              <LinearGradient colors={GRADIENTS.primaryWarm} style={styles.photoCircle}>
+                {uploadingAvatar
+                  ? <ActivityIndicator color="#FFFFFF" />
+                  : <Ionicons name="camera" size={40} color="#FFFFFF" />}
+              </LinearGradient>
+            )}
+            {!!avatarUri && !uploadingAvatar && (
+              <View style={styles.photoEdit}>
+                <Ionicons name="pencil" size={14} color="#FFFFFF" />
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.bottomBar}>
+          <TouchableOpacity
+            style={styles.primaryBtn}
+            onPress={avatarUri ? () => setStep(5) : pickAvatar}
+            disabled={uploadingAvatar}
+          >
+            <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnInner}>
+              {uploadingAvatar ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Text style={styles.primaryBtnText}>
+                    {avatarUri ? t('onboarding.continue') : t('onboarding.photoChoose')}
+                  </Text>
+                  <Ionicons name={avatarUri ? 'arrow-forward' : 'image'} size={20} color="#FFFFFF" />
+                </>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setStep(5)} disabled={uploadingAvatar}>
+            <Text style={styles.skipText}>{t('onboarding.skip')}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Step 5: Follow suggestions
   return (
     <View style={styles.container}>
       <View style={styles.stepHeader}>
         <View style={styles.progressDots}>
-          {[0, 1, 2, 3].map(i => (
-            <View key={i} style={[styles.dot, i === 3 && styles.dotActive]} />
+          {[0, 1, 2, 3, 4].map(i => (
+            <View key={i} style={[styles.dot, i === 4 && styles.dotActive]} />
           ))}
         </View>
         <Text style={styles.stepTitle}>{t('onboarding.followTitle')}</Text>
@@ -784,6 +900,22 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   progressDots: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.sm },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
   dotActive: { width: 24, backgroundColor: colors.primary },
+
+  // Profile-photo step. The circle is the only thing on the screen on purpose —
+  // one question, one target, nothing to read past.
+  photoStage: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  photoCircle: {
+    width: 148, height: 148, borderRadius: 74,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceLight,
+  },
+  photoEdit: {
+    position: 'absolute', bottom: 2, right: 2,
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary,
+    borderWidth: 3, borderColor: colors.background,
+  },
   stepTitle: { color: colors.text, fontSize: 28, fontWeight: '800' },
   stepSub: { color: colors.textSecondary, fontSize: 15, lineHeight: 22 },
 
