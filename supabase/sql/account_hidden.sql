@@ -44,6 +44,74 @@ create policy "Hidden authors' playlists are invisible"
     or not exists (select 1 from public.profiles p where p.id = user_id and p.hidden)
   );
 
+-- ── Added 2026-09-04: the surfaces the first pass missed ────────────────────
+--
+-- The three policies above cover posts, stories and playlists. They were the
+-- whole of a hidden author's public content when this file was written; they
+-- are not any more. Hiding an account left its STOREFRONT up — an active
+-- listing with a seller whose profile is blocked, so a buyer could open a
+-- product and hit a dead end on the person selling it. Albums shipped in 1.0.1
+-- and were never covered at all.
+--
+-- shop_listings already had two restrictive policies, which is what made this
+-- easy to miss: they are about copyright removal and moderation takedowns, and
+-- neither has anything to do with hidden authors.
+--
+-- The whole file is idempotent — re-run it.
+
+drop policy if exists "Hidden sellers' listings are invisible" on public.shop_listings;
+create policy "Hidden sellers' listings are invisible"
+  on public.shop_listings as restrictive for select
+  using (
+    user_id = auth.uid()
+    or not exists (select 1 from public.profiles p where p.id = user_id and p.hidden)
+  );
+
+-- An album is a playlist by another name — same shape, same reasoning.
+drop policy if exists "Hidden authors' albums are invisible" on public.albums;
+create policy "Hidden authors' albums are invisible"
+  on public.albums as restrictive for select
+  using (
+    user_id = auth.uid()
+    or not exists (select 1 from public.profiles p where p.id = user_id and p.hidden)
+  );
+
+-- album_tracks has no user_id of its own, so ownership is read through the
+-- album. Hiding the album is most of the protection — you cannot discover the
+-- id — but a shared link carries one, and these rows hold a per-track title
+-- override. An orphaned track (no album row) resolves to false and stays hidden,
+-- which is the right way for this to fail.
+drop policy if exists "Hidden authors' album tracks are invisible" on public.album_tracks;
+create policy "Hidden authors' album tracks are invisible"
+  on public.album_tracks as restrictive for select
+  using (
+    exists (
+      select 1 from public.albums a
+       where a.id = album_id
+         and (
+           a.user_id = auth.uid()
+           or not exists (select 1 from public.profiles p where p.id = a.user_id and p.hidden)
+         )
+    )
+  );
+
+-- A hidden account must not appear on the Live tab. The app does not currently
+-- stop a hidden user from broadcasting, so this is the layer that holds.
+drop policy if exists "Hidden broadcasters' streams are invisible" on public.live_streams;
+create policy "Hidden broadcasters' streams are invisible"
+  on public.live_streams as restrictive for select
+  using (
+    user_id = auth.uid()
+    or not exists (select 1 from public.profiles p where p.id = user_id and p.hidden)
+  );
+
+-- DELIBERATELY NOT COVERED: communities.
+--
+-- A community is shared infrastructure with its own members and moderators, not
+-- personal content. Hiding one because the person who created it went private
+-- would take it away from everyone else in it. Written down so a later audit
+-- reads this as a decision rather than the same oversight twice.
+
 -- ── Manual deletion (run from the dashboard when you want to clean up) ───────
 -- Accounts whose owners asked for deletion and have been gone 3+ months:
 --   select id, username, delete_requested_at, last_seen_at
