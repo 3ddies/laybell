@@ -5,7 +5,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { MAX_FEATURES, type Feature } from '../lib/features';
+import { MAX_FEATURES, MAX_FEATURE_NAME, featureKey, type Feature } from '../lib/features';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -64,6 +64,26 @@ export default function FeaturesModal({
     });
   }
 
+  // A credit for someone who is not on Laybell. Named, not linked.
+  const typed = query.trim().slice(0, MAX_FEATURE_NAME);
+  // Only offered once the query is a plausible name, and never when it would
+  // duplicate something already picked or shadow an account that IS on Laybell —
+  // an exact username or display-name match should be selected from the list so
+  // the credit actually links somewhere.
+  const shadowsAccount = results.some(
+    (r) => r.username.toLowerCase() === typed.toLowerCase()
+      || (r.display_name ?? '').toLowerCase() === typed.toLowerCase(),
+  );
+  const alreadyPicked = selected.some((f) => featureKey(f) === featureKey({ id: null, name: typed }));
+  const canAddTyped =
+    typed.length >= 2 && !shadowsAccount && !alreadyPicked && selected.length < MAX_FEATURES;
+
+  function addTyped() {
+    if (!canAddTyped) return;
+    setSelected((prev) => [...prev, { id: null, name: typed }]);
+    setQuery('');
+  }
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.backdrop}>
@@ -78,8 +98,15 @@ export default function FeaturesModal({
 
           {selected.length > 0 && (
             <View style={styles.chips}>
+              {/* Keyed and removed by featureKey, not by id — every typed credit
+                  has a null id, so keying on it would collide and removing one
+                  would remove them all. */}
               {selected.map((p) => (
-                <TouchableOpacity key={p.id} style={styles.chip} onPress={() => setSelected((prev) => prev.filter((x) => x.id !== p.id))}>
+                <TouchableOpacity
+                  key={featureKey(p)}
+                  style={styles.chip}
+                  onPress={() => setSelected((prev) => prev.filter((x) => featureKey(x) !== featureKey(p)))}
+                >
                   <Text style={styles.chipText}>{p.name}</Text>
                   <Ionicons name="close" size={13} color={colors.text} />
                 </TouchableOpacity>
@@ -108,7 +135,24 @@ export default function FeaturesModal({
             ListEmptyComponent={
               loading
                 ? <ListRowsSkeleton rows={8} trailing={false} />
-                : (query.trim() ? <Text style={styles.empty}>{t('features.empty')}</Text> : null)
+                : (query.trim() && !canAddTyped ? <Text style={styles.empty}>{t('features.empty')}</Text> : null)
+            }
+            // BELOW the account results on purpose. If the person is on Laybell
+            // they should be picked from the list, because that credit links to
+            // their profile and pulls them in — typing their name instead would
+            // produce a dead credit and lose the one thing this is for.
+            ListFooterComponent={
+              canAddTyped ? (
+                <TouchableOpacity style={styles.addRow} onPress={addTyped} activeOpacity={0.7}>
+                  <View style={styles.addIcon}>
+                    <Ionicons name="add" size={20} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.username} numberOfLines={1}>{t('features.addNamed', { name: typed })}</Text>
+                    <Text style={styles.name}>{t('features.addNamedHint')}</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null
             }
             renderItem={({ item }) => {
               const on = selected.some((x) => x.id === item.id);
@@ -164,5 +208,17 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   avatarText: { color: colors.avatarFg, fontSize: 15, fontWeight: '700' },
   username: { color: colors.text, fontSize: 14, fontWeight: '600' },
   name: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
+  // Same metrics as `row` so the add option sits in the same rhythm as the
+  // account results rather than reading as a separate control.
+  addRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
+  },
+  addIcon: {
+    width: 40, height: 40, borderRadius: RADIUS.full,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
+  },
   empty: { color: colors.textTertiary, fontSize: 14, textAlign: 'center', marginTop: SPACING.lg },
 });

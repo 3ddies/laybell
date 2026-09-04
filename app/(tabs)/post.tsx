@@ -1453,9 +1453,15 @@ export default function PostScreen() {
           }
         }
         // Notify each credited collaborator (audio features).
+        //
+        // Only the ones with an account. A credit can now name someone who is
+        // not on Laybell — their name renders on the song, but there is no user
+        // to notify and no profile to open. Reaching those people needs a
+        // "you've been credited, claim your profile" invite, which is a
+        // different and larger piece of work.
         if (postType === 'audio') {
           for (const f of features) {
-            if (f.id !== user.id) createNotification({ userId: f.id, actorId: user.id, type: 'tag', postId: newPost.id });
+            if (f.id && f.id !== user.id) createNotification({ userId: f.id, actorId: user.id, type: 'tag', postId: newPost.id });
           }
         }
         // Put the track on its album. Last, and NOT awaited into the publish

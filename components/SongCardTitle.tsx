@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { View, Text, Animated, Easing, TouchableOpacity, StyleSheet, type StyleProp, type TextStyle } from 'react-native';
-import type { Feature } from '../lib/features';
+import { featureKey, type Feature } from '../lib/features';
 
 // The cycling song-card title, used by the bottom mini player AND the full
 // Spotify-style player. Two behaviors:
@@ -128,15 +128,22 @@ export default function SongCardTitle({
     // otherwise shrink-wraps this to the text and kills the overflow → no scroll.
     <Animated.View style={[styles.root, { opacity: fade }]}>
       {showFeatures ? (
-        <Marquee key={'f:' + features.map((f) => f.id).join(',')} centered={centered}>
+        <Marquee key={'f:' + features.map(featureKey).join(',')} centered={centered}>
           <Text style={[fStyle, styles.featLabel]}>feat. </Text>
-          {features.map((f, i) => (
-            <TouchableOpacity key={f.id} onPress={() => onOpenProfile(f.id)} hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}>
-              <Text style={[fStyle, styles.featName]}>
-                {f.name}{i < features.length - 1 ? ', ' : ''}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {/* A credit with no id is someone who is not on Laybell: their name
+              shows, but there is no profile to open, so it renders as plain text
+              rather than a control that goes nowhere. Keyed by featureKey — every
+              off-platform credit has a null id and would otherwise collide. */}
+          {features.map((f, i) => {
+            const label = `${f.name}${i < features.length - 1 ? ', ' : ''}`;
+            return f.id ? (
+              <TouchableOpacity key={featureKey(f)} onPress={() => onOpenProfile(f.id!)} hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}>
+                <Text style={[fStyle, styles.featName]}>{label}</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text key={featureKey(f)} style={[fStyle, styles.featName, styles.featPlain]}>{label}</Text>
+            );
+          })}
         </Marquee>
       ) : (
         <Marquee key={'t:' + title} centered={centered}>
@@ -156,4 +163,8 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
   featLabel: { opacity: 0.7 },
   featName: { fontWeight: '700', textDecorationLine: 'underline' },
+  // The underline IS the affordance — it says "this opens a profile". A credit
+  // with nowhere to go must not wear it, or it reads as a link that does
+  // nothing, which is worse than a plain name.
+  featPlain: { textDecorationLine: 'none' },
 });
