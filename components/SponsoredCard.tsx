@@ -124,6 +124,9 @@ const SponsoredCard = memo(function SponsoredCard({ item, onCta, onOptions, vide
             aspectRatio={aspectToNumber(item.aspect_ratio, 1)}
             active={shouldPlayVideo}
             postId={item.id}
+            // Same card color as an ordinary feed post — an ad that letterboxed
+            // in black would stand out as broken rather than as sponsored.
+            letterbox={colors.background}
             onOpen={() => onCta(item)}
           />
         </View>

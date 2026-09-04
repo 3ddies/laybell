@@ -45,6 +45,16 @@ type Props = {
   // Reports whether the CURRENT slide is a video with its audio turned on, so the
   // host can pause/resume an attached song. Fires on slide change + toggle + unmount.
   onVideoAudioActiveChange?: (active: boolean) => void;
+  /**
+   * What shows around a slide that does not fill the frame.
+   *
+   * Black is right FULL SCREEN, where the bars are the room the photo is being
+   * shown in. It is wrong in a feed: there the post is a card on the page, and
+   * black bars read as damage — as though the photo had been cropped and the gap
+   * packed with filler — rather than as the shape the poster chose. Pass the
+   * theme's page color there and the bars disappear into the card.
+   */
+  letterbox?: string;
 };
 
 function SlideVideo({
@@ -71,6 +81,7 @@ function SlideVideo({
 
 export default function SlideshowCarousel({
   slides, width, aspectRatio, active = true, initialIndex = 0, postId, onOpen, onTap, onVideoAudioActiveChange,
+  letterbox = '#000',
 }: Props) {
   // One touchable, either purpose. The dim-on-press belongs to onOpen, where it
   // previews a transition; a reel tap goes nowhere, so it stays flat.
@@ -135,7 +146,7 @@ export default function SlideshowCarousel({
         {slides.map((s, i) => {
           const isVideo = s.type === 'video';
           const body = (
-            <View style={{ width, height, backgroundColor: '#000' }}>
+            <View style={{ width, height, backgroundColor: letterbox }}>
               {isVideo ? (
                 engaged && Math.abs(i - current) <= 1 ? (
                   <SlideVideo

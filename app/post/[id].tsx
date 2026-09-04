@@ -411,6 +411,9 @@ export default function PostDetailScreen() {
                   aspectRatio={aspectToNumber(post.aspect_ratio, 1)}
                   active={isFocused}
                   postId={id as string}
+                  // The viewer is a themed PAGE, not the black reel surface, so
+                  // its bars follow the theme too.
+                  letterbox={colors.background}
                   onVideoAudioActiveChange={setSlideAudioActive}
                   initialIndex={initialSlide}
                   // No open action in the viewer — a slide tap only routes double-tap-to-like.

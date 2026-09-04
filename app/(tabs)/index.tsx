@@ -432,7 +432,10 @@ const PostCard = memo(function PostCard({
               // Recycled cells must never flash the PREVIOUS post's image while
               // the new one decodes — recyclingKey clears the view on reuse.
               recyclingKey={item.id}
-              style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 1), backgroundColor: '#000' }]}
+              // Card color, not black: this is what shows while the photo
+              // decodes, and a black rectangle flashing inside a light feed is
+              // the same jarring thing the letterbox bars were.
+              style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 1), backgroundColor: colors.background }]}
               contentFit="cover"
               cachePolicy="memory-disk"
             />
@@ -465,6 +468,12 @@ const PostCard = memo(function PostCard({
             aspectRatio={aspectToNumber(item.aspect_ratio, 1)}
             active={shouldPlayVideo}
             postId={item.id}
+            // The CARD's own color, so a slide that does not fill the frame is
+            // bordered by the page rather than by black bars. Black belongs to
+            // the reel viewer, where the bars are the room the photo hangs in;
+            // on a card in a light feed it read as the photo having been cropped
+            // and the gap filled in.
+            letterbox={colors.background}
             onVideoAudioActiveChange={(a) => onSlideAudioActive(item, a)}
             // Tapping a slideshow opens REELS, not the post viewer. It is the
             // same full-screen surface a video tap leads to, so the format stops
@@ -511,7 +520,7 @@ const PostCard = memo(function PostCard({
             activeOpacity={1}
             onPress={() => onMediaTap(() => vidRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenReel(item, { x, y, width: w, height: h })))}
           >
-            <View style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}>
+            <View style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: colors.background }]}>
               {/* Thumbnail for every card; the real player mounts only for the
                   visible card and its nearest video neighbors (pre-warmed, paused)
                   so fast scrolling never spins up a player per row while landing
