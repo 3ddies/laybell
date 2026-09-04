@@ -52,6 +52,86 @@ export function defaultSlideFit(
 }
 
 /**
+ * The shape a slide OCCUPIES: what it was cropped to, or its own proportions
+ * when it was left alone. `shape` is the composer's per-slide crop choice —
+ * absent or 'full' means uncropped.
+ */
+export function slideAspect(
+  s?: { width?: number | null; height?: number | null; shape?: string | null } | null,
+): number {
+  if (s?.shape && !isAutoFormat(s.shape)) return aspectToNumber(s.shape, 1);
+  const w = s?.width ?? 0;
+  const h = s?.height ?? 0;
+  return w > 0 && h > 0 ? w / h : 1;
+}
+
+/**
+ * The ONE frame a carousel is laid out in, measured across the WHOLE set.
+ *
+ * Sized to the TALLEST slide, which is what makes per-slide shapes possible at
+ * all: every other slide is then square-or-wider relative to it, so it can be
+ * shown whole with bars above and below — never down the sides, which
+ * defaultSlideFit explains is the one kind of letterboxing this app refuses. A
+ * set of mixed shapes therefore needs no cropping to share a frame, and a set
+ * cropped uniformly (all square, say) gets a frame of exactly that shape with no
+ * bars at all.
+ *
+ * Derived from the SET and never from whichever slide was edited last. Cropping
+ * one photo used to set the post's frame directly, and every OTHER photo in the
+ * post — none of which had been touched — was silently re-cropped to fit it.
+ */
+export function slideshowCanvasAspect(
+  slides: { width?: number | null; height?: number | null; shape?: string | null }[],
+): number {
+  let tallest = Infinity;
+  for (const s of slides ?? []) {
+    const a = slideAspect(s);
+    if (isFinite(a) && a > 0) tallest = Math.min(tallest, a);
+  }
+  if (!isFinite(tallest)) return 1;
+  return clampFeedAspect(tallest);
+}
+
+/**
+ * The largest centred rect of `aspect` inside a w×h image.
+ *
+ * This is the crop a slide gets when a shape was chosen but never hand-framed —
+ * and it is not an approximation of what the composer showed, it is the same
+ * thing: MediaCropper opens at scale 1, which covers its box centred, so this
+ * reproduces its untouched state exactly. Without it a slide cycled to Square
+ * and left alone published UNCROPPED, having been previewed as a square.
+ */
+export function centeredCrop(
+  w: number, h: number, aspect: number,
+): { originX: number; originY: number; width: number; height: number } | null {
+  if (!(w > 0 && h > 0 && aspect > 0)) return null;
+  let cw = w;
+  let ch = w / aspect;
+  if (ch > h) { ch = h; cw = h * aspect; }
+  return {
+    originX: Math.round((w - cw) / 2),
+    originY: Math.round((h - ch) / 2),
+    width: Math.round(cw),
+    height: Math.round(ch),
+  };
+}
+
+/**
+ * How a slide meets the carousel frame, given the shape it occupies.
+ *
+ * With a canvas sized by slideshowCanvasAspect nothing is narrower than the
+ * frame, so this answers 'contain' for every slide in a normal set. It still has
+ * to ask, because clampFeedAspect floors the canvas at 4:5 — a 9:16 photo is
+ * taller than any frame the feed allows, and that one really must fill.
+ */
+export function slideFitFor(
+  s: { width?: number | null; height?: number | null; shape?: string | null },
+  frameAspect: number,
+): SlideFit {
+  return slideAspect(s) < frameAspect ? 'cover' : 'contain';
+}
+
+/**
  * The numeric frame ratio for a post. An auto format takes it from the media —
  * for a slideshow, from the FIRST slide, since a carousel has one frame.
  *

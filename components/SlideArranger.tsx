@@ -7,7 +7,9 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from './MediaCropper';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
-import { SLIDESHOW_FORMATS, defaultSlideFit, isAutoFormat, type SlideFit } from '../lib/aspectRatio';
+import {
+  SLIDESHOW_FORMATS, defaultSlideFit, isAutoFormat, aspectToNumber, type SlideFit,
+} from '../lib/aspectRatio';
 import { useThemedStyles, useTheme } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 
@@ -41,6 +43,14 @@ export type ArrangerSlide = {
   thumbnailUri?: string | null;
   crop?: CropRect | null;
   fit?: SlideFit | null;
+  /**
+   * What THIS slide is cropped to — 'full' (or absent) means it is not cropped
+   * and shows at its own proportions. Per-slide on purpose: a set can hold a
+   * square, a portrait and an untouched photo at once, each inside the one frame
+   * the carousel gets. Absent on slides from before this existed, which is why
+   * shapeOf falls back to reading the old fit.
+   */
+  shape?: string | null;
 };
 
 export type SlideArrangerHandle = {
@@ -95,13 +105,12 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   frameW: number;
   frameH: number;
   format: string;
-  onFormatChange: (next: string) => void;
   onChange: (next: ArrangerSlide[]) => void;
   /** Raised when the crop sheet opens or closes, so the screen header can swap
    *  its actions for it. A ref check cannot do this — the header has to
    *  RE-RENDER to change what its buttons are. */
   onAdjustingChange?: (open: boolean) => void;
-}>(function SlideArranger({ slides, frameW, frameH, format, onFormatChange, onChange, onAdjustingChange }, ref) {
+}>(function SlideArranger({ slides, frameW, frameH, format, onChange, onAdjustingChange }, ref) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
@@ -130,7 +139,24 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   // The frame the slides are measured against, so a tall photo can be told from
   // a wide one relative to THIS post rather than in the abstract.
   const frameAspect = frameH > 0 ? frameW / frameH : 1;
-  const fitOf = (s?: ArrangerSlide | null): SlideFit => s?.fit ?? defaultSlideFit(frameAspect, s);
+  // What a slide is cropped to. Slides made before crops were per-slide carry no
+  // shape, so they are read the old way: uncropped means Original, and anything
+  // else was cropped to whatever the post's format was at the time.
+  const shapeOf = (s?: ArrangerSlide | null): string =>
+    s?.shape ?? ((s?.fit ?? defaultSlideFit(frameAspect, s)) === 'contain' ? 'full' : format);
+  /**
+   * The box a slide occupies inside the frame: the largest rectangle of its own
+   * shape that fits. This is what makes the shapes visibly different — a square
+   * slide is a square inside a portrait frame, with the bars the feed will show.
+   */
+  const boxFor = (shape: string) => {
+    if (isAutoFormat(shape)) return { w: frameW, h: frameH };
+    const a = aspectToNumber(shape, frameAspect);
+    let w = frameW;
+    let h = frameW / a;
+    if (h > frameH) { h = frameH; w = frameH * a; }
+    return { w, h };
+  };
   const cur = slides[Math.min(index, Math.max(0, slides.length - 1))];
 
   // ── Crop, read out of the Adjust sheet ──────────────────────────────────────
@@ -144,10 +170,12 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     if (s.crop && s.crop.originX === c.originX && s.crop.originY === c.originY
       && s.crop.width === c.width && s.crop.height === c.height) return;
     const next = list.slice();
-    // Cropping is what FILLS. A slide arrives fitted, showing the whole photo;
-    // choosing a crop is the moment the poster says which part of it they want,
-    // so the slide switches to filling the frame with exactly that.
-    next[i] = { ...next[i], crop: c, fit: 'cover' };
+    // Pin the shape this crop was framed against. The rect is only meaningful
+    // alongside it — the same numbers mean a different picture read as a square
+    // than as a portrait — and pinning it here is what stops a slide inheriting
+    // a shape from anywhere else later. `fit` is derived from the shape now, so
+    // it is deliberately not written.
+    next[i] = { ...next[i], crop: c, shape: shapeOf(s), fit: null };
     onChangeRef.current(next);
   };
   const commitRef = useRef(commit); commitRef.current = commit;
@@ -183,41 +211,41 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   };
 
-  // ── Crop shape ──────────────────────────────────────────────────────────────
+  // ── Crop shape: PER SLIDE ───────────────────────────────────────────────────
   // Three states, and only one of them is really a ratio.
   //
   // 'full' means ORIGINAL: this slide is not cropped at all and shows whole, at
-  // the proportions it was shot at. The other two are shapes to crop TO, and
-  // they set the post's frame, because a carousel has one frame and a slide
-  // cropped square has to be square inside something.
+  // the proportions it was shot at. The other two are shapes to crop TO.
   //
-  // So the state shown is per-slide — a fitted slide reads Original whatever the
-  // post's frame happens to be — while choosing a ratio acts on both: the slide
-  // starts filling, and the frame becomes that shape.
+  // ⚠️ This used to set the POST's frame, on the reasoning that a carousel has
+  // one frame so a slide cropped square has to be square inside something. The
+  // frame part was right and the conclusion was wrong: cropping ONE photo
+  // reshaped the post, and every other photo in it — none of them touched — was
+  // silently re-cropped to the new frame. Cropping one picture cannot be allowed
+  // to crop the rest.
+  //
+  // A slide cropped square is square inside the frame, with bars, exactly as the
+  // feed will show it. The frame is sized to the TALLEST slide in the set
+  // (slideshowCanvasAspect), so every shape fits inside it without being cut,
+  // and a set cropped uniformly still gets a frame of that shape with no bars.
+  // Shapes are free to differ; that is what "mixed" means.
   const CROP_SHAPES = ['full', ...SLIDESHOW_FORMATS] as const;
-  const curShape = fitOf(cur) === 'contain' ? 'full' : format;
+  const curShape = shapeOf(cur);
+  const curBox = boxFor(curShape);
   const cycleShape = () => {
-    const i = CROP_SHAPES.indexOf(curShape as (typeof CROP_SHAPES)[number]);
-    const next = CROP_SHAPES[(i + 1) % CROP_SHAPES.length];
     const slot = indexRef.current;
     const list = slidesRef.current;
     if (!list[slot]) return;
+    const i = CROP_SHAPES.indexOf(shapeOf(list[slot]) as (typeof CROP_SHAPES)[number]);
+    const next = CROP_SHAPES[(i + 1) % CROP_SHAPES.length];
 
-    if (next === 'full') {
-      // Back to uncropped. The rect goes with it — a saved crop on a slide that
-      // is no longer cropped would come back the moment it was filled again,
-      // which is not what "original" was asked to mean.
-      const after = list.slice();
-      after[slot] = { ...after[slot], fit: 'contain', crop: null };
-      onChangeRef.current(after);
-      return;
-    }
-    // Carry the in-progress crop across the rebuild the new frame causes.
-    commitRef.current();
-    const after = slidesRef.current.slice();
-    after[slot] = { ...after[slot], fit: 'cover' };
+    // The rect goes with the old shape, always. It was measured against a
+    // different frame, so carrying it over would mean a crop nobody chose —
+    // and on the way back to Original it would reappear the moment the slide
+    // was cropped again, which is not what "original" was asked to mean.
+    const after = list.slice();
+    after[slot] = { ...after[slot], shape: next, crop: null, fit: null };
     onChangeRef.current(after);
-    onFormatChange(next);
   };
 
   // ── Press-and-hold to reorder: SWAP, never insert ───────────────────────────
@@ -453,8 +481,20 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
         {...stagePan.panHandlers}
       >
         <Animated.View style={{ flexDirection: 'row', width: frameW * Math.max(1, view.length), height: frameH, transform: [{ translateX: pageX }] }}>
-          {view.map((s) => (
-            <View key={s.uri} style={{ width: frameW, height: frameH, backgroundColor: '#000' }}>
+          {view.map((s) => {
+            // Each page shows the slide at ITS shape, centred in the shared
+            // frame — so a square among portraits looks like a square, with the
+            // bars the feed will actually give it, instead of every page being
+            // forced to one shape.
+            const box = boxFor(shapeOf(s));
+            return (
+            <View
+              key={s.uri}
+              style={{
+                width: frameW, height: frameH, backgroundColor: '#000',
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
               {s.type === 'video' ? (
                 <ExpoImage
                   source={{ uri: s.posterUri || s.thumbnailUri || s.uri }}
@@ -462,7 +502,7 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
                   contentFit="contain"
                   cachePolicy="memory-disk"
                 />
-              ) : fitOf(s) === 'contain' ? (
+              ) : shapeOf(s) === 'full' ? (
                 <ExpoImage
                   source={{ uri: s.uri }}
                   style={StyleSheet.absoluteFill}
@@ -479,19 +519,23 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
                   // with — you would crop a slide, come back, and see the old
                   // one, as though the edit had been thrown away. Folding the
                   // rect into the key rebuilds the page so it reseeds.
-                  key={`${s.uri}-page-${cropKey(s.crop)}`}
+                  // The SHAPE joins the key for the same reason: it changes what
+                  // the seeded transform is measured against, and the cropper
+                  // works that out once at mount.
+                  key={`${s.uri}-page-${shapeOf(s)}-${cropKey(s.crop)}`}
                   uri={s.uri}
                   mediaWidth={s.width}
                   mediaHeight={s.height}
-                  frameW={frameW}
-                  frameH={frameH}
+                  frameW={box.w}
+                  frameH={box.h}
                   type="image"
                   initialCrop={s.crop ?? null}
                   interactive={false}
                 />
               )}
             </View>
-          ))}
+          );
+          })}
         </Animated.View>
       </Animated.View>
 
@@ -606,7 +650,10 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
       {/* ── Crop sheet: the ONLY place the cropper takes gestures ────────────── */}
       {adjusting && cur?.type === 'image' && (
         <View style={styles.sheet}>
-          <View style={{ width: frameW, height: frameH }}>
+          {/* Centred, because the cropper is now this SLIDE's box rather than
+              the whole frame — a square slide is cropped as a square, sitting in
+              the middle of the frame with the bars it will publish with. */}
+          <View style={{ width: frameW, height: frameH, alignItems: 'center', justifyContent: 'center' }}>
             {curShape === 'full' ? (
               // Original: nothing to drag, because nothing is being cut. Showing
               // a cropper here would invite framing a photo that is already
@@ -619,18 +666,20 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
               />
             ) : (
               <MediaCropper
-                // Keyed on the FRAME as well as the photo. Changing shape while
+                // Keyed on the SHAPE as well as the photo. Changing shape while
                 // cropping changes what the crop is measured against, and the
                 // cropper works its transform out once at mount — so it has to
                 // be rebuilt to reseed against the new shape rather than keep a
                 // transform that meant something else.
-                key={`${cur.uri}-adjust-${Math.round(frameW)}x${Math.round(frameH)}`}
+                key={`${cur.uri}-adjust-${curShape}`}
                 ref={cropperRef}
                 uri={cur.uri}
                 mediaWidth={cur.width}
                 mediaHeight={cur.height}
-                frameW={frameW}
-                frameH={frameH}
+                // This slide's own box, so the rect getCrop returns is in the
+                // shape THIS slide was cropped to — not the post's.
+                frameW={curBox.w}
+                frameH={curBox.h}
                 type="image"
                 initialCrop={cur.crop ?? null}
               />
@@ -639,7 +688,7 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
                 photo into it is one decision, so splitting them across two
                 screens would split the job in half. */}
             <TouchableOpacity style={[styles.cornerBase, styles.cornerBL]} onPress={cycleShape} activeOpacity={0.85}>
-              <Ionicons name="resize-outline" size={15} color={colors.text} />
+              <Ionicons name="resize-outline" size={15} color="#fff" />
               <Text style={styles.cornerText}>
                 {isAutoFormat(curShape) ? t('post.format.full') : curShape}
               </Text>

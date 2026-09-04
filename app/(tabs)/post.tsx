@@ -46,7 +46,8 @@ import { useTranslation } from '../../contexts/LanguageContext';
 import { showPermissionDenied } from '../../lib/permissions';
 import {
   IMAGE_FORMATS, aspectToNumber, clampVideoAspect, defaultFormatFor,
-  defaultSlideFit, isAutoFormat, resolveFrameAspect, type SlideFit,
+  defaultSlideFit, isAutoFormat, resolveFrameAspect, slideshowCanvasAspect, slideFitFor,
+  centeredCrop, type SlideFit,
 } from '../../lib/aspectRatio';
 import { GENRES, genreLabel } from '../../lib/genres';
 import { Image as ExpoImage } from 'expo-image';
@@ -82,11 +83,14 @@ type PickedSlide = {
   thumbnailUri?: string | null; // poster for video slides
   posterUri?: string | null;    // ph:// poster (video) — renders reliably via expo-image
   crop?: CropRect | null;       // user's drag/pinch crop (image slides) — baked on upload
-  // How this slide meets the frame. Unset means "whatever the chosen format
-  // implies" — see defaultSlideFit. Set only once the user overrides it on the
-  // Arrange screen, so changing format still moves the slides that were left
-  // alone.
+  // How this slide meets the frame. Now DERIVED from `shape` for any slide that
+  // has one; still read here for slides that predate shapes, which stored it
+  // directly.
   fit?: SlideFit | null;
+  // What this slide is cropped to — 'full'/unset means uncropped. Per-slide, so
+  // one photo can be square and the next left whole inside the same carousel.
+  // See SlideArranger's ArrangerSlide, which this mirrors.
+  shape?: string | null;
 };
 
 // A slideshow's combined video time must stay under this — uploads of several
@@ -552,9 +556,16 @@ export default function PostScreen() {
   // format and are cropped to it interactively.
   // 'full' and 'mixed' carry no ratio, so they resolve against the media — the
   // first slide for a carousel, the single pick otherwise.
+  // A carousel's frame is measured across the WHOLE set — sized to its tallest
+  // slide, so every other slide fits inside it whole and each one keeps its own
+  // crop shape. It is deliberately NOT `format`: the frame used to be whatever
+  // shape the last-cropped slide was given, which re-cropped every untouched
+  // photo in the post.
   const previewAspect = postType === 'video'
     ? videoAspect
-    : resolveFrameAspect(format, postType === 'slideshow' ? slides[0] : media);
+    : postType === 'slideshow'
+      ? slideshowCanvasAspect(slides)
+      : resolveFrameAspect(format, media);
   let frameW = SCREEN_W;
   let frameH = SCREEN_W / previewAspect;
   if (frameH > PREVIEW_MAX_H) { frameH = PREVIEW_MAX_H; frameW = PREVIEW_MAX_H * previewAspect; }
@@ -717,7 +728,13 @@ export default function PostScreen() {
 
   function switchType(t: PostType) {
     setPostType(t);
-    setFormat(t === 'slideshow' ? '1:1' : defaultFormatFor(t as any));
+    // 4:5 for a slideshow, matching startSlideshow — a PORTRAIT frame, so a
+    // landscape photo lands with bars above and below rather than down its
+    // sides. This said '1:1', which disagreed with the other entry point and now
+    // matters more than it did: `format` is the shape a slide falls back to when
+    // it has none of its own, so a square default would have quietly cropped
+    // every untouched portrait photo to a square.
+    setFormat(t === 'slideshow' ? '4:5' : defaultFormatFor(t as any));
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
     setVideoDuration(0); setTrimStart(0); setTrimEnd(0);
     setAudioFile(null); setAudioDuration(null);
@@ -1331,15 +1348,32 @@ export default function PostScreen() {
         const built: Slide[] = [];
         for (const s of slides) {
           let url: string;
+          // Hoisted out of the upload branch because the row below needs it too:
+          // the shape decides BOTH what gets baked into the file and how the
+          // finished file meets the frame.
+          const shape = s.shape
+            ?? ((s.fit ?? defaultSlideFit(previewAspect, s)) === 'contain' ? 'full' : format);
+          // Whether this slide is cropped at all, which is now a question about
+          // its SHAPE and not about its fit. A slide cropped square inside a
+          // portrait frame is 'contain' — it shows its whole crop, with bars —
+          // so keying the bake off 'contain', as this used to, would throw that
+          // crop away. Slides from before shapes existed carry no shape and are
+          // read the old way: not-contain meant cropped to the post's format.
+          const cropped = s.type === 'image' && !isAutoFormat(shape);
           if (s.type === 'image') {
             let outUri = s.uri;
             try {
-              // A 'contain' slide is one the poster chose NOT to crop, so the
-              // crop rect is deliberately ignored and the whole frame is
-              // uploaded — the carousel letterboxes it at render time. Baking
-              // the crop anyway would silently cut off the thing they kept.
-              const fit = s.fit ?? defaultSlideFit(previewAspect, s);
-              const crop = fit === 'contain' ? null : s.crop;
+              // A slide left at Original uploads whole and the carousel
+              // letterboxes it at render time. A cropped one bakes its rect —
+              // falling back to the centred crop for that shape, because a slide
+              // can be given a shape and never hand-framed, and it was PREVIEWED
+              // in that shape. Uploading it uncropped would publish something
+              // nobody was shown.
+              const crop = cropped
+                ? (s.crop && s.crop.width > 1 && s.crop.height > 1
+                    ? s.crop
+                    : centeredCrop(s.width, s.height, aspectToNumber(shape, previewAspect)))
+                : null;
               const ops: any[] = [];
               if (crop && crop.width > 1 && crop.height > 1) ops.push({ crop });
               ops.push({ resize: { width: crop && crop.width > 1 ? Math.min(1440, crop.width) : 1440 } });
@@ -1357,8 +1391,21 @@ export default function PostScreen() {
           let thumb: string | null = s.type === 'image' ? url : null;
           if (s.type === 'video' && s.thumbnailUri) thumb = await uploadToStorage(user.id, s.thumbnailUri, 'jpg', 'image/jpeg');
           built.push({
-            type: s.type, url, thumbnail_url: thumb, aspect_ratio: format,
-            fit: s.fit ?? defaultSlideFit(previewAspect, s),
+            type: s.type, url, thumbnail_url: thumb,
+            // This slide's OWN ratio, which after baking is the shape it was
+            // cropped to. It used to record the post format on every slide,
+            // which is now wrong by construction — slides differ.
+            aspect_ratio: s.type === 'image' && !isAutoFormat(shape) ? shape : format,
+            // Measured against the shape the file now HAS, since the crop is
+            // already baked in — a slide cropped square is a square file, and it
+            // sits whole inside the frame rather than being cropped a second
+            // time on the way to the feed. Original is honoured as 'contain'
+            // even when the photo is taller than the frame: defaultSlideFit's
+            // no-side-bars rule is about what a slide gets when NOBODY chose,
+            // and here somebody did.
+            fit: s.type === 'image'
+              ? (cropped ? slideFitFor({ shape }, previewAspect) : 'contain')
+              : (s.fit ?? defaultSlideFit(previewAspect, s)),
           });
         }
         slidesPayload = built;
@@ -1405,7 +1452,10 @@ export default function PostScreen() {
         // lays a carousel out from a NUMBER, so they resolve to slide 1's ratio
         // on the way into the row.
         ...(postType === 'slideshow' ? {
-          aspect_ratio: isAutoFormat(format) ? String(resolveFrameAspect(format, slides[0])) : format,
+          // The frame the composer laid these out in, which is measured across
+          // the whole set — not `format`, which is now only a legacy fallback
+          // for slides that predate per-slide shapes.
+          aspect_ratio: String(previewAspect),
           slides: slidesPayload,
         } : {}),
         ...(trimmed
@@ -1561,7 +1611,6 @@ export default function PostScreen() {
             frameW={frameW}
             frameH={frameH}
             format={format}
-            onFormatChange={setFormat}
             onAdjustingChange={setArrangeCropping}
             onChange={(next) => setSlides(next as typeof slides)}
           />
