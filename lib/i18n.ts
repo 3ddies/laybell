@@ -1353,6 +1353,9 @@ const en: Record<string, string> = {
   'comments.addPlaceholder': 'Add a comment...',
 
   'common.cancel': 'Cancel',
+  'avatarCrop.title': "Position your photo",
+  'avatarCrop.use': "Use",
+  'avatarCrop.hint': "Drag to move, pinch to zoom. Whatever sits inside the circle is what people will see.",
 
   // Settings — header + section titles
   'settings.title': 'Settings',
@@ -4150,6 +4153,9 @@ const es: Record<string, string> = {
   'comments.addPlaceholder': 'Añade un comentario...',
 
   'common.cancel': 'Cancelar',
+  'avatarCrop.title': "Coloca tu foto",
+  'avatarCrop.use': "Usar",
+  'avatarCrop.hint': "Arrastra para mover, pellizca para acercar. Lo que quede dentro del círculo es lo que verán los demás.",
   'settings.title': 'Ajustes',
   'settings.viewEditProfile': 'Ver y editar perfil',
   'settings.section.display': 'Pantalla',
@@ -6217,6 +6223,9 @@ const fr: Record<string, string> = {
   'comments.addPlaceholder': 'Ajouter un commentaire...',
 
   'common.cancel': 'Annuler',
+  'avatarCrop.title': "Positionnez votre photo",
+  'avatarCrop.use': "Utiliser",
+  'avatarCrop.hint': "Faites glisser pour déplacer, pincez pour zoomer. Ce qui est dans le cercle est ce que les autres verront.",
   'settings.title': 'Paramètres',
   'settings.viewEditProfile': 'Voir et modifier le profil',
   'settings.section.display': 'Affichage',
@@ -8284,6 +8293,9 @@ const de: Record<string, string> = {
   'comments.addPlaceholder': 'Kommentar hinzufügen...',
 
   'common.cancel': 'Abbrechen',
+  'avatarCrop.title': "Positioniere dein Foto",
+  'avatarCrop.use': "Übernehmen",
+  'avatarCrop.hint': "Ziehen zum Verschieben, zwei Finger zum Zoomen. Was im Kreis liegt, sehen die anderen.",
   'settings.title': 'Einstellungen',
   'settings.viewEditProfile': 'Profil ansehen und bearbeiten',
   'settings.section.display': 'Anzeige',
@@ -10351,6 +10363,9 @@ const pt: Record<string, string> = {
   'comments.addPlaceholder': 'Adicione um comentário...',
 
   'common.cancel': 'Cancelar',
+  'avatarCrop.title': "Posicione sua foto",
+  'avatarCrop.use': "Usar",
+  'avatarCrop.hint': "Arraste para mover, pince para ampliar. O que estiver dentro do círculo é o que as pessoas vão ver.",
   'settings.title': 'Configurações',
   'settings.viewEditProfile': 'Ver e editar perfil',
   'settings.section.display': 'Tela',
@@ -12418,6 +12433,9 @@ const it: Record<string, string> = {
   'comments.addPlaceholder': 'Aggiungi un commento...',
 
   'common.cancel': 'Annulla',
+  'avatarCrop.title': "Posiziona la tua foto",
+  'avatarCrop.use': "Usa",
+  'avatarCrop.hint': "Trascina per spostare, pizzica per ingrandire. Quello che sta nel cerchio è ciò che vedranno gli altri.",
   'settings.title': 'Impostazioni',
   'settings.viewEditProfile': 'Vedi e modifica profilo',
   'settings.section.display': 'Schermo',
@@ -14450,6 +14468,9 @@ const ru: Record<string, string> = {
   'comments.addPlaceholder': 'Добавьте комментарий...',
 
   'common.cancel': 'Отмена',
+  'avatarCrop.title': "Разместите фото",
+  'avatarCrop.use': "Готово",
+  'avatarCrop.hint': "Перетаскивайте, чтобы двигать, сводите пальцы для масштаба. Видно будет то, что внутри круга.",
   'settings.title': 'Настройки',
   'settings.viewEditProfile': 'Просмотр и редактирование профиля',
   'settings.section.display': 'Экран',
@@ -16482,6 +16503,9 @@ const zh: Record<string, string> = {
   'comments.addPlaceholder': '添加评论…',
 
   'common.cancel': '取消',
+  'avatarCrop.title': "调整你的照片",
+  'avatarCrop.use': "使用",
+  'avatarCrop.hint': "拖动移动，双指缩放。圆圈里的部分就是别人看到的。",
   'settings.title': '设置',
   'settings.viewEditProfile': '查看并编辑资料',
   'settings.section.display': '显示',
@@ -18514,6 +18538,9 @@ const ja: Record<string, string> = {
   'comments.addPlaceholder': 'コメントを追加…',
 
   'common.cancel': 'キャンセル',
+  'avatarCrop.title': "写真の位置を調整",
+  'avatarCrop.use': "決定",
+  'avatarCrop.hint': "ドラッグで移動、ピンチで拡大。円の中に入った部分が表示されます。",
   'settings.title': '設定',
   'settings.viewEditProfile': 'プロフィールを表示・編集',
   'settings.section.display': '表示',
@@ -20546,6 +20573,9 @@ const hi: Record<string, string> = {
   'comments.addPlaceholder': 'टिप्पणी जोड़ें...',
 
   'common.cancel': 'रद्द करें',
+  'avatarCrop.title': "अपनी फ़ोटो सेट करें",
+  'avatarCrop.use': "इस्तेमाल करें",
+  'avatarCrop.hint': "खिसकाने के लिए ड्रैग करें, ज़ूम के लिए पिंच करें। गोले के अंदर जो है वही लोगों को दिखेगा।",
   'settings.title': 'सेटिंग',
   'settings.viewEditProfile': 'प्रोफ़ाइल देखें और बदलें',
   'settings.section.display': 'डिस्प्ले',

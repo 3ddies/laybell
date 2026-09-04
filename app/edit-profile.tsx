@@ -16,6 +16,7 @@ import { analyzeUrl, scanText } from '../lib/linkSafety';
 import { loadOwnPhone, saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { Skeleton, SkeletonCircle, SkeletonLine } from '../components/Skeleton';
+import AvatarCropModal from '../components/AvatarCropModal';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { removePublicUrls } from '../lib/storageCleanup';
@@ -44,6 +45,8 @@ export default function EditProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  // Picked but not yet cropped. Held while AvatarCropModal is open.
+  const [cropUri, setCropUri] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -73,21 +76,29 @@ export default function EditProfileScreen() {
     setLoading(false);
   }
 
+  // allowsEditing is OFF on purpose — it hands off to the OS, and on iOS that is
+  // a SQUARE crop for a picture the app always shows in a circle. AvatarCropModal
+  // frames the circle instead; this just opens the picker and hands the file on.
   async function handleChangePhoto() {
-    const oldAvatar = avatarUrl; // remove this once the new one is saved
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'] as any, allowsEditing: true, aspect: [1, 1], quality: 0.8,
+      mediaTypes: ['images'] as any, allowsEditing: false, quality: 1,
     });
     if (result.canceled || !result.assets[0]) return;
+    setCropUri(result.assets[0].uri);
+  }
+
+  async function uploadCroppedAvatar(localUri: string) {
+    setCropUri(null);
+    const oldAvatar = avatarUrl; // remove this once the new one is saved
 
     setUploadingPhoto(true);
-    const file = result.assets[0];
-    const fileExt = file.uri.split('.').pop();
-    const filePath = `${userId}/${Date.now()}.${fileExt}`;
+    // Always jpeg — AvatarCropModal re-encodes as one, so the source extension
+    // would be a lie.
+    const filePath = `${userId}/${Date.now()}.jpg`;
     const formData = new FormData();
-    formData.append('file', { uri: file.uri, name: `${Date.now()}.${fileExt}`, type: file.mimeType || 'image/jpeg' } as any);
+    formData.append('file', { uri: localUri, name: `${Date.now()}.jpg`, type: 'image/jpeg' } as any);
 
-    const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, formData, { contentType: file.mimeType || 'image/jpeg', upsert: true });
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, formData, { contentType: 'image/jpeg', upsert: true });
     if (uploadError) { Alert.alert(t('editProfile.error'), uploadError.message); setUploadingPhoto(false); return; }
 
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
@@ -384,6 +395,13 @@ export default function EditProfileScreen() {
           <Text style={styles.fieldHint}>{t('editProfile.ageHint')}</Text>
         </View>
       </View>
+
+      <AvatarCropModal
+        uri={cropUri}
+        visible={!!cropUri}
+        onCancel={() => setCropUri(null)}
+        onDone={uploadCroppedAvatar}
+      />
     </ScrollView>
   );
 }

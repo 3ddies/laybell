@@ -15,6 +15,7 @@ import { GENDER_OPTIONS, genderLabel, MIN_AGE, parseDob, ageFromDob, dobToISO } 
 import { captureAndSaveLocation } from '../lib/location';
 import { setRegion, regionName } from '../lib/geoBlock';
 import RegionPicker from '../components/RegionPicker';
+import AvatarCropModal from '../components/AvatarCropModal';
 import { requestContactsPermission, readContactHashes } from '../lib/contacts';
 import { saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
 import { fetchSuggestedAccounts, reasonLabel } from '../lib/suggestions';
@@ -90,6 +91,8 @@ export default function OnboardingScreen() {
   // meant most people never took it.
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  // The picked-but-not-yet-cropped file. Held while AvatarCropModal is open.
+  const [cropUri, setCropUri] = useState<string | null>(null);
 
   function toggleGenre(id: string) {
     setSelectedGenres(prev => {
@@ -257,26 +260,35 @@ export default function OnboardingScreen() {
   // bucket under the user's own id, then write the public URL to the profile.
   // Failures are swallowed to a flag rather than an alert — this is onboarding,
   // and a storage hiccup must never become a wall between someone and the app.
+  // allowsEditing is OFF on purpose. It hands off to the OS, and on iOS that is
+  // a SQUARE crop — so people framed a square and the app then displayed it in a
+  // circle and ate the corners. AvatarCropModal shows the circle being framed.
   async function pickAvatar() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'] as any, allowsEditing: true, aspect: [1, 1], quality: 0.8,
+        mediaTypes: ['images'] as any, allowsEditing: false, quality: 1,
       });
       if (result.canceled || !result.assets[0]) return;
+      setCropUri(result.assets[0].uri);
+    } catch {}
+  }
 
-      setUploadingAvatar(true);
+  async function uploadAvatar(localUri: string) {
+    setCropUri(null);
+    setUploadingAvatar(true);
+    try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setUploadingAvatar(false); return; }
 
-      const file = result.assets[0];
-      const ext = file.uri.split('.').pop() || 'jpg';
-      const name = `${Date.now()}.${ext}`;
+      // Always jpeg: AvatarCropModal re-encodes as one, so trusting the source
+      // extension would mislabel the upload.
+      const name = `${Date.now()}.jpg`;
       const formData = new FormData();
-      formData.append('file', { uri: file.uri, name, type: file.mimeType || 'image/jpeg' } as any);
+      formData.append('file', { uri: localUri, name, type: 'image/jpeg' } as any);
 
       const { error: upErr } = await supabase.storage
         .from('avatars')
-        .upload(`${user.id}/${name}`, formData, { contentType: file.mimeType || 'image/jpeg', upsert: true });
+        .upload(`${user.id}/${name}`, formData, { contentType: 'image/jpeg', upsert: true });
       if (upErr) { setUploadingAvatar(false); return; }
 
       const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(`${user.id}/${name}`);
@@ -760,6 +772,13 @@ export default function OnboardingScreen() {
             <Text style={styles.skipText}>{t('onboarding.skip')}</Text>
           </TouchableOpacity>
         </View>
+
+        <AvatarCropModal
+          uri={cropUri}
+          visible={!!cropUri}
+          onCancel={() => setCropUri(null)}
+          onDone={uploadAvatar}
+        />
       </View>
     );
   }
@@ -903,7 +922,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   // Profile-photo step. The circle is the only thing on the screen on purpose —
   // one question, one target, nothing to read past.
-  photoStage: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  // bottomBar is absolutely positioned, so this stage stretches underneath it and
+  // "centred" lands well below the visual middle. The padding is the bar's own
+  // height (lg + button + skip + xl), which centres the circle in the part of
+  // the screen the user can actually see rather than in the layout box.
+  photoStage: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 132 },
   photoCircle: {
     width: 148, height: 148, borderRadius: 74,
     alignItems: 'center', justifyContent: 'center',

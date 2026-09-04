@@ -21,13 +21,24 @@ type Props = {
   initialCrop?: CropRect | null;
   /** false = render the crop but attach no gestures (a preview page). */
   interactive?: boolean;
+  /**
+   * Dim everything outside a circle inscribed in the frame. PURELY A GUIDE —
+   * the crop this returns is still the square frame, because that is what an
+   * avatar is: a square image every surface then displays in a circle. The mask
+   * exists so the person can see which part survives that circle instead of
+   * guessing from a square and being surprised by the corners.
+   *
+   * Expects a square frame; with a non-square one the circle inscribes the
+   * shorter side and the guide stops matching what is saved.
+   */
+  circularMask?: boolean;
 };
 
 // Instagram-style cropper: the media is shown to COVER the frame and the user
 // pans (1 finger) / pinches (2 fingers) to reposition & zoom. getCrop() converts
 // the on-screen transform into a source-pixel crop rect for expo-image-manipulator.
 const MediaCropper = forwardRef<MediaCropperHandle, Props>(function MediaCropper(
-  { uri, mediaWidth, mediaHeight, frameW, frameH, type, maxScale = 6, initialCrop = null, interactive = true }, ref,
+  { uri, mediaWidth, mediaHeight, frameW, frameH, type, maxScale = 6, initialCrop = null, interactive = true, circularMask = false }, ref,
 ) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -160,6 +171,30 @@ const MediaCropper = forwardRef<MediaCropperHandle, Props>(function MediaCropper
           }}
         />
       )}
+
+      {/* Circular guide. React Native has no mask, so this is the donut trick: a
+          view three frames wide with a border one frame thick leaves a
+          transparent hole of exactly one frame across (3F − 2F = F), rounded
+          into a circle and centred on the frame. The parent clips the overflow.
+          Cheaper and sharper than pulling in SVG for one shape, and it costs
+          nothing when circularMask is off. */}
+      {circularMask && (
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <View
+            style={[
+              styles.mask,
+              {
+                left: -frameW,
+                top: (frameH - frameW) / 2 - frameW,
+                width: frameW * 3,
+                height: frameW * 3,
+                borderRadius: (frameW * 3) / 2,
+                borderWidth: frameW,
+              },
+            ]}
+          />
+        </View>
+      )}
     </View>
   );
 });
@@ -168,4 +203,8 @@ export default MediaCropper;
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   frame: { overflow: 'hidden', backgroundColor: colors.background, alignSelf: 'center' },
+  // Dim, not black: the corners still need to be readable enough to judge what
+  // is being cut, and a hard blackout makes the crop feel like a decision
+  // already made rather than one being taken.
+  mask: { position: 'absolute', borderColor: 'rgba(0,0,0,0.55)' },
 });
