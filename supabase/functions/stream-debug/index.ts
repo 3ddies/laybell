@@ -36,17 +36,33 @@ serve(async (req) => {
     if (body?.mode === 'billing') {
       const base = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/stream`;
       const auth = { Authorization: `Bearer ${CF_TOKEN}` };
-      const [usageRes, liveRes] = await Promise.all([
+      // The subscriptions call almost certainly 403s — CF_STREAM_TOKEN is scoped
+      // to Stream, and account billing is a different permission. It is tried
+      // anyway because if it DOES answer, it names every recurring charge on the
+      // account and the question is closed without a dashboard trip. A 403 here
+      // is information too: it means the answer can only come from the dashboard.
+      const [usageRes, liveRes, subsRes] = await Promise.all([
         fetch(`${base}/storage-usage`, { headers: auth }),
         fetch(`${base}/live_inputs`, { headers: auth }),
+        fetch(`https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/subscriptions`, { headers: auth }),
       ]);
       const usage = await usageRes.json().catch(() => null);
       const live = await liveRes.json().catch(() => null);
+      const subs = await subsRes.json().catch(() => null);
       return json({
         storageUsage: usageRes.ok ? usage?.result : { httpStatus: usageRes.status, errors: usage?.errors },
         liveInputs: liveRes.ok
           ? { count: (live?.result ?? []).length, uids: (live?.result ?? []).map((l: any) => l?.uid) }
           : { httpStatus: liveRes.status, errors: live?.errors },
+        subscriptions: subsRes.ok
+          ? (subs?.result ?? []).map((s: any) => ({
+              product: s?.rate_plan?.public_name ?? s?.rate_plan?.id,
+              price: s?.price,
+              currency: s?.currency,
+              frequency: s?.frequency,
+              state: s?.state,
+            }))
+          : { httpStatus: subsRes.status, errors: subs?.errors, note: 'token likely lacks billing scope — read it from the dashboard' },
       });
     }
 
