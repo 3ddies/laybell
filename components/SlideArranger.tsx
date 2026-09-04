@@ -526,7 +526,7 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
             is only being browsed. */}
         {cur?.type === 'image' && (
           <TouchableOpacity style={[styles.cornerBase, styles.cornerBR]} onPress={() => setAdjusting(true)} activeOpacity={0.85}>
-            <Ionicons name="crop-outline" size={14} color={colors.text} />
+            <Ionicons name="crop-outline" size={14} color="#fff" />
             <Text style={styles.cornerText}>{t('post.slideAdjust')}</Text>
           </TouchableOpacity>
         )}
@@ -677,7 +677,11 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.full,
     paddingVertical: 5, paddingHorizontal: SPACING.sm,
   },
-  cornerText: { color: c.text, fontSize: 12, fontWeight: '700' },
+  // White, not c.text. This pill's ground is a fixed 60%-black scrim because it
+  // floats over the PHOTO, not over the theme — so following the theme made the
+  // label near-black on black in light mode. Its sibling close button hardcodes
+  // #fff for the same reason.
+  cornerText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   cornerBL: { bottom: SPACING.sm, left: SPACING.sm },
   cornerBR: { bottom: SPACING.sm, right: SPACING.sm },
 

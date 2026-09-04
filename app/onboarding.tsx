@@ -21,6 +21,7 @@ import { saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
 import { fetchSuggestedAccounts, reasonLabel } from '../lib/suggestions';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useProfile } from '../contexts/ProfileContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { LANGUAGES } from '../lib/i18n';
 import { GENRES as APP_GENRES, genreLabel } from '../lib/genres';
@@ -52,6 +53,7 @@ export default function OnboardingScreen() {
   const { colors } = useTheme();
   const { t, lang, setLang } = useTranslation();
   const styles = useThemedStyles(makeStyles);
+  const { update: updateProfile, refresh: refreshProfile } = useProfile();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
@@ -294,6 +296,12 @@ export default function OnboardingScreen() {
       const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(`${user.id}/${name}`);
       await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id);
       setAvatarUri(publicUrl);
+      // Writing the row is not enough. Every OTHER screen reads the avatar from
+      // the cached profile in ProfileContext, which was loaded before this photo
+      // existed and has no reason to reload — so the app kept showing the letter
+      // placeholder for the whole session after onboarding. edit-profile has
+      // always done this; the onboarding step was new and did not.
+      updateProfile({ avatar_url: publicUrl });
     } catch {}
     setUploadingAvatar(false);
   }
@@ -331,6 +339,12 @@ export default function OnboardingScreen() {
     // app/_layout.tsx), so the real app shows through around its borders — the
     // user taps outside or × to dismiss instead of being walled off.
     await AsyncStorage.setItem(WELCOME_TOUR_FLAG, '1');
+    // Pull the profile ONCE before handing over to the app. Every step here
+    // wrote straight to the database — name, bio, gender, date of birth, photo —
+    // while the cached profile was loaded at sign-up, when the row was still
+    // empty. Without this the app opens showing none of the setup the user just
+    // did, for the rest of the session.
+    try { await refreshProfile(); } catch {}
     setFinishing(false);
     router.replace('/(tabs)');
   }

@@ -85,8 +85,14 @@ function badgeStatus(def: BadgeDef, m: BadgeMetrics | null, held: Set<string>): 
 }
 
 export default function BadgesScreen() {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  // Diamond's identity is ICE — pale cyan text on a faint cyan wash. That reads
+  // on a dark ground (13:1) and vanishes on a light one: #CFF6FF over the light
+  // card measures 1.05:1, and the 7% tint is 1.03:1, so BOTH the label and the
+  // chip's own shape were effectively invisible. Light mode keeps the hue and
+  // inverts the weight: deeper cyan, carried by the border.
+  const isLight = mode === 'light';
   const { t } = useTranslation();
   const router = useRouter();
   const { profile, update } = useProfile();
@@ -177,12 +183,26 @@ export default function BadgesScreen() {
         style={[
           styles.chip,
           isDiamond && styles.chipTall,
-          selected && { borderColor: accent, backgroundColor: accent + '22' },
+          isDiamond && isLight && styles.chipTallLight,
+          // Diamond's accent (#A5F3FC) is itself pale, so on a light ground the
+          // "selected" border would be as faint as the unselected one — the one
+          // state that must be unmistakable. Deepen it for that case only.
+          selected && (isDiamond && isLight
+            ? { borderColor: '#155E75', backgroundColor: 'rgba(21,94,117,0.22)' }
+            : { borderColor: accent, backgroundColor: accent + '22' }),
           !unlocked && styles.chipLocked,
         ]}
       >
         <LinearGradient colors={opt.banner as any} style={styles.themeDot} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
-        <Text style={[styles.chipText, isDiamond && styles.chipTextDiamond, selected && { color: accent, fontWeight: '700' }]}>{opt.label}</Text>
+        <Text style={[
+          styles.chipText,
+          isDiamond && styles.chipTextDiamond,
+          isDiamond && isLight && styles.chipTextDiamondLight,
+          // The selected accent is the tier's own ring color, which for Diamond
+          // is the same pale ice — so light mode keeps its readable cyan rather
+          // than taking the accent.
+          selected && { color: isDiamond && isLight ? '#155E75' : accent, fontWeight: '700' },
+        ]}>{opt.label}</Text>
         {selected && unlocked && <Ionicons name="checkmark-circle" size={15} color={accent} />}
         {!unlocked && <Ionicons name="lock-closed" size={12} color={colors.textTertiary} />}
       </TouchableOpacity>
@@ -546,15 +566,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     elevation: 10,
   },
   previewRing: { width: 94, height: 94, borderRadius: 47, alignItems: 'center', justifyContent: 'center' },
+  // The gap tracks the theme via surfaceLight — the SAME token StoryAvatar uses
+  // for its ring gap, so this preview looks like the ring it is previewing. It
+  // was a hardcoded near-black, which read as "no gap" on a dark banner and as a
+  // black donut in light mode.
   previewAvatarGap: {
-    width: 86, height: 86, borderRadius: 43, backgroundColor: '#0B0603',
+    width: 86, height: 86, borderRadius: 43, backgroundColor: colors.surfaceLight,
     alignItems: 'center', justifyContent: 'center',
   },
   previewAvatar: { width: 78, height: 78, borderRadius: 39, alignItems: 'center', justifyContent: 'center' },
   previewAvatarText: { color: colors.text, fontSize: 30, fontWeight: '800' },
   previewEmblem: {
     position: 'absolute', bottom: -1, right: -1,
-    backgroundColor: '#0B0603', borderRadius: RADIUS.full, padding: 2,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.full, padding: 2,
   },
   heroTier: { color: colors.text, fontSize: 20, fontWeight: '800', marginTop: 8, letterSpacing: -0.3 },
   heroTitleWrap: { alignItems: 'center', marginTop: 8 },
@@ -601,12 +625,30 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: 'rgba(103,232,249,0.07)',
     borderRadius: 24, marginHorizontal: SPACING.lg,
   },
+  // Light mode. The EDGE carries this chip, not the fill: a cyan wash pale
+  // enough to keep the label readable tops out around 1.2:1 against the card, so
+  // no amount of tinting alone stops it blending in. The border does the work —
+  // 5.4:1 on the card, and still 3.0:1 through chipLocked's 0.7 opacity, which
+  // is the state Diamond is usually in. Solid cyan is held back for `selected`,
+  // which has to out-read this.
+  chipTallLight: {
+    backgroundColor: 'rgba(21,94,117,0.14)',
+    borderColor: 'rgba(21,94,117,0.9)',
+    borderWidth: 1.5,
+  },
   chipLocked: { opacity: 0.7 },
   chipText: { color: colors.text, fontSize: 13.5, fontWeight: '600' },
   chipTextDiamond: {
     color: '#CFF6FF', fontSize: 18.5, fontWeight: '900',
     textTransform: 'uppercase', letterSpacing: 0.3,
   },
+  // cyan-800 — the same ice hue carried to a weight that reads on off-white,
+  // rather than switching Diamond to some other color in light mode. Chosen over
+  // cyan-700 because Diamond is usually LOCKED, and chipLocked's 0.7 opacity
+  // compounds: cyan-700 fell to 2.8:1 dimmed, under the bar for the state most
+  // people actually see. This holds 3.3:1 locked and 5.5:1 unlocked. Deeper
+  // (cyan-900) clears more but starts reading navy instead of ice.
+  chipTextDiamondLight: { color: '#155E75' },
   themeDot: { width: 20, height: 20, borderRadius: 10, borderWidth: 1, borderColor: colors.border },
   innerDivider: { height: 0.5, backgroundColor: colors.borderSubtle, marginVertical: SPACING.md },
 
