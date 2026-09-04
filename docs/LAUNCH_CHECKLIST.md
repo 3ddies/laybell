@@ -330,11 +330,17 @@ the accepted walkthrough call, not yet held) are recorded in `docs/CSAM_RESPONSE
 **Registration is permission, not process** — what discharges the obligation is reading the
 moderation queue and following that runbook.
 
-⚠️ **Owner-only, one item left:**
+✅ **OWNER-ONLY ITEMS: ALL CLOSED.**
 
-- **Stripe:** verdict pending, **payouts pause 2026-09-09**. As of 08-29 Stripe has everything
-  it asked for and said it will come back to us, so nothing is owed by us. **If 09-05 passes in
-  silence, chase it** — that leaves four days on a live app with real creator earnings.
+- **Stripe — APPROVED 2026-09-02**, account reactivated, payouts restored after being paused on
+  09-01. **The review stalled three days on file delivery, not substance:** Gmail silently
+  converts attachments over ~25MB into Google Drive links, so twelve phone PNGs (~26MB) reached
+  Stripe as permission-walled links they could not open. Re-sent as JPEGs (2.9MB) on 09-01;
+  approved overnight. Never hand a reviewer a link they must request access to — and when an
+  external review goes quiet, suspect delivery before suspecting their queue.
+- **NCMEC — CLOSED 2026-08-29.** Registration approved, credentials secured, `abuse@laybell.app`
+  verified end to end, trusted-flagger question answered. The introduction call with the ESP
+  liaison was scheduled for 09-01.
 
 ---
 
