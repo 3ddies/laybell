@@ -73,8 +73,21 @@ const MediaCropper = forwardRef<MediaCropperHandle, Props>(function MediaCropper
   const aTx = useRef(new Animated.Value(seed.tx)).current;
   const aTy = useRef(new Animated.Value(seed.ty)).current;
 
-  const pan = useRef({ active: false, startX: 0, startY: 0, startTx: 0, startTy: 0 });
-  const pinch = useRef({ active: false, startDist: 1, startScale: 1, startCx: 0, startCy: 0, startTx: 0, startTy: 0 });
+  // ONE gesture baseline, re-seeded whenever the finger COUNT changes.
+  //
+  // This used to be two independent `active` flags, one for pan and one for
+  // pinch, each cleared only in onPanResponderRelease/Terminate. When those did
+  // not fire — a terminated responder, or a second pinch starting while the flag
+  // was still set — the next pinch took the "already active" branch and scaled
+  // against the PREVIOUS gesture's startDist and startScale. That is why zoom
+  // worked once and then jumped: the baseline was stale, not the maths.
+  //
+  // Keying off the touch count removes the failure mode instead of patching it.
+  // Every 1↔2 finger transition re-baselines from the CURRENT transform, so
+  // adding or lifting a finger can never jump and can never leave a stale
+  // baseline behind — including the very common case of one finger leaving a
+  // pinch fractionally before the other.
+  const gesture = useRef({ count: 0, dist: 1, scale: 1, cx: 0, cy: 0, tx: 0, ty: 0 });
 
   const apply = (nextScale: number, nextTx: number, nextTy: number) => {
     const s = Math.min(Math.max(nextScale, 1), maxScale);
@@ -89,35 +102,42 @@ const MediaCropper = forwardRef<MediaCropperHandle, Props>(function MediaCropper
   const responder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
+    // Never hand the gesture away mid-pinch. A stolen responder skips
+    // onPanResponderRelease, which is precisely how the old baseline went stale.
+    onPanResponderTerminationRequest: () => false,
+    // count 0 forces the next move to seed, so a new touch can never inherit
+    // anything from the last one.
+    onPanResponderGrant: () => { gesture.current.count = 0; },
     onPanResponderMove: (evt) => {
       const touches = evt.nativeEvent.touches;
-      if (touches.length >= 2) {
-        const [a, b] = touches;
-        const dist = Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY) || 1;
-        const cx = (a.pageX + b.pageX) / 2;
-        const cy = (a.pageY + b.pageY) / 2;
-        if (!pinch.current.active) {
-          pinch.current = { active: true, startDist: dist, startScale: scale.current, startCx: cx, startCy: cy, startTx: tx.current, startTy: ty.current };
-          pan.current.active = false;
-        } else {
-          apply(
-            pinch.current.startScale * (dist / pinch.current.startDist),
-            pinch.current.startTx + (cx - pinch.current.startCx),
-            pinch.current.startTy + (cy - pinch.current.startCy),
-          );
-        }
-      } else if (touches.length === 1) {
-        const t = touches[0];
-        if (!pan.current.active) {
-          pan.current = { active: true, startX: t.pageX, startY: t.pageY, startTx: tx.current, startTy: ty.current };
-          pinch.current.active = false;
-        } else {
-          apply(scale.current, pan.current.startTx + (t.pageX - pan.current.startX), pan.current.startTy + (t.pageY - pan.current.startY));
-        }
+      const n = touches.length;
+      if (n === 0) return;
+
+      // Two fingers track their midpoint and separation; one finger tracks
+      // itself and holds the scale. Using the centroid for both means the pan
+      // maths is identical either way, so a finger arriving or leaving changes
+      // the baseline and nothing else.
+      const two = n >= 2;
+      const cx = two ? (touches[0].pageX + touches[1].pageX) / 2 : touches[0].pageX;
+      const cy = two ? (touches[0].pageY + touches[1].pageY) / 2 : touches[0].pageY;
+      const dist = two
+        ? (Math.hypot(touches[0].pageX - touches[1].pageX, touches[0].pageY - touches[1].pageY) || 1)
+        : 1;
+
+      if (n !== gesture.current.count) {
+        gesture.current = { count: n, dist, scale: scale.current, cx, cy, tx: tx.current, ty: ty.current };
+        return;
       }
+
+      const g = gesture.current;
+      apply(
+        two ? g.scale * (dist / g.dist) : scale.current,
+        g.tx + (cx - g.cx),
+        g.ty + (cy - g.cy),
+      );
     },
-    onPanResponderRelease: () => { pan.current.active = false; pinch.current.active = false; },
-    onPanResponderTerminate: () => { pan.current.active = false; pinch.current.active = false; },
+    onPanResponderRelease: () => { gesture.current.count = 0; },
+    onPanResponderTerminate: () => { gesture.current.count = 0; },
   }), [baseW, baseH, frameW, frameH, maxScale]);
 
   useImperativeHandle(ref, () => ({
