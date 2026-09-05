@@ -1,6 +1,6 @@
 {
   "title": "Laybell Privacy Policy",
-  "effective": "July 30, 2026",
+  "effective": "September 5, 2026",
   "sections": [
     {
       "heading": "1. Introduction, Who We Are, Defined Terms & Scope",
@@ -11,7 +11,7 @@
         },
         {
           "type": "p",
-          "text": "Effective Date: June 13, 2026. Last Updated: June 13, 2026. This is the operative date referenced throughout this Policy, including in Section 21 (Changes to This Privacy Policy)."
+          "text": "Effective Date: June 13, 2026. Last Updated: June 13, 2026. This is the operative date referenced throughout this Policy, including in Section 22 (Changes to This Privacy Policy)."
         },
         {
           "type": "p",
@@ -824,12 +824,37 @@
       "blocks": [
         {
           "type": "p",
-          "text": "If you enable notifications, we store your Expo push token and platform on our servers and deliver notifications through APNs (Apple) and FCM (Google). We send notifications such as likes, comments, follows, and messages, and we also show in-app notifications. You can control notifications using per-category toggles in the app and by adjusting your device's operating-system settings. We do not send marketing text messages beyond the notifications described here; we may send transactional or security-related communications about your account. Push-notification processing is based on your consent, withdrawable at any time as easily as it was given."
+          "text": "If you enable notifications, we store your Expo push token and platform on our servers and deliver notifications through APNs (Apple) and FCM (Google). We send notifications such as likes, comments, follows, and messages, and we also show in-app notifications. You can control notifications using per-category toggles in the app and by adjusting your device's operating-system settings. We do not send marketing text messages. We may send transactional or security-related communications about your account — password resets, verification codes, parental-consent requests and similar — and those are not marketing and cannot be turned off while your account is open. Marketing email is separate and optional; see the section on Marketing Email below. Push-notification processing is based on your consent, withdrawable at any time as easily as it was given."
         }
       ]
     },
     {
-      "heading": "19. EU and UK Representatives (Article 27)",
+      "heading": "19. Marketing Email",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Separately from the account and security messages described above, Laybell operates an email list used to tell you about new features, product news, and artists and music on the platform. We use the email address on your account, and we send this mail through our email provider (Resend). We do not sell or rent your email address, and we do not share it with advertisers."
+        },
+        {
+          "type": "p",
+          "text": "When you create an account with an email address and password, the sign-up screen shows a checkbox for this mail. In the United States, where Laybell currently operates, that checkbox is selected by default and you may clear it before creating your account. If you sign in with Apple or Google you do not see that screen, and the account is created with the same default. We record whether you made an explicit choice and when."
+        },
+        {
+          "type": "p",
+          "text": "You can turn this off at any time, and it takes effect immediately. In the app, open Settings and turn off \"Emails from Laybell\". Every marketing email we send also contains an unsubscribe link that works without signing in, and our postal address. Turning marketing email off never affects account, security, legal or transactional messages, which continue for as long as your account exists."
+        },
+        {
+          "type": "p",
+          "text": "We do not send marketing email to accounts we know belong to a minor. Age is collected during onboarding rather than at sign-up, so if the date of birth you give identifies you as under 18, we turn marketing email off for your account at that point regardless of what was selected earlier."
+        },
+        {
+          "type": "p",
+          "text": "If Laybell becomes available outside the United States, this default will change: in jurisdictions requiring prior opt-in consent for commercial email — including the EEA and United Kingdom under the GDPR and ePrivacy rules, and Canada under CASL — the checkbox will not be pre-selected, and we will rely on your affirmative consent instead. Our legal basis in those jurisdictions is consent, withdrawable at any time as easily as it was given; in the United States we rely on our legitimate interest in telling our own users about our own service, subject to your right to opt out at any time."
+        }
+      ]
+    },
+    {
+      "heading": "20. EU and UK Representatives (Article 27)",
       "blocks": [
         {
           "type": "p",
@@ -838,7 +863,7 @@
       ]
     },
     {
-      "heading": "20. Copyright and DMCA",
+      "heading": "21. Copyright and DMCA",
       "blocks": [
         {
           "type": "p",
@@ -851,7 +876,7 @@
       ]
     },
     {
-      "heading": "21. Changes to This Privacy Policy",
+      "heading": "22. Changes to This Privacy Policy",
       "blocks": [
         {
           "type": "p",
@@ -864,7 +889,7 @@
       ]
     },
     {
-      "heading": "22. Contact Us",
+      "heading": "23. Contact Us",
       "blocks": [
         {
           "type": "p",

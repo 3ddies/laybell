@@ -145,10 +145,14 @@ function Section({ title, items }: { title: string; items: SectionItem[] }) {
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { profile } = useProfile();
+  const { profile, update } = useProfile();
   // Mirrors profiles.hidden (the switch needs local state for instant feedback).
   const [hiddenOn, setHiddenOn] = useState(false);
   useEffect(() => { setHiddenOn(!!(profile as any)?.hidden); }, [profile]);
+  // Laybell's email list. Mirrors the profile so it is right the moment the
+  // screen opens, rather than after a round-trip.
+  const [emailsOn, setEmailsOn] = useState(true);
+  useEffect(() => { setEmailsOn((profile as any)?.marketing_opt_in !== false); }, [profile]);
   const { colors, mode, setMode } = useTheme();
   const { usageBytes, prefs: offlinePrefs, setPref: setOfflinePref } = useOffline();
   const { isPremium, isPremiumPlus } = usePremium();
@@ -273,6 +277,34 @@ export default function SettingsScreen() {
     if (error) { Alert.alert(t('hide.couldNotUpdate'), error.message); return false; }
     setHiddenOn(on);
     return true;
+  }
+
+  /**
+   * Turn Laybell's marketing email on or off.
+   *
+   * Optimistic, and deliberately so: an unsubscribe that appears not to have
+   * worked is the one people escalate. The switch moves at once and the write
+   * follows; a failure puts it back and says so, rather than leaving the UI
+   * claiming something the server does not agree with.
+   *
+   * The timestamp is stamped either way — turning it OFF is a consent event that
+   * matters more than turning it on, because it is the one there may later be a
+   * complaint about.
+   */
+  async function toggleMarketingEmail(next: boolean) {
+    setEmailsOn(next);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('no session');
+      const { error } = await supabase.from('profiles')
+        .update({ marketing_opt_in: next, marketing_opt_in_at: new Date().toISOString() })
+        .eq('id', user.id);
+      if (error) throw error;
+      update({ marketing_opt_in: next } as any); // keep the cached profile in step
+    } catch {
+      setEmailsOn(!next);
+      Alert.alert(t('editProfile.error'), t('settings.emailsSaveFailed'));
+    }
   }
 
   function toggleHidden(next: boolean) {
@@ -442,6 +474,17 @@ export default function SettingsScreen() {
   ];
 
   const notifItems: SectionItem[] = [
+    {
+      // Sits with notifications rather than with account settings: to somebody
+      // looking for it, "stop emailing me" is the same errand as "stop
+      // notifying me", and it is the first place they will look.
+      icon: 'mail-outline',
+      label: t('settings.emails'),
+      subtitle: t('settings.emailsSub'),
+      value: emailsOn,
+      onValueChange: toggleMarketingEmail,
+      chevron: false,
+    },
     {
       icon: 'notifications-outline',
       label: t('notif.all'),
