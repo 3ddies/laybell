@@ -4,7 +4,7 @@ import {
   TouchableOpacity, ActivityIndicator, ScrollView, Alert, Image,
 } from 'react-native';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
@@ -144,6 +144,20 @@ export default function EditProfileScreen() {
   if (loading) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.inner}>
+        {/* No back-swipe on THIS screen. The root Stack turns on
+            fullScreenGestureEnabled, so a horizontal drag ANYWHERE — not just from
+            the edge — pops the screen. On a scrolling form that is a trap: a
+            slightly diagonal flick while reading down the fields throws away
+            everything typed since the last save, silently, with no way back to it.
+
+            Both flags are needed. gestureEnabled alone leaves the edge swipe live,
+            which is the same accident in a narrower strip. This is what the auth
+            and onboarding groups already do, for the same reason.
+
+            Nothing is trapped by it: Cancel and Save sit in the header, and
+            requiring a deliberate tap to leave an edit form is the iOS convention
+            rather than a workaround. */}
+        <Stack.Screen options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
         {/* Header (real chrome — handlers already declared) */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
@@ -235,6 +249,20 @@ export default function EditProfileScreen() {
       keyboardDismissMode="on-drag"
       automaticallyAdjustKeyboardInsets
     >
+      {/* No back-swipe on THIS screen. The root Stack turns on
+          fullScreenGestureEnabled, so a horizontal drag ANYWHERE — not just from
+          the edge — pops the screen. On a scrolling form that is a trap: a
+          slightly diagonal flick while reading down the fields throws away
+          everything typed since the last save, silently, with no way back to it.
+
+          Both flags are needed. gestureEnabled alone leaves the edge swipe live,
+          which is the same accident in a narrower strip. This is what the auth
+          and onboarding groups already do, for the same reason.
+
+          Nothing is trapped by it: Cancel and Save sit in the header, and
+          requiring a deliberate tap to leave an edit form is the iOS convention
+          rather than a workaround. */}
+      <Stack.Screen options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
