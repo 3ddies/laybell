@@ -1,3 +1,4 @@
+import { isFilm } from '../../lib/tv';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, ActivityIndicator, RefreshControl, PanResponder,
@@ -577,6 +578,35 @@ export default function PublicProfileScreen() {
     );
   }
 
+  // The Videos tab, split the way the Music tab splits albums from singles.
+  //
+  // A film is a horizontal video over 9 minutes (lib/tv isFilm — the same
+  // predicate Laybell TV ranks its shelf with, so a video cannot be a film in
+  // one place and a clip in another). They are thelong things somebody sits down
+  // for; mixing them into the same grid as a 20-second clip loses both.
+  //
+  // Labels appear ONLY when both kinds exist. A lone "FILMS" heading over the
+  // whole tab is a category padded to look fuller than it is, which is the one
+  // thing the films catalogue was explicitly built not to do.
+  function renderVideosTab() {
+    const all = dataForTab('videos');
+    const films = all.filter((p: any) => isFilm(p));
+    if (films.length === 0) return renderGrid(all, 'videos');
+    const clips = all.filter((p: any) => !isFilm(p));
+    return (
+      <View>
+        {clips.length > 0 && <Text style={styles.sectionLabel}>{t('profile.sectionFilms')}</Text>}
+        {renderGrid(films, 'videos')}
+        {clips.length > 0 && (
+          <>
+            <Text style={[styles.sectionLabel, styles.sectionLabelStacked]}>{t('profile.sectionVideos')}</Text>
+            {renderGrid(clips, 'videos')}
+          </>
+        )}
+      </View>
+    );
+  }
+
   function renderGrid(data: any[], tabKey: string) {
     if (data.length === 0) {
       return (
@@ -808,7 +838,7 @@ export default function PublicProfileScreen() {
                 <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setup().catch(() => { setLoading(false); setRefreshing(false); }); }} tintColor={tabAccent} colors={[tabAccent]} />
               }
             >
-              {key === 'playlists' ? renderPlaylists() : key === 'music' ? renderMusicList(dataForTab('music')) : key === 'posts' ? renderPostsTab() : renderGrid(dataForTab(key), key)}
+              {key === 'playlists' ? renderPlaylists() : key === 'music' ? renderMusicList(dataForTab('music')) : key === 'posts' ? renderPostsTab() : key === 'videos' ? renderVideosTab() : renderGrid(dataForTab(key), key)}
             </ScrollView>
           </View>
         ))}
@@ -899,6 +929,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // padding — so this one must NOT add its own. albumShelfLabel does, because
   // the shelf bleeds past that padding to run its rail to the screen edge, and
   // reusing it here indented Singles further than every other line on the tab.
+  // A second section heading needs air above it; the first sits flush under the
+  // tab strip and does not.
+  sectionLabelStacked: { marginTop: SPACING.md },
   sectionLabel: {
     color: quietText(colors), fontSize: 12, fontWeight: '800',
     letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: SPACING.xs,

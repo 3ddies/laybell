@@ -183,6 +183,7 @@ import TrackRow from '../../components/TrackRow';
 import SongSquareCard from '../../components/SongSquareCard';
 import { parseFeatures } from '../../lib/features';
 import StoriesTray from '../../components/StoriesTray';
+import PeopleRow from '../../components/PeopleRow';
 import PendingUploads from '../../components/PendingUploads';
 import Spinner from '../../components/Spinner';
 import { useUploadQueue } from '../../contexts/UploadQueueContext';
@@ -758,6 +759,8 @@ const PostCard = memo(function PostCard({
 // the unlocked feed scrolls into pre-warmed content. Pull-to-refresh RE-GATES:
 // fresh content gets a fresh pass every time.
 const GATE_POSTS = 3;
+// How many posts you scroll past before the people rail appears.
+const PEOPLE_AFTER = 8;
 // Dwell AFTER the user reaches the bound. Pure pacing — the prefetch passes
 // are fire-and-forget and never awaited, so shortening this only trims how
 // long the warm-up gets to run (trimmed 5s → 3.5s for snappier unlock).
@@ -866,6 +869,34 @@ export default function HomeScreen() {
     if (feedGateUnlocked || feedData.length <= GATE_POSTS) return feedData;
     return [...feedData.slice(0, GATE_POSTS), { id: '__feed_gate__', __gate: true } as unknown as Post];
   }, [feedData, feedGateUnlocked]);
+
+  // People-to-follow rail, woven in after PEOPLE_AFTER real posts.
+  //
+  // Counted over POSTS, not over rows: the pending-upload header and the pinned
+  // posts are rows too, and counting those would slide the rail up the feed on
+  // exactly the days somebody has been posting. Eight is far enough in that
+  // nobody meets it before they have seen the feed do its job, and near enough
+  // that they meet it in the first sitting.
+  //
+  // Placed AFTER the gate slice deliberately — while the gate is up the list is
+  // three posts long, and a discovery rail inside a three-post list is not
+  // discovery, it is most of the screen.
+  const peopleFeedData = useMemo(() => {
+    if (!currentUserId || gatedFeedData.length <= PEOPLE_AFTER) return gatedFeedData;
+    let posts = 0;
+    for (let i = 0; i < gatedFeedData.length; i++) {
+      const row = gatedFeedData[i] as any;
+      if (row.__pending || row.__gate) continue;
+      posts++;
+      if (posts === PEOPLE_AFTER) {
+        const out = gatedFeedData.slice();
+        out.splice(i + 1, 0, { id: '__people__', __people: true } as unknown as Post);
+        return out;
+      }
+    }
+    return gatedFeedData;
+  }, [gatedFeedData, currentUserId]);
+
   // Live mirrors for the geometry-based active-video resolver (below). It reads
   // these from refs so it can stay a stable, identity-constant callback while
   // still seeing the current data / header height / bottom inset.
@@ -873,7 +904,6 @@ export default function HomeScreen() {
   gatedFeedDataRef.current = gatedFeedData;
   const lastVideoTokens = useRef<any[]>([]);       // most recent 40%-visible video tokens (geometry fallback)
   const headerHRef = useRef(140);                  // floating-header height (assigned once headerH is known)
-  const trayHRef = useRef(0);                      // stories-tray height INSIDE headerH (uncovers content once collapsed)
   const bottomClearRef = useRef(68);               // tab bar + safe-area cover at the bottom of the band
   // The optimization pass: warm everything the next user actions will touch.
   const runFeedGatePrefetch = useCallback((deep: boolean) => {
@@ -1129,7 +1159,9 @@ export default function HomeScreen() {
     // glide is deliberately NOT subtracted: letting the band grow and shrink
     // with a chrome animation would flip a video in and out of "fully on
     // screen" from chrome motion alone.
-    const topChrome = headerHRef.current - (trayShownRef.current ? 0 : trayHRef.current);
+    // The tray no longer collapses, so the header's height IS the top chrome —
+    // there is no shrunken variant left to subtract.
+    const topChrome = headerHRef.current;
     const bandTop = viewTop + topChrome;
     const bandBottom = viewTop + winH - bottomClearRef.current;
     const bandH = bandBottom - bandTop;
@@ -1558,37 +1590,21 @@ export default function HomeScreen() {
   // posts under the floating header. onLayout still corrects the exact value.
   const [headerH, setHeaderH] = useState(140);
   headerHRef.current = headerH; // mirror for the geometry resolver's focus-line math
-  // Stories tray: visible ONLY at the very top of the feed. It lives in the
-  // floating header block (FlashList v2 detaches list headers — see the note at
-  // the tray itself), but it must NOT ride the header's hide/show glide, or
-  // scrolling UP from deep in the feed would slide a row of stories back into
-  // the frosted bar. So it collapses on its own, tied to scroll OFFSET rather
-  // than scroll DIRECTION.
+  // Stories tray: FIXED to the top of the feed, at its natural height, always.
   //
-  // `headerH` is deliberately pinned to the EXPANDED height (see the block's
-  // onLayout): the feed's paddingTop must not change when the tray collapses,
-  // or FlashList's maintainVisibleContentPosition compensates the difference and
-  // the whole feed jumps mid-scroll.
-  const [trayH, setTrayH] = useState(0);
-  trayHRef.current = trayH; // mirror for the geometry resolver's band math
-  const trayAnim = useRef(new Animated.Value(1)).current;   // 1 = shown, 0 = collapsed
-  const trayShownRef = useRef(true);
-  const setTrayShown = useCallback((show: boolean) => {
-    if (trayShownRef.current === show) return;              // discrete, not per-frame
-    trayShownRef.current = show;
-    // Height can't run on the native driver, but this fires once per crossing
-    // (not every scroll tick), which is the same discrete model feedChromeTop uses.
-    Animated.timing(trayAnim, { toValue: show ? 1 : 0, duration: 200, useNativeDriver: false }).start();
-  }, [trayAnim]);
-  const trayStyle = useMemo(() => (
-    trayH
-      ? {
-          height: trayAnim.interpolate({ inputRange: [0, 1], outputRange: [0, trayH] }),
-          opacity: trayAnim,
-          overflow: 'hidden' as const,
-        }
-      : undefined   // first pass renders at natural height so onLayout can measure it
-  ), [trayH, trayAnim]);
+  // It used to collapse once you scrolled past the top — an animated height,
+  // which cannot run on the native driver, driven from the scroll handler. Two
+  // things made that glitchy in practice: the height change raced FlashList's
+  // maintainVisibleContentPosition (which is why headerH had to be pinned to the
+  // expanded height to stop the feed jumping), and a fling that crossed the
+  // threshold twice fired the 200ms timing against itself.
+  //
+  // It bought very little: the tray rides the floating header, which already
+  // slides away on scroll-down, so the row was leaving the screen regardless.
+  // Removing the collapse removes the whole class of jump — nothing about the
+  // feed's paddingTop changes any more, because nothing about the header's
+  // height does.
+
   // Memoized so re-renders don't tear down + rebuild the native interpolation
   // node graph (inline it rebuilt on every commit — native-animated churn that
   // landed exactly at drag start). Created twice ever: mount + first onLayout.
@@ -2219,6 +2235,7 @@ export default function HomeScreen() {
   const renderPost = useCallback(({ item }: { item: Post }) => (
     (item as any).__pending ? <PendingUploads /> :
     (item as any).__gate ? <FeedGateCard onArm={onGateArm} /> :
+    (item as any).__people ? <PeopleRow currentUserId={currentUserId} /> :
     <ElasticSwipeView resetKey={(item as any).__spotlight ? `spot:${(item as any).__spotlight.campaignId}` : item.id}>
       {(item as any).__ad ? (
         <SponsoredCard
@@ -2288,10 +2305,9 @@ export default function HomeScreen() {
           styles.headerGlass,
           headerSlideStyle,
         ]}
-        // Only measure while the tray is EXPANDED, so headerH always describes the
-        // full block. Measuring the collapsed block would shrink the feed's
-        // paddingTop mid-scroll and jump the list (see the trayAnim note above).
-        onLayout={(e) => { const h = e.nativeEvent.layout.height; if (trayShownRef.current) setHeaderH(h); }}
+        // Measured plainly now. The block has ONE height — the tray no longer
+        // collapses — so there is no longer a wrong moment to measure it at.
+        onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}
       >
         {/* iOS: real frosted material behind the floating header (matches the tab
             bar), so the feed blurs through it instead of hiding under a flat slab.
@@ -2435,8 +2451,6 @@ export default function HomeScreen() {
           defaults to the New Architecture on both platforms. Same host, both
           platforms now. */}
       <Animated.View
-        style={trayStyle}
-        onLayout={(e) => { if (!trayH) setTrayH(e.nativeEvent.layout.height); }}
       >
         <StoriesTray />
       </Animated.View>
@@ -2486,15 +2500,15 @@ export default function HomeScreen() {
       <FlashList
         ref={feedListRef}
         scrollEnabled={!zoomLock}
-        data={gatedFeedData}
+        data={peopleFeedData}
         // Spotlight instances key off their campaign so a promoted post can
         // never key-collide with itself (organic copies are filtered at merge).
         // In v2 this is also the recycler's stable id — load-bearing.
-        keyExtractor={(item) => ((item as any).__pending ? 'pending' : item.__spotlight ? `spot:${item.__spotlight.campaignId}` : item.id)}
+        keyExtractor={(item) => ((item as any).__pending ? 'pending' : (item as any).__people ? 'people' : item.__spotlight ? `spot:${item.__spotlight.campaignId}` : item.id)}
         // Recycle pools are per-type: an ad cell must never be recycled into a
         // post cell (renderPost's root ternary would swap component trees —
         // a full remount AND a polluted pool).
-        getItemType={(item) => ((item as any).__pending ? 'pending' : (item as any).__gate ? 'gate' : (item as any).__ad ? 'ad' : 'post')}
+        getItemType={(item) => ((item as any).__pending ? 'pending' : (item as any).__people ? 'people' : (item as any).__gate ? 'gate' : (item as any).__ad ? 'ad' : 'post')}
         renderItem={renderPost}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={feedContentStyle}
@@ -2509,7 +2523,6 @@ export default function HomeScreen() {
           const y = e.nativeEvent.contentOffset.y;
           // Stories show only at the top. Small threshold so a rubber-band
           // overscroll or a stray pixel doesn't flap the collapse.
-          setTrayShown(y <= 6);
           if (Math.abs(y - lastTapGuardY.current) > 2) { lastTapGuardY.current = y; lastScrollMoveAt.current = Date.now(); }
           trackFeedScroll(y, e.nativeEvent.contentSize.height - e.nativeEvent.layoutMeasurement.height);
           trackScrollVelocity(y);
