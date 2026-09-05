@@ -31,13 +31,20 @@ type Props = {
   showAdd?: boolean;
   addColors?: readonly [string, string]; // gradient for the ＋ button (e.g. the user's badge tier)
   onPressAdd?: () => void;
+  /**
+   * Give the ring depth: a soft drop shadow plus a single top-left highlight on
+   * the band. Opt-in rather than always-on — it is right for the stories RAIL,
+   * where the circles are the content, and wrong for an avatar sitting inline
+   * beside a name, where a shadow on 12pt of text-height circle is just noise.
+   */
+  raised?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
 export default function StoryAvatar({
   userId, avatarUrl, name, size,
   onPressProfile, onBeforeOpenStory, badgeRing,
-  showAdd, addColors, onPressAdd, style,
+  showAdd, addColors, onPressAdd, raised = false, style,
 }: Props) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -123,8 +130,28 @@ export default function StoryAvatar({
         { width: size, height: size, borderRadius: size / 2, padding: pad, alignItems: 'center', justifyContent: 'center' },
         // Diamond — the peak status — glows wherever its ring appears.
         isDiamond && badgeGlow('diamond'),
+        // Lift, when the caller asks for it. Not applied to a Diamond ring,
+        // which already carries its own glow — stacking a shadow under that
+        // reads as a smudge rather than as depth.
+        raised && !isDiamond && styles.lift,
       ]}
     >
+      {/* Specular highlight, BEHIND the avatar on purpose: the photo covers the
+          middle, so this only ever shows on the ring band itself. Rendered over
+          the avatar it would wash out the top of everyone's face.
+          A single light source at the top-left, which is the whole trick — one
+          consistent highlight is what makes a flat circle read as a bevelled
+          one, and two would just look like glare. */}
+      {raised && (
+        <LinearGradient
+          colors={['rgba(255,255,255,0.42)', 'rgba(255,255,255,0.10)', 'transparent']}
+          locations={[0, 0.38, 0.72]}
+          start={{ x: 0.2, y: 0 }}
+          end={{ x: 0.8, y: 1 }}
+          style={[StyleSheet.absoluteFill, { borderRadius: size / 2 }]}
+          pointerEvents="none"
+        />
+      )}
       {avatarNode}
     </LinearGradient>
   ) : (
@@ -161,6 +188,15 @@ export default function StoryAvatar({
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  // Low and soft. A story circle should look like it is resting ON the row, not
+  // hovering over it — a bigger offset reads as a sticker peeling off the page.
+  lift: {
+    shadowColor: '#000',
+    shadowOpacity: 0.20,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2.5 },
+    elevation: 4,
+  },
   add: {
     position: 'absolute', bottom: -2, right: -2,
     width: 24, height: 24, borderRadius: 12, overflow: 'hidden',

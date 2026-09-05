@@ -107,6 +107,7 @@ export default function StoriesTray() {
           name={ownName}
           size={RING}
           onPressProfile={openCamera} // no active story → tapping opens the camera
+          raised
           showAdd
           addColors={addColors}
           onPressAdd={openCamera}
@@ -122,6 +123,7 @@ export default function StoriesTray() {
             avatarUrl={g.user.avatar_url}
             name={g.user.display_name || g.user.username}
             size={RING}
+            raised
           />
           <Text style={styles.label} numberOfLines={1}>
             {g.user.username || g.user.display_name}
@@ -160,9 +162,14 @@ export default function StoriesTray() {
 const RING = 82;
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
-  row: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, gap: SPACING.md },
-  item: { width: RING + 6, alignItems: 'center', gap: 5 },
-  label: { color: colors.textSecondary, fontSize: 12, maxWidth: RING + 6, textAlign: 'center' },
+  // Tightened from a 16pt gap on a RING+6 item — 22pt between circles, which
+  // put barely three and a half on screen and made the rail feel like a longer
+  // scroll than it is. Now 12pt, so a fourth circle comes into view and the row
+  // reads as a set rather than as separated items. Not tighter than that: the
+  // raised circles cast a shadow, and they need room to sit in.
+  row: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, gap: SPACING.sm },
+  item: { width: RING + 4, alignItems: 'center', gap: 5 },
+  label: { color: colors.textSecondary, fontSize: 12, maxWidth: RING + 4, textAlign: 'center' },
   // Sized to the circles and centred on them, so it reads as a break in the row
   // rather than a full-height wall — the labels below hang past it on purpose.
   divider: {
