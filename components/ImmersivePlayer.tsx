@@ -11,6 +11,7 @@ import { useAudio, useAudioPosition } from '../contexts/AudioContext';
 import { SPACING, type ThemePalette } from '../constants/theme';
 import { useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import FloatingComments from './FloatingComments';
 
 // A full-bleed listening view, reached by tapping the artwork in Now Playing.
 //
@@ -235,6 +236,23 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
       {/* The gesture surface. Above the artwork so it can be touched, below the
           controls so they still win their own taps. */}
       <View style={StyleSheet.absoluteFill} {...screenPan.panHandlers} />
+
+      {/* The room reacting. Same component the feed's square song card uses, on
+          the same comments — Track.id IS the post id (see toTrack), so the
+          player can ask for them directly.
+          Sits in the clear middle band the scrim deliberately leaves open, well
+          above the waveform and below the artwork's top third, so it crosses the
+          picture rather than the controls. It rises further here than on a feed
+          card because there is far more screen to travel.
+          This is the screen whose own comment tells you TIMED comments are not
+          here; these are not those — no position is claimed, they are simply the
+          best comments on the track, drifting. */}
+      <FloatingComments
+        postId={currentTrack?.id}
+        max={3}
+        travel={210}
+        style={{ left: SPACING.lg, right: SPACING.lg, bottom: SH * 0.34, height: 230 }}
+      />
 
       <View style={[styles.header, { paddingTop: insets.top + SPACING.sm }]}>
         <TouchableOpacity onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('a11y.back')}>
