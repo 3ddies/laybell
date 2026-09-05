@@ -120,7 +120,15 @@ export default function StoriesTray() {
     : [];
 
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      // The rule goes on the SCROLLVIEW, not on contentContainerStyle: the
+      // content is wider than the screen, so a border there would scroll with
+      // the circles and run off the edge instead of ruling the row.
+      style={styles.tray}
+      contentContainerStyle={styles.row}
+    >
       {/* Your story */}
       <View style={styles.item}>
         <StoryAvatar
@@ -189,6 +197,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // scroll than it is. Now 12pt, so a fourth circle comes into view and the row
   // reads as a set rather than as separated items. Not tighter than that: the
   // raised circles cast a shadow, and they need room to sit in.
+  // Closes the row off from the first post now that the tray is a feed ROW
+  // rather than part of the header. borderSubtle at hairline width, matching the
+  // rule between two posts — the rail is a band in the same list, so it should
+  // be divided the same way rather than announcing itself with a heavier line.
+  tray: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.borderSubtle,
+  },
   row: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, gap: SPACING.sm },
   item: { width: RING + 4, alignItems: 'center', gap: 5 },
   label: { color: colors.textSecondary, fontSize: 12, maxWidth: RING + 4, textAlign: 'center' },
