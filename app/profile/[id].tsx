@@ -606,7 +606,7 @@ export default function PublicProfileScreen() {
         {clips.length > 0 && (
           <>
             <Text style={[styles.sectionLabel, styles.videosLabel, styles.sectionLabelStacked]}>{t('profile.sectionVideos')}</Text>
-            {renderGrid(clips, 'videos')}
+            {renderGrid(clips, 'videos', true)}
           </>
         )}
       </View>
@@ -671,7 +671,7 @@ export default function PublicProfileScreen() {
     );
   }
 
-  function renderGrid(data: any[], tabKey: string) {
+  function renderGrid(data: any[], tabKey: string, inset = false) {
     if (data.length === 0) {
       return (
         <View style={styles.emptyGrid}>
@@ -681,12 +681,12 @@ export default function PublicProfileScreen() {
       );
     }
     return (
-      <View style={styles.postsGrid}>
+      <View style={[styles.postsGrid, inset && styles.postsGridInset]}>
         {data.map((post: any) => (
           <TouchableOpacity
             key={post.id}
             ref={(n) => { if (n) gridRefs.current[post.id] = n; }}
-            style={styles.gridItem}
+            style={[styles.gridItem, inset && styles.gridItemInset]}
             onPress={() => {
               if (post.type === 'audio') {
                 const songs = data.filter((s: any) => s.type === 'audio');
@@ -1002,10 +1002,23 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // on the Music tab it lives inside musicList which already supplies it; here
   // the grid under it is edge-to-edge, so without this the heading sat flush in
   // the corner. That was the "cut off" look.
-  videosLabel: { paddingHorizontal: SPACING.md },
+  videosLabel: { paddingHorizontal: SPACING.md, marginBottom: SPACING.sm },
+  // The square grid, inset to the same margin as the labels and the film
+  // posters. Without it the VIDEOS heading sat 16pt in while the grid it labels
+  // ran to the bezel — a heading that does not line up with its own content.
+  // Shares the film shelf's gap, so the two read as one tab rather than two
+  // grids that happen to be stacked. The 2pt gutter this overrides is right for
+  // a full-bleed contact sheet and wrong once the grid has margins.
+  postsGridInset: { paddingHorizontal: SPACING.md, gap: FILM_GAP },
+  gridItemInset: {
+    width: (SCREEN_W - SPACING.md * 2 - FILM_GAP * 2) / 3,
+    // Rounded to match the posters above. Sharp corners belong to a grid that
+    // runs edge to edge; once it is inset and gapped, they read as unfinished.
+    borderRadius: RADIUS.sm, overflow: 'hidden',
+  },
   filmGrid: {
     flexDirection: 'row', flexWrap: 'wrap', gap: FILM_GAP,
-    paddingHorizontal: SPACING.md, marginBottom: SPACING.xs,
+    paddingHorizontal: SPACING.md,
   },
   filmTile: {
     width: FILM_W, height: FILM_H, borderRadius: RADIUS.md,
@@ -1023,7 +1036,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingHorizontal: 6, paddingVertical: 2,
   },
   filmRuntimeText: { color: '#fff', fontSize: 10.5, fontWeight: '700' },
-  sectionLabelStacked: { marginTop: SPACING.md },
+  sectionLabelStacked: { marginTop: SPACING.lg },
   sectionLabel: {
     color: quietText(colors), fontSize: 12, fontWeight: '800',
     letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: SPACING.xs,
