@@ -87,7 +87,8 @@ function matchingCaption(c: Conversation, q: string): string | null {
 }
 
 export default function MessagesScreen() {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
+  const isLight = mode === 'light';
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
@@ -310,8 +311,8 @@ export default function MessagesScreen() {
             {MSG_TABS.map((key) => {
               const active = tab === key;
               return (
-                <View key={key} style={[styles.tab, active && styles.tabActive]}>
-                  <Text style={[styles.tabText, active && styles.tabTextActive]}>{t(`messages.tab.${key}`)}</Text>
+                <View key={key} style={[styles.tab, active && styles.tabActive, active && isLight && styles.tabActiveLight]}>
+                  <Text style={[styles.tabText, active && styles.tabTextActive, active && isLight && styles.tabTextActiveLight]}>{t(`messages.tab.${key}`)}</Text>
                 </View>
               );
             })}
@@ -380,11 +381,11 @@ export default function MessagesScreen() {
           return (
             <TouchableOpacity
               key={key}
-              style={[styles.tab, active && styles.tabActive]}
+              style={[styles.tab, active && styles.tabActive, active && isLight && styles.tabActiveLight]}
               onPress={() => setTab(key)}
               activeOpacity={0.85}
             >
-              <Text style={[styles.tabText, active && styles.tabTextActive]}>{t(`messages.tab.${key}`)}</Text>
+              <Text style={[styles.tabText, active && styles.tabTextActive, active && isLight && styles.tabTextActiveLight]}>{t(`messages.tab.${key}`)}</Text>
             </TouchableOpacity>
           );
         })}
@@ -592,6 +593,17 @@ export default function MessagesScreen() {
   );
 }
 
+// Row geometry, in one place. These four numbers decide where the avatar sits
+// AND where the separator starts; the separator was a hand-summed literal of the
+// same values, which is fine until one of them moves.
+//
+// NOTE 56, not the 50 in `styles.avatar` — that style is vestigial, the row
+// draws a StoryAvatar at 56.
+const ROW_PAD_L = SPACING.sm;   // 8 — the dot clears the edge by this much
+const UNREAD_GUTTER = 8;        // was 12; on a read row that is pure dead space
+const ROW_GAP = SPACING.sm + 2; // 10 — dot→avatar and avatar→text
+const AVATAR_SIZE = 56;
+
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
@@ -639,11 +651,28 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: 'transparent', borderRadius: RADIUS.full, padding: 3, gap: 3,
   },
   tab: { flex: 1, paddingVertical: 9, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  // Selected segment: a high-contrast pill — white with black text in dark/grey,
-  // black with white text in light (colors.text fill + colors.background text).
+  // Selected segment. In dark/grey a white pill on near-black is exactly right,
+  // and it stays.
   tabActive: { backgroundColor: colors.text, ...SHADOWS.sm },
+  // Light mode gets the iOS segmented-control chip instead of that same rule
+  // inverted, which produced a black slab — the heaviest object on a screen
+  // whose whole job is to be a quiet list.
+  //
+  // The fill cannot carry it (surfaceElevated on this background is 1.06:1), so
+  // the EDGE and the LIFT do, the way Apple's own control works: a near-white
+  // chip, a defined hairline, and a soft shadow. SHADOWS.sm is 40% black, which
+  // is tuned for dark grounds and reads as dirt on cream — this is 14%.
+  tabActiveLight: {
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong,
+    shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 }, elevation: 2,
+  },
   tabText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
   tabTextActive: { color: colors.background, fontWeight: '700' },
+  // Dark ink on the light chip. Selection is then carried by weight, ink and the
+  // lift together rather than by one slab of black.
+  tabTextActiveLight: { color: colors.text },
   searchClear: { padding: 2 },
   // Search match highlight (in usernames and message previews).
   highlight: { color: colors.primary, fontWeight: '800' },
@@ -653,10 +682,16 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   listContent: { flexGrow: 1, paddingVertical: SPACING.xs },
 
   // iOS-style flush row — no card/border; hairline separators give the structure.
+  //
+  // The avatar used to start 32pt in (8 padding + a 12 gutter + a 12 gap), which
+  // on a row with no unread dot — most of them — is 20pt of nothing before the
+  // first thing you look at. Now 26pt, with the dot sitting 12pt from the edge
+  // where iOS puts its own. Not tighter: the dot needs to clear the edge, and a
+  // 50pt circle hard against the bezel reads as a rendering mistake.
   conversationRow: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 10, paddingLeft: SPACING.sm, paddingRight: SPACING.md,
-    gap: SPACING.sm + 4, backgroundColor: colors.background,
+    paddingVertical: 10, paddingLeft: ROW_PAD_L, paddingRight: SPACING.md,
+    gap: ROW_GAP, backgroundColor: colors.background,
   },
   // An unopened offer, highlighted green. A tint rather than a left accent bar:
   // a border would shift the avatar 3px and make the pinned row sit out of line
@@ -664,19 +699,26 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   conversationRowOffer: { backgroundColor: colors.success + '1A' },
   conversationRowPressed: { backgroundColor: colors.surfaceLight },
   // Leading unread dot — reserves its width even when read so avatars stay aligned.
-  unreadGutter: { width: 12, alignItems: 'center', justifyContent: 'center' },
+  unreadGutter: { width: UNREAD_GUTTER, alignItems: 'center', justifyContent: 'center' },
   unreadDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.primary },
   unreadDotOffer: { backgroundColor: colors.success },
-  // Hairline separator inset to the avatar's edge (iOS Messages style).
-  separator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: SPACING.sm + 12 + (SPACING.sm + 4) + 56 },
+  // Hairline separator inset to the avatar's edge (iOS Messages style), computed
+  // from the row's own geometry so moving the row cannot leave it behind.
+  separator: {
+    height: StyleSheet.hairlineWidth, backgroundColor: colors.border,
+    marginLeft: ROW_PAD_L + UNREAD_GUTTER + ROW_GAP + AVATAR_SIZE,
+  },
   avatar: { width: 50, height: 50, borderRadius: RADIUS.full, backgroundColor: colors.avatarBg, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.text, fontSize: 20, fontWeight: '700' },
   convInfo: { flex: 1, justifyContent: 'center', gap: 3 },
   convHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: SPACING.sm },
   convNameRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  displayName: { flexShrink: 1, color: colors.text, fontSize: 16, fontWeight: '600' },
+  displayName: { flexShrink: 1, color: colors.text, fontSize: 16.5, fontWeight: '600', letterSpacing: -0.2 },
   displayNameUnread: { fontWeight: '700' },
-  timeText: { color: colors.textTertiary, fontSize: 13 },
+  // textSecondary, not textTertiary: tertiary measures 1.82:1 on the light
+  // background, which is what made this list read as washed out. 5.68:1 now, and
+  // unchanged in dark where tertiary was already fine.
+  timeText: { color: colors.textSecondary, fontSize: 13 },
   timeUnread: { color: colors.primary, fontWeight: '600' },
   lastMessage: { color: colors.textSecondary, fontSize: 14, lineHeight: 19 },
   lastMessageUnread: { color: colors.text, fontWeight: '500' },
