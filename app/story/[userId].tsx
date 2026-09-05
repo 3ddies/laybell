@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, Dimensions,
   Pressable, Animated, PanResponder, ActivityIndicator, Alert, Easing, FlatList,
@@ -343,18 +343,32 @@ export default function StoryViewerScreen() {
     anim.start();
   }
 
-  // Zero the fill the instant the index moves, BEFORE React renders the new one.
+  // Freeze the fill — do NOT zero it here.
   //
-  // The segments read `i < storyIndex ? 1 : i === storyIndex ? progressAnim : 0`,
-  // and progressAnim is one shared value. Changing the index without clearing it
-  // meant the INCOMING segment painted its first frame at the outgoing story's
-  // fill — skip at 70% and the next bar flashed 70% full before snapping back to
-  // zero to start its own run. The bar you skipped past was always solid; the
-  // half-full one was the story you had just arrived at.
+  // One Animated.Value drives whichever segment is current, and the segments read
+  // `i < storyIndex ? 1 : i === storyIndex ? progressAnim : 0`. That makes the
+  // ORDER of these two operations visible on screen, and both naive orders flash:
+  //
+  //   setValue(0) then change index → the OUTGOING segment is still bound to the
+  //     value in the committed tree, so it snaps to empty for a frame before the
+  //     re-render gives it the literal 1. You skip a story and its bar blinks
+  //     black instead of completing.
+  //   change index then setValue(0) → the INCOMING segment mounts bound to the
+  //     old story's fill, so the next bar flashes 70% full before starting.
+  //
+  // So: stop the animation without touching the value, let the commit repaint the
+  // outgoing segment as a solid literal 1, and zero the value in a layout effect
+  // that runs after that commit but before the frame is drawn. Neither bar ever
+  // shows a value that was meant for the other.
   function resetProgress() {
     stopProgressAnim();
-    progressAnim.setValue(0);
   }
+
+  // Zero the (now newly-current) segment after the commit, before paint.
+  useLayoutEffect(() => {
+    progressAnim.setValue(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [story?.id]);
 
   // ─── advance / back (tap + auto-advance, story-by-story) ─────────────────────
   function goNext() {
@@ -377,9 +391,13 @@ export default function StoryViewerScreen() {
       return;
     }
     // already at the very first story — restart it from the top (and unpause).
+    // Zeroed explicitly: story.id does not change here, so the layout effect that
+    // normally does it will not fire, and a video story has no
+    // startImageProgress(0) to fall back on.
     pausedRef.current = false;
     setPaused(false);
     resetProgress();
+    progressAnim.setValue(0);
     if (story?.media_type === 'image' && readyRef.current) startImageProgress(0);
   }
 

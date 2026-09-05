@@ -59,7 +59,8 @@ export default function SongPickerModal({ visible, onClose, onSelect, ownOnly = 
    */
   ownOnly?: boolean;
 }) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
+  const isLight = mode === 'light';
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const { playSong, stop: stopSong } = usePostMusicActions();
@@ -405,12 +406,16 @@ export default function SongPickerModal({ visible, onClose, onSelect, ownOnly = 
 
           {/* Fixed-height capsule; the clear button is ALWAYS mounted (hidden
               via opacity) so the input never reflows/misaligns when it appears. */}
-          <View style={styles.searchBar}>
-            <Ionicons name="search-outline" size={18} color={colors.textTertiary} />
+          {/* textSecondary, not textTertiary, for BOTH the icon and the
+              placeholder. Tertiary measured 1.94:1 on this field in light mode —
+              the washed-out look — and is no better in dark. Secondary is 6.05:1
+              light and 6.79:1 dark. */}
+          <View style={[styles.searchBar, isLight && styles.searchBarLight]}>
+            <Ionicons name="search-outline" size={18} color={colors.textSecondary} />
             <TextInput
               style={styles.searchInput}
               placeholder={t('songPicker.searchPlaceholder')}
-              placeholderTextColor={colors.textTertiary}
+              placeholderTextColor={colors.textSecondary}
               selectionColor={colors.primary}
               cursorColor={colors.primary}
               value={query}
@@ -473,7 +478,19 @@ export default function SongPickerModal({ visible, onClose, onSelect, ownOnly = 
                     </View>
                     {/* Preview + select, side by side, matched size */}
                     <TouchableOpacity accessibilityRole="button" accessibilityLabel={previewing ? t('a11y.pause') : t('a11y.play')} onPress={() => togglePreview(item)} hitSlop={8}>
-                      <Ionicons name={previewing ? 'pause-circle' : 'play-circle'} size={30} color={colors.text} />
+                      {/* Softer than colors.text in light mode. A filled circle
+                          at #16161A is 17:1 on this row — a black blob sitting
+                          beside the orange add, two heavy marks fighting for the
+                          same attention. textSecondary keeps it unmistakably a
+                          control at 6:1 and lets the orange lead, which is the
+                          one that commits you to something. Dark mode is left
+                          alone: a white circle on a dark row does not read heavy
+                          the way black on cream does. */}
+                      <Ionicons
+                        name={previewing ? 'pause-circle' : 'play-circle'}
+                        size={30}
+                        color={isLight ? colors.textSecondary : colors.text}
+                      />
                     </TouchableOpacity>
                     <Ionicons name="add-circle" size={30} color={colors.primary} />
                   </TouchableOpacity>
@@ -516,6 +533,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.borderStrong,
     paddingHorizontal: SPACING.md, marginHorizontal: SPACING.md, marginBottom: SPACING.sm,
   },
+  // Light mode: a defined edge, because nothing else can carry one.
+  //
+  // The field is surfaceLight on a surface sheet — 1.15:1, invisible as a shape —
+  // and it cannot be fixed with fill. Recessing it enough to read as a boundary
+  // (3:1) needs a tint dark enough to drop the placeholder under 4.5:1, so the
+  // fill can be legible or it can be visible, not both. The border does the work
+  // instead: 3.0:1 against the field it encloses, 2.6:1 against the sheet, and
+  // still lighter than the text so it reads as an input rather than a button.
+  searchBarLight: { borderColor: '#948F82' },
   // Intrinsic-height input centered by the fixed-height row — stretching it to
   // the row's full height made iOS top-align the text against the icon.
   searchInput: { flex: 1, paddingVertical: 0, color: colors.text, fontSize: 15, lineHeight: 20 },
