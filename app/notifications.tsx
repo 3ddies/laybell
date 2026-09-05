@@ -97,19 +97,39 @@ function notificationText(t: TFunc, type: string) {
   }
 }
 
-function notificationIcon(type: string): { name: any; color: string } {
+/**
+ * The little type emblem on the corner of the actor's avatar, or NULL for the
+ * kinds that do not earn one.
+ *
+ * `ink` is the glyph colour, given explicitly where it matters. The default is
+ * the theme's text colour, which means those glyphs flip black↔white with the
+ * app theme — fine on a coloured disc, which is why most keep it.
+ *
+ * Not every notification needs a badge. The three that return null say what they
+ * are in the sentence beside them ("used your audio in a post"), and a generic
+ * bell on top of that is decoration standing in for information.
+ */
+function notificationIcon(type: string): { name: any; color: string; ink?: string } | null {
   switch (type) {
     case 'like': return { name: 'heart', color: COLORS.like };
-    case 'comment': return { name: 'chatbubble', color: COLORS.primary };
+    // Monochrome: white disc, black glyph, in both themes.
+    case 'comment': return { name: 'chatbubble', color: '#FFFFFF', ink: '#000000' };
     case 'follow': return { name: 'person-add', color: COLORS.primaryLight };
     case 'friend': return { name: 'people', color: COLORS.primaryLight };
     case 'message': return { name: 'chatbubbles', color: '#60A5FA' };
-    case 'mention': return { name: 'at', color: COLORS.primary };
-    case 'tag': return { name: 'pricetag', color: COLORS.primary };
-    case 'song_used': return { name: 'musical-notes', color: COLORS.primaryLight };
+    // "mentioned you" — the sentence carries it.
+    case 'mention': return null;
+    // Orange disc, black glyph, in both themes — not the theme's text colour,
+    // which would turn this one white in dark mode.
+    case 'tag': return { name: 'pricetag', color: COLORS.primary, ink: '#000000' };
+    // "used your audio in a post" — the row already says so.
+    case 'song_used': return null;
     case 'song_story': return { name: 'musical-notes', color: COLORS.primaryLight };
     case 'offer': return { name: 'pricetags', color: COLORS.success };
-    default: return { name: 'notifications', color: COLORS.primary };
+    // "interacted with you" — a bell emblem beside the word "interacted" adds
+    // nothing; it is the catch-all type, so its badge was the least specific
+    // thing on the row.
+    default: return null;
   }
 }
 
@@ -293,6 +313,7 @@ export default function NotificationsScreen() {
             }
             renderItem={({ item }) => {
               const icon = notificationIcon(item.type);
+              const isDiamond = displayedTier(item.actor) === 'diamond';
               const preview = item.post_id ? previews[item.post_id] : undefined;
               const count = item.groupCount ?? 1;
               const grouped = count > 1;
@@ -319,12 +340,20 @@ export default function NotificationsScreen() {
                         name={item.actor?.display_name}
                         size={52}
                       />
-                      <View style={[styles.iconBadge, { backgroundColor: icon.color }]}>
-                        <Ionicons name={icon.name} size={11} color={colors.text} />
-                      </View>
+                      {/* One emblem per avatar, never two. A diamond account
+                          already carries the badge below, and that badge says
+                          more about them than a type icon does — stacking both
+                          on one 52pt circle is two things competing to be the
+                          thing you notice. Diamond wins; the type is still in
+                          the sentence. */}
+                      {!!icon && !isDiamond && (
+                        <View style={[styles.iconBadge, { backgroundColor: icon.color }]}>
+                          <Ionicons name={icon.name} size={11} color={icon.ink ?? colors.text} />
+                        </View>
+                      )}
                       {/* Keep the notifications list clean — only diamond status earns
                           an emblem here (respects the user's hide-badge toggle). */}
-                      {displayedTier(item.actor) === 'diamond' && (
+                      {isDiamond && (
                         <BadgeEmblem profile={item.actor} size={17} style={styles.notifEmblem} />
                       )}
                     </View>
