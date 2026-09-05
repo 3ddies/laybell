@@ -80,7 +80,12 @@ export default function MentionText({
             // stay obviously tappable inside a run of body text, and 700 against
             // the surrounding 400 does that without a second colour competing
             // with everything else on the screen.
-            style={[{ color: colors.text, fontWeight: '700' }, mentionStyle, pressedIdx === i && styles_underline]}
+            // The SAME token community hashtags use, so the two kinds of link in
+            // a caption look like the same kind of thing. A mention used to be
+            // colors.text in bold, which made it read as emphasis rather than as
+            // something you could tap. Theme-aware: the violet deepens in light
+            // mode, where the on-dark one falls under 3:1.
+            style={[{ color: colors.communityTint, fontWeight: '700' }, mentionStyle, pressedIdx === i && styles_underline]}
             onPressIn={() => setPressedIdx(i)}
             onPressOut={() => setPressedIdx(null)}
             onPress={() => go(s.u!)}

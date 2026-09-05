@@ -39,7 +39,7 @@ import { useDoubleTapLike } from '../../components/DoubleTapLike';
 import FollowButton from '../../components/FollowButton';
 import MentionText from '../../components/MentionText';
 import TranslatableText from '../../components/TranslatableText';
-import CommunityTag from '../../components/CommunityTag';
+import CommunityTag, { COMMUNITY_TINT_ON_MEDIA } from '../../components/CommunityTag';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import { trackVideoProgress } from '../../lib/viewTracker';
@@ -197,12 +197,19 @@ const ReelControls = memo(function ReelControls({
                   {!!s && (
                     <MentionText
                       style={styles.caption}
+                      // On-media, for the same reason as the hashtag beside it:
+                      // this caption is on video, so it must not follow the
+                      // theme down to the light-mode violet.
+                      mentionStyle={{ color: COMMUNITY_TINT_ON_MEDIA }}
                       numberOfLines={expandable ? (capExpanded ? undefined : 1) : 2}
                       text={s}
                     />
                   )}
+                  {/* On-media tint, asked for by name. A reel caption sits on
+                      VIDEO, which is dark whatever theme the phone is in, so it
+                      must not follow the theme down to the light-mode violet. */}
                   {(item.community_tags ?? []).map((ct: { id: string; hashtag: string }, i: number) => (
-                    <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} leading={i === 0 && !!s} />
+                    <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} color={COMMUNITY_TINT_ON_MEDIA} leading={i === 0 && !!s} />
                   ))}
                 </View>
                 {expandable && (s.length > 38 || s.includes('\n')) && (

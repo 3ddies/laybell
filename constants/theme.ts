@@ -32,6 +32,8 @@ const DARK = {
   surfaceElevated: '#1E1E1E',
   border: '#242424',
   borderStrong: '#3B3B3B',
+  // Community hashtags AND @mentions — one token so the two cannot drift.
+  communityTint: '#8B7CF6',
   borderSubtle: '#1A1A1A',
   text: '#F5F5F5',
   textSecondary: '#A0A0A0',
@@ -51,6 +53,7 @@ const GREY = {
   surfaceElevated: '#322F2D',
   border: '#413F3B',
   borderStrong: '#5C5952',
+  communityTint: '#8B7CF6',
   borderSubtle: '#2C2A28',
   text: '#FFFFFF',
   textSecondary: '#CECECE',
@@ -73,6 +76,9 @@ const LIGHT = {
   // subtle one is for quiet dividers.
   border: '#D4D1C9',
   borderStrong: '#B8B4A8',
+  // Deepened for light: #8B7CF6 measures 2.94:1 on this background, under even
+  // the large-text bar. Same violet, enough weight to actually read (4.9:1).
+  communityTint: '#6D4AE8',
   borderSubtle: '#E2DFD7',
   text: '#16161A',
   textSecondary: '#5E5E66',

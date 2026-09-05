@@ -1,5 +1,6 @@
 import { Pressable, Text, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useTheme } from '../contexts/ThemeContext';
 
 // The community hashtag shown at the end of a post's caption — opens that
 // community when tapped. It's a real Pressable (with padding + hit-slop, but NO
@@ -7,8 +8,18 @@ import { useRouter } from 'expo-router';
 // tappable, while still reading like plain inline text. Dim-on-press gives
 // instant feedback. Returns null for posts with no community.
 
-// Blueish-purple — readable on dark surfaces and over reel video.
-const TINT = '#8B7CF6';
+/**
+ * The blueish-purple for a tag sitting on MEDIA rather than on a themed
+ * surface — a reel caption over video, where the ground is dark whatever theme
+ * the phone is in. Exported so the reel can ask for it by name instead of
+ * happening to inherit it.
+ *
+ * On themed surfaces the tag uses colors.communityTint, which is this same
+ * violet in dark and a deeper one in light: #8B7CF6 measures 2.94:1 on the light
+ * background, under even the large-text bar, so it read as decoration rather
+ * than as a link there.
+ */
+export const COMMUNITY_TINT_ON_MEDIA = '#8B7CF6';
 
 type Props = {
   communityId?: string | null;
@@ -23,8 +34,9 @@ type Props = {
 
 export default function CommunityTag({ communityId, hashtag, color, leading, style }: Props) {
   const router = useRouter();
+  const { colors } = useTheme();
   if (!communityId || !hashtag) return null;
-  const c = color ?? TINT;
+  const c = color ?? colors.communityTint;
   return (
     <Pressable
       onPress={() => router.push(`/communities/${communityId}`)}
