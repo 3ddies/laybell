@@ -617,7 +617,10 @@ export default function StoryViewerScreen() {
   // you actually saved. A video story is the whole file, so this is not instant
   // on a phone network.
   async function onSaveStory() {
-    if (!story || saving) return;
+    // isOwn is checked HERE as well as on the button. Hiding a control is a UI
+    // decision; refusing the action is the policy, and the policy should not
+    // depend on someone remembering why the button was conditional.
+    if (!story || !isOwn || saving) return;
     setSaving(true);
     pause();
     const res = await saveRemoteToLibrary(story.media_url, story.media_type);
@@ -815,11 +818,28 @@ export default function StoryViewerScreen() {
                     <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={21} color="#fff" />
                   </TouchableOpacity>
                 )}
-                {/* Save to camera roll — on ANY story, not just your own, which
-                    is the ask. Placed before the delete/report control so the
-                    destructive one stays furthest from the thumb's resting
-                    position and closest to the X it sits beside. */}
-                {ready && (
+                {/* Save to camera roll — YOUR OWN stories only.
+
+                    Briefly shipped for any story, and withdrawn deliberately.
+                    The media sits in a public bucket so downloading was never a
+                    new capability, but a one-tap button is a different norm from
+                    "somebody could screenshot this", and a story's whole premise
+                    is that it disappears in 24 hours. Three things followed from
+                    that, and the account holder is told about none of them:
+
+                      • Minors. 13-17s are on Laybell with parental consent, and
+                        this made an adult saving a 14-year-old's video to their
+                        camera roll a single tap with no signal to anyone.
+                      • Artists. The content most worth saving here is an
+                        unreleased snippet, on an app whose pitch is monetising
+                        your music. One traced leak and that artist stops posting.
+                      • Both stores review download-other-people's-media features
+                        closely, which is largely why Instagram restricts it the
+                        same way.
+
+                    Archived (expired) own stories keep the button on purpose —
+                    that is the case where saving your own work matters most. */}
+                {ready && isOwn && (
                   <TouchableOpacity
                     style={styles.headerBtn}
                     onPress={onSaveStory}
