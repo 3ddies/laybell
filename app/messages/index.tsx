@@ -1,8 +1,8 @@
 import {
   View, Text, StyleSheet, FlatList, TextInput,
-  TouchableOpacity, Pressable, Image, RefreshControl, Keyboard,
+  TouchableOpacity, Pressable, Image, RefreshControl, Keyboard, Animated, Easing,
 } from 'react-native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -89,6 +89,7 @@ function matchingCaption(c: Conversation, q: string): string | null {
 export default function MessagesScreen() {
   const { colors, mode } = useTheme();
   const isLight = mode === 'light';
+
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
@@ -99,6 +100,21 @@ export default function MessagesScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  // Focus glow on the search field. Driven from the searchFocused state that
+  // already existed for the clear button, so there is no new source of truth.
+  //
+  // useNativeDriver is FALSE and has to be: borderColor and shadowOpacity are
+  // not native-drivable properties. That is affordable here and nowhere else —
+  // one view, on focus, for 180ms, not something running per frame in a list.
+  const searchGlow = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(searchGlow, {
+      toValue: searchFocused ? 1 : 0,
+      duration: 180,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start();
+  }, [searchFocused, searchGlow]);
   // Holds the swipe-back gesture off while searching (SwipeBackPager reads it).
   useSearchSwipeLock(searchFocused || searchQuery.length > 0);
   const [tab, setTab] = useState<MsgTab>('main');
@@ -348,12 +364,34 @@ export default function MessagesScreen() {
 
       {/* Search chats by username or message text */}
       <View style={styles.searchRow}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search-outline" size={18} color={colors.textTertiary} />
+        <Animated.View
+          style={[
+            styles.searchBar,
+            {
+              borderColor: searchGlow.interpolate({
+                inputRange: [0, 1],
+                outputRange: [colors.borderStrong, SEARCH_GLOW],
+              }),
+              shadowColor: SEARCH_GLOW,
+              shadowOpacity: searchGlow.interpolate({ inputRange: [0, 1], outputRange: [0, 0.5] }),
+              shadowRadius: 10,
+              shadowOffset: { width: 0, height: 0 },
+            },
+          ]}
+        >
+          <Ionicons
+            name="search-outline"
+            size={18}
+            // The icon takes the glow too. A ring that lights up while the thing
+            // inside it stays grey reads as a border effect; moving both is what
+            // makes it read as the FIELD being active.
+            color={searchFocused ? SEARCH_GLOW : colors.textTertiary}
+          />
           <TextInput
             style={styles.searchInput}
             placeholder={t('messages.searchPlaceholder')}
             placeholderTextColor={colors.textSecondary}
+            selectionColor={SEARCH_GLOW}
             value={searchQuery}
             onChangeText={setSearchQuery}
             onFocus={() => setSearchFocused(true)}
@@ -371,7 +409,7 @@ export default function MessagesScreen() {
               <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
             </TouchableOpacity>
           )}
-        </View>
+        </Animated.View>
       </View>
 
       {/* Filter conversations by relationship */}
@@ -599,9 +637,21 @@ export default function MessagesScreen() {
 //
 // NOTE 56, not the 50 in `styles.avatar` — that style is vestigial, the row
 // draws a StoryAvatar at 56.
-const ROW_PAD_L = SPACING.sm;   // 8 — the dot clears the edge by this much
+// Tuned so the avatar's LEADING EDGE lands at 4+8+4 = 16pt — the same margin the
+// search bar and the header use. That is the number that makes it look settled
+// rather than merely closer: the column of avatars now lines up with everything
+// else on the screen instead of floating in from its own inset.
+// iOS system blue. Deliberately NOT the app's orange: this is a focus state, not
+// a brand moment, and the orange is already doing the work of every primary
+// action on the screen behind it.
+const SEARCH_GLOW = '#0A84FF';
+
+const ROW_PAD_L = SPACING.xs;   // 4
 const UNREAD_GUTTER = 8;        // was 12; on a read row that is pure dead space
-const ROW_GAP = SPACING.sm + 2; // 10 — dot→avatar and avatar→text
+const DOT_GAP = SPACING.xs;     // 4 — dot → avatar
+// Kept generous, and now separate: one `gap` for both meant tightening the left
+// edge also squeezed the name against the face.
+const TEXT_GAP = SPACING.sm + 4; // 12 — avatar → text
 const AVATAR_SIZE = 56;
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
@@ -691,7 +741,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   conversationRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 10, paddingLeft: ROW_PAD_L, paddingRight: SPACING.md,
-    gap: ROW_GAP, backgroundColor: colors.background,
+    backgroundColor: colors.background,
   },
   // An unopened offer, highlighted green. A tint rather than a left accent bar:
   // a border would shift the avatar 3px and make the pinned row sit out of line
@@ -699,18 +749,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   conversationRowOffer: { backgroundColor: colors.success + '1A' },
   conversationRowPressed: { backgroundColor: colors.surfaceLight },
   // Leading unread dot — reserves its width even when read so avatars stay aligned.
-  unreadGutter: { width: UNREAD_GUTTER, alignItems: 'center', justifyContent: 'center' },
-  unreadDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.primary },
+  unreadGutter: { width: UNREAD_GUTTER, marginRight: DOT_GAP, alignItems: 'center', justifyContent: 'center' },
+  // 8, not 9: it has to fit inside UNREAD_GUTTER rather than spill past it.
+  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary },
   unreadDotOffer: { backgroundColor: colors.success },
   // Hairline separator inset to the avatar's edge (iOS Messages style), computed
   // from the row's own geometry so moving the row cannot leave it behind.
   separator: {
     height: StyleSheet.hairlineWidth, backgroundColor: colors.border,
-    marginLeft: ROW_PAD_L + UNREAD_GUTTER + ROW_GAP + AVATAR_SIZE,
+    marginLeft: ROW_PAD_L + UNREAD_GUTTER + DOT_GAP + AVATAR_SIZE,
   },
   avatar: { width: 50, height: 50, borderRadius: RADIUS.full, backgroundColor: colors.avatarBg, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.text, fontSize: 20, fontWeight: '700' },
-  convInfo: { flex: 1, justifyContent: 'center', gap: 3 },
+  convInfo: { flex: 1, marginLeft: TEXT_GAP, justifyContent: 'center', gap: 3 },
   convHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: SPACING.sm },
   convNameRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 },
   displayName: { flexShrink: 1, color: colors.text, fontSize: 16.5, fontWeight: '600', letterSpacing: -0.2 },
