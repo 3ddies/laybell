@@ -1,5 +1,6 @@
 import AppVideo, { type AppVideoHandle } from '../../components/AppVideo';
 import SlideshowCarousel from '../../components/SlideshowCarousel';
+import FloatingComments from '../../components/FloatingComments';
 import { isSlideshow, parseSlides } from '../../lib/slideshow';
 import { songPlaysFor } from '../../lib/postSong';
 import VideoScrubBar, { type VideoScrubBarHandle } from '../../components/VideoScrubBar';
@@ -434,6 +435,24 @@ const ReelPage = memo(function ReelPage({
 
       {/* double-tap-to-like heart burst, centered over the video */}
       {heart}
+
+      {/* The room reacting, same as the feed's song card and the immersive
+          player. ONLY on the reel you are actually watching: ReelPage renders
+          for every mounted page, so without the `active` gate each neighbour
+          would fetch its comments and run animations behind the one on screen —
+          on the most performance-sensitive surface in the app.
+
+          Anchored clear of both control clusters: above the author/caption block
+          at the bottom, and stopping short of the right rail, so a bubble never
+          drifts under the like button or over the caption. */}
+      {active && (
+        <FloatingComments
+          postId={item.id}
+          max={3}
+          travel={150}
+          style={{ left: SPACING.md, right: 84, bottom: insetsBottom + 132, height: 190 }}
+        />
+      )}
 
       <ReelControls
         item={item}
