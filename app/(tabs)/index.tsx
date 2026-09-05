@@ -3,7 +3,7 @@ import {
   EMPTY_PROFILE, type UserAffinityProfile, type ScoreOpts,
 } from '../../lib/feedScorer';
 import { fetchGirlSpaceCommunityIds } from '../../lib/communities';
-import { captionEchoesTitle, songCreditLine, songIsLinkOnly, songPlaysFor } from '../../lib/postSong';
+import { captionEchoesTitle, names, songCreditLine, songIsLinkOnly, songPlaysFor } from '../../lib/postSong';
 import FeedVideo from '../../components/FeedVideo';
 import { PlacedStickers } from '../../components/StickerLayer';
 // FlashList v2: RECYCLES card views instead of mounting/destroying them while
@@ -281,6 +281,34 @@ type PostCardProps = {
 // liked/saved sets) only re-renders that card — not all ~50 rows. All callbacks
 // from HomeScreen are referentially stable, and `item` keeps its reference for
 // unchanged posts, so React.memo's shallow compare skips them.
+/**
+ * Who the square song card should credit, or null to credit nobody.
+ *
+ * A song posted by its own artist needs no artist line: the post header sits
+ * directly above the card with that person's avatar and name on it, so printing
+ * it again inside the artwork is the same fact twice. The line earns its place
+ * only when the song is somebody ELSE's — a repost — where without it the card
+ * reads as though the poster made the track.
+ *
+ * `song_artist` is how a post credits a track it did not make. It is null on
+ * every audio post today, because the home feed has no repost surface: reposts
+ * live in their own table and drive the profile tab, not this list. So this
+ * currently returns null every time, and that is correct rather than dead — it
+ * is the branch that keeps working the day reposts do reach the feed.
+ *
+ * The title is checked too, since artists routinely name themselves in it
+ * ("Stay - 3ddie"), using the SAME predicate as songCreditLine so the two cannot
+ * disagree about what counts as already-named.
+ */
+function songSquareArtist(item: Post): string | null {
+  const credited = (item as any).song_artist?.trim?.() || '';
+  if (!credited) return null;
+  const poster = item.profiles?.display_name || item.profiles?.username || '';
+  if (names(poster, credited)) return null;          // the poster IS the artist
+  if (names(item.caption, credited)) return null;    // the title already says it
+  return credited;
+}
+
 const PostCard = memo(function PostCard({
   item, isOwn, isLiked, isSaved, audioActive, songSquare, videoMuted, songMuted,
   onProfile, onProfileId, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onMediaZoom,
@@ -500,7 +528,7 @@ const PostCard = memo(function PostCard({
         <SongSquareCard
           postId={item.id}
           title={item.caption || ''}
-          artist={item.profiles?.display_name || item.profiles?.username || ''}
+          artist={songSquareArtist(item)}
           features={parseFeatures((item as any).features)}
           cover={item.cover_url ?? item.thumbnail_url ?? null}
           isPlaying={audioActive}

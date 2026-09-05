@@ -179,13 +179,18 @@ function sameWord(a: string, b: string): boolean {
 /**
  * Does `haystack` already name `needle`?
  *
+ * Exported because the square song card asks the same question of a different
+ * pair — is this artist already named by the post's own header, or by the title
+ * — and answering it a second way is how two surfaces end up disagreeing about
+ * whether "Stay - 3ddie" by 3ddie needs the artist appended.
+ *
  * EXACT tokens only — no sameWord() here, deliberately. This one decides whether
  * to leave the artist OFF the credit line, and the two mistakes are not
  * symmetrical: a caption wrongly dropped costs a repetition the user asked us to
  * remove, while an artist wrongly dropped erases a credit nothing else on the
  * card will state.
  */
-function names(haystack?: string | null, needle?: string | null): boolean {
+export function names(haystack?: string | null, needle?: string | null): boolean {
   const h = canon(haystack);
   const n = canon(needle);
   if (!h || !n) return false;

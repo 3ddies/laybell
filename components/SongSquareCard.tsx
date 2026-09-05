@@ -79,7 +79,8 @@ export default function SongSquareCard({
 }: {
   postId: string;
   title: string;
-  artist: string;
+  /** The artist to CREDIT, or null when the card would only be repeating itself. */
+  artist: string | null;
   features: Feature[];
   cover: string | null;
   isPlaying: boolean;
@@ -135,36 +136,47 @@ export default function SongSquareCard({
         {notes.map((n, i) => <FloatingNote key={`${postId}-${i}`} {...n} />)}
       </View>
 
-      {/* Bottom scrim. Artwork is arbitrary — it can be white, busy, or both —
-          so the text needs its own ground rather than trusting the image. */}
+      {/* Scrims at BOTH ends, because the content is now at both: the title top
+          left, the play control bottom right. Artwork is arbitrary — it can be
+          white, busy, or both — so each needs its own ground rather than
+          trusting the image. The bottom one is lighter; it only has to carry a
+          button, not text. */}
       <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.28)', 'rgba(0,0,0,0.82)']}
-        locations={[0, 0.5, 1]}
-        style={styles.scrim}
+        colors={['rgba(0,0,0,0.72)', 'rgba(0,0,0,0.22)', 'transparent']}
+        locations={[0, 0.55, 1]}
+        style={styles.scrimTop}
+        pointerEvents="none"
+      />
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.45)']}
+        style={styles.scrimBottom}
         pointerEvents="none"
       />
 
-      <View style={styles.footer} pointerEvents="box-none">
-        <View style={styles.textCol}>
-          {/* Same component the mini player and full player use, so a title that
-              is too long marquees here exactly as it does there, and credits
-              stay tappable through to the collaborator's profile. */}
-          <SongCardTitle
-            title={title}
-            features={features}
-            positionMs={tick * CYCLE_MS}
-            // Long enough that cycling is always permitted. The player gates it
-            // at 20s so a short track does not flip mid-play; a card has no
-            // playhead, and hiding a credit because the song is brief would just
-            // lose information.
-            durationMs={Math.max(CYCLE_MS * 6, 1)}
-            titleStyle={styles.title}
-            featStyle={styles.feat}
-            onOpenProfile={onOpenProfile}
-          />
-          <Text style={styles.artist} numberOfLines={1}>{artist}</Text>
-        </View>
+      <View style={styles.header} pointerEvents="box-none">
+        {/* Same component the mini player and full player use, so a title that
+            is too long marquees here exactly as it does there, and credits
+            stay tappable through to the collaborator's profile. */}
+        <SongCardTitle
+          title={title}
+          features={features}
+          positionMs={tick * CYCLE_MS}
+          // Long enough that cycling is always permitted. The player gates it
+          // at 20s so a short track does not flip mid-play; a card has no
+          // playhead, and hiding a credit because the song is brief would just
+          // lose information.
+          durationMs={Math.max(CYCLE_MS * 6, 1)}
+          titleStyle={styles.title}
+          featStyle={styles.feat}
+          onOpenProfile={onOpenProfile}
+        />
+        {/* Only when the artist is somebody the card has not already named — see
+            the caller. A song posted by its own artist says so in the post
+            header directly above this, and repeating it there is noise. */}
+        {!!artist && <Text style={styles.artist} numberOfLines={1}>{artist}</Text>}
+      </View>
 
+      <View style={styles.footer} pointerEvents="box-none">
         <TouchableOpacity
           style={styles.playBtn}
           onPress={onPlay}
@@ -192,15 +204,21 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     width: '100%', aspectRatio: 1,
     backgroundColor: colors.surfaceLight,
     overflow: 'hidden',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
   },
-  noteLayer: { ...StyleSheet.absoluteFillObject, top: '38%' },
-  scrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '55%' },
+  noteLayer: { ...StyleSheet.absoluteFillObject, top: '30%' },
+  scrimTop: { position: 'absolute', left: 0, right: 0, top: 0, height: '46%' },
+  scrimBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '32%' },
+  // Top-left, and the width is capped so a marqueeing title does not run the
+  // full width of the artwork — the card should still read as a picture.
+  header: {
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.md,
+    maxWidth: '86%', minWidth: 0,
+  },
   footer: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end',
     paddingHorizontal: SPACING.md, paddingBottom: SPACING.md,
   },
-  textCol: { flex: 1, minWidth: 0 },
   // Always white on the scrim, never colors.text — this sits on artwork, not on
   // the theme.
   title: { color: '#fff', fontSize: 19, fontWeight: '800', letterSpacing: -0.3 },
