@@ -21,7 +21,21 @@ import { fetchTopComments, type TopComment } from '../lib/topComments';
 // Decorative throughout. The fetch returns [] on any failure and this renders
 // nothing, so it can never be the reason a card or a player fails to draw.
 
-const COMMENT_MS = 9000;
+// A given comment appears at most ONCE per this window.
+//
+// On a track with two or three comments a short loop just replays the same
+// faces over and over, which stops reading as a room reacting and starts
+// reading as a slideshow. Thirty seconds is long enough that a repeat feels
+// like the track coming back around rather than a stutter.
+const COMMENT_CYCLE_MS = 30_000;
+// How long one bubble is actually on screen. The rest of the cycle is the gap —
+// the same shape the player's floating notes use.
+const COMMENT_LIFE_MS = 9_000;
+// The visible fraction of the driver. Every interpolation below is expressed
+// against this so the bubble finishes its rise at the exact instant it becomes
+// invisible: nothing moves while it cannot be seen, and the reset back to the
+// bottom is never witnessed.
+const LIFE = COMMENT_LIFE_MS / COMMENT_CYCLE_MS;
 
 /**
  * One comment rising.
@@ -40,11 +54,16 @@ function FloatingComment({ comment, delay, travel, still }: {
     if (still) return;
     const loop = Animated.loop(
       Animated.timing(t, {
-        toValue: 1, duration: COMMENT_MS, delay, easing: Easing.linear, useNativeDriver: true,
+        toValue: 1, duration: COMMENT_CYCLE_MS, easing: Easing.linear, useNativeDriver: true,
       }),
     );
-    loop.start();
-    return () => { loop.stop(); t.setValue(0); };
+    // Staggered by a TIMER, not an Animated.delay inside the loop. A delay inside
+    // repeats every cycle, so each bubble's true period becomes cycle+delay and
+    // the three of them drift apart from each other over a few minutes. This
+    // offsets each one once and then they all run on the same fixed period.
+    // (The player's floating notes learned this first — see ImmersivePlayer.)
+    const kick = setTimeout(() => loop.start(), delay);
+    return () => { clearTimeout(kick); loop.stop(); t.setValue(0); };
   }, [delay, t, still, comment.id]);
 
   const body = (
@@ -88,10 +107,18 @@ function FloatingComment({ comment, delay, travel, still }: {
       style={[
         styles.bubble,
         {
-          opacity: t.interpolate({ inputRange: [0, 0.12, 0.75, 1], outputRange: [0, 1, 0.95, 0] }),
+          // Every stop is a fraction of LIFE, so the bubble is fully gone by the
+          // time the rise ends and stays gone for the remaining ~70% of the
+          // cycle — that silence is the point of the 30s window.
+          opacity: t.interpolate({
+            inputRange: [0, LIFE * 0.12, LIFE * 0.75, LIFE, 1],
+            outputRange: [0, 1, 0.95, 0, 0],
+          }),
           transform: [
-            { translateY: t.interpolate({ inputRange: [0, 1], outputRange: [0, -travel] }) },
-            { translateX: t.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 8, 0] }) },
+            // Holds at the top of its rise once invisible, rather than creeping
+            // on for another twenty seconds.
+            { translateY: t.interpolate({ inputRange: [0, LIFE, 1], outputRange: [0, -travel, -travel] }) },
+            { translateX: t.interpolate({ inputRange: [0, LIFE * 0.5, LIFE, 1], outputRange: [0, 8, 0, 0] }) },
           ],
         },
       ]}
@@ -147,10 +174,11 @@ export default function FloatingComments({
         <FloatingComment
           key={`${postId}-${c.id}`}
           comment={c}
-          // Staggered across the loop rather than released together: three
-          // bubbles leaving at once reads as a burst, one at a time reads as a
-          // room reacting.
-          delay={i * (COMMENT_MS / Math.max(1, shown.length))}
+          // Spread evenly across the WINDOW, not across one bubble's life: with
+          // three comments that is one arriving every ten seconds, each returning
+          // only after the full thirty. Three released together would read as a
+          // burst; this reads as a room reacting.
+          delay={i * (COMMENT_CYCLE_MS / Math.max(1, shown.length))}
           travel={travel}
           still={reduceMotion}
         />
