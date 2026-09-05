@@ -476,7 +476,12 @@ export default function LiveScreen() {
           </View>
         ) : streams.length === 0 ? (
           <View style={styles.empty}>
-            <Ionicons name="tv-outline" size={44} color={colors.textTertiary} />
+            {/* Big and bare. This is the app's own Apple empty-state shape — the
+                one the Messages and Music screens settled on: a large muted
+                glyph, a title, one quiet line, and nothing drawn around any of
+                it. A tinted box behind the icon was tried there and removed,
+                because it gave the emptiest screen its most decorated object. */}
+            <Ionicons name="tv-outline" size={64} color={colors.textTertiary} />
             <Text style={styles.emptyTitle}>{t('live.empty')}</Text>
             <Text style={styles.emptySub}>{t('live.emptySub')}</Text>
             <TouchableOpacity style={styles.goLiveCta} onPress={() => router.push('/live/go-live')} activeOpacity={0.85}>
@@ -689,11 +694,26 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   goLiveFabText: { color: '#000', fontSize: 10, fontWeight: '800', textAlign: 'center', lineHeight: 12, letterSpacing: 0.2 },
   skeletonWrap: { flex: 1, justifyContent: 'flex-end', padding: 18, gap: 12 },
   skeletonTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 36 },
-  emptyTitle: { color: c.text, fontSize: 17, fontWeight: '700', marginTop: 6 },
-  emptySub: { color: c.textTertiary, fontSize: 13, textAlign: 'center', lineHeight: 19 },
-  goLiveCta: { marginTop: 14, borderRadius: 22, overflow: 'hidden' },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 36 },
+  // Matches the Messages/Music empty state exactly — same size, same weight,
+  // same tracking — so the app has one empty state rather than three takes on it.
+  emptyTitle: { color: c.text, fontSize: 20, fontWeight: '800', letterSpacing: -0.4, marginTop: 10 },
+  // textSecondary, NOT tertiary. Tertiary is 1.8:1 on the light background — the
+  // large glyph above can carry that because it is a shape you recognise rather
+  // than read, but a sentence cannot. Quiet is the goal; invisible is not.
+  emptySub: {
+    color: c.textSecondary, fontSize: 13.5, textAlign: 'center',
+    lineHeight: 19, maxWidth: 280,
+  },
+  // A real iOS call-to-action: taller, wider, rounder, and lifted. The old pill
+  // was 14pt text in 11pt of padding, which read as a link with a background
+  // rather than as the one thing to do on an otherwise empty screen.
+  goLiveCta: {
+    marginTop: 20, borderRadius: 27, overflow: 'hidden',
+    shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 }, elevation: 5,
+  },
   // No gap: the label is the only child now that the radio glyph is gone.
-  goLiveCtaBg: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 22, paddingVertical: 11 },
-  goLiveCtaText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  goLiveCtaBg: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 34, paddingVertical: 15 },
+  goLiveCtaText: { color: '#fff', fontSize: 16.5, fontWeight: '800', letterSpacing: -0.2 },
 });
