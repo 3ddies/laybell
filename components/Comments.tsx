@@ -29,34 +29,15 @@ import { openImageViewer } from '../lib/imageViewer';
 import { openPhotoPicker } from '../lib/photoPicker';
 import { reportUser } from '../lib/postActions';
 import { checkTextAsync } from '../lib/contentFilter';
+// Shared with the feed's square song card, which floats the same top comments —
+// two copies of a scoring formula drift apart.
+import { rankTopLevelIds } from '../lib/topComments';
 
 type Row = {
   id: string; body: string; created_at: string; user_id: string;
   parent_id: string | null; profiles: any;
 };
 
-// Rank TOP-LEVEL comments most-relevant-first. Blends likes, reply count, like
-// velocity (likes earned per hour since posting — "recency to the amount of likes
-// received"), and a gentle recency baseline so unengaged comments fall
-// newest-first and ties break by recency. Computed once per load (snapshot), so an
-// optimistic like never reshuffles the list under the reader. Returns ordered ids.
-function rankTopLevelIds(comments: any[], likeCounts: Record<string, number>): string[] {
-  const now = Date.now();
-  const replyCount: Record<string, number> = {};
-  for (const c of comments) if (c.parent_id) replyCount[c.parent_id] = (replyCount[c.parent_id] || 0) + 1;
-  const score = (c: any) => {
-    const likes = likeCounts[c.id] || 0;
-    const replies = replyCount[c.id] || 0;
-    const ageH = Math.max(0, (now - (Date.parse(c.created_at) || now)) / 3_600_000);
-    const recency = 1 / Math.pow(ageH + 2, 0.6); // ~0.66 when fresh, decays with age
-    const velocity = likes / (ageH + 1);         // fast-liked comments rank higher
-    return likes * 2.5 + replies * 2 + velocity * 3 + recency * 1.5;
-  };
-  return comments
-    .filter((c) => !c.parent_id)
-    .sort((a, b) => score(b) - score(a) || (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0))
-    .map((c) => c.id);
-}
 
 export default function Comments({
   postId, ownerId, ListHeaderComponent, style, contentPadding, minHeaderHeight, onRefresh, onNavigate, onComposingChange, onEngage, onScrollTop, onPosted,

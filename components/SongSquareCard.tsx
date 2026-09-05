@@ -8,6 +8,7 @@ import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import SongCardTitle from './SongCardTitle';
 import { type Feature } from '../lib/features';
+import { fetchTopComments, type TopComment } from '../lib/topComments';
 
 // The square, poster-style rendering of a song post in the HOME FEED.
 //
@@ -27,6 +28,86 @@ const NOTE_MS = 5200;
 // to follow, so this drives it instead — and it costs one timer per visible song
 // card, only when that song actually has credits to cycle to.
 const CYCLE_MS = 10_000;
+
+// A comment bubble travels further and slower than a note — it has to be read,
+// not just noticed.
+const COMMENT_MS = 9000;
+const MAX_BUBBLES = 3;
+
+/**
+ * One comment drifting up over the artwork: avatar, name, and either the words
+ * or the gif they sent.
+ *
+ * Same single-driver shape as FloatingNote — one native 0→1 timing with position
+ * and opacity interpolated off it — so three of these cost three animations, not
+ * twelve, and none of them can fall out of step with each other.
+ */
+function FloatingComment({ comment, delay }: { comment: TopComment; delay: number }) {
+  const styles = useThemedStyles(makeStyles);
+  const t = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(t, {
+        toValue: 1,
+        duration: COMMENT_MS,
+        delay,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => { loop.stop(); t.setValue(0); };
+  }, [delay, t, comment.id]);
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.bubble,
+        {
+          opacity: t.interpolate({
+            inputRange: [0, 0.12, 0.75, 1],
+            outputRange: [0, 1, 0.95, 0],
+          }),
+          transform: [
+            { translateY: t.interpolate({ inputRange: [0, 1], outputRange: [0, -132] }) },
+            { translateX: t.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 8, 0] }) },
+          ],
+        },
+      ]}
+    >
+      {comment.avatarUrl ? (
+        <ExpoImage source={{ uri: comment.avatarUrl }} style={styles.bubbleAvatar} contentFit="cover" cachePolicy="memory-disk" />
+      ) : (
+        <LinearGradient colors={GRADIENTS.avatar} style={styles.bubbleAvatar} />
+      )}
+
+      <View style={styles.bubbleText}>
+        <Text style={styles.bubbleName} numberOfLines={1}>{comment.name}</Text>
+        {comment.gifUrl ? (
+          // The real gif, playing. It is one small animated image on an already
+          // animated card, and seeing what somebody actually sent is the whole
+          // charm of it — a "[GIF]" label would say the fact and lose the joke.
+          <View style={styles.bubbleGifRow}>
+            <ExpoImage source={{ uri: comment.gifUrl }} style={styles.bubbleGif} contentFit="cover" cachePolicy="memory-disk" />
+            {!!comment.text && <Text style={styles.bubbleBody} numberOfLines={1}>{comment.text}</Text>}
+          </View>
+        ) : comment.isImage && !comment.text ? (
+          // An uploaded photo is somebody's own picture rather than a shared
+          // joke, so it is marked, not shown — this overlay is decoration and a
+          // poor place to reveal a person's photo unasked.
+          <View style={styles.bubbleGifRow}>
+            <Ionicons name="image-outline" size={13} color="rgba(255,255,255,0.85)" />
+            <Text style={styles.bubbleBody} numberOfLines={1}>{'•'}</Text>
+          </View>
+        ) : (
+          <Text style={styles.bubbleBody} numberOfLines={1}>{comment.text}</Text>
+        )}
+      </View>
+    </Animated.View>
+  );
+}
 
 /** One note: rises, drifts sideways, fades in and back out. */
 function FloatingNote({ delay, startX, drift, size }: {
@@ -104,6 +185,19 @@ export default function SongSquareCard({
     return () => clearInterval(id);
   }, [postId, features.length]);
 
+  // Top comments, fetched once per card and cached in lib/topComments. Decorative,
+  // so a failure returns [] and the card simply has no bubbles — it must never be
+  // the reason a feed row does not draw.
+  const [comments, setComments] = useState<TopComment[]>([]);
+  useEffect(() => {
+    let alive = true;
+    setComments([]);
+    fetchTopComments(postId, MAX_BUBBLES)
+      .then((rows) => { if (alive) setComments(rows); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [postId]);
+
   // Fixed per card, so the notes do not all rise in a column, and stable across
   // re-renders so they do not jump when the title cycles.
   const notes = useMemo(
@@ -134,6 +228,20 @@ export default function SongSquareCard({
           the text rather than across it. */}
       <View style={styles.noteLayer} pointerEvents="none">
         {notes.map((n, i) => <FloatingNote key={`${postId}-${i}`} {...n} />)}
+      </View>
+
+      {/* Comments rise in their own band, lower and to the left of the notes, so
+          the two never occupy the same space at the same time. Staggered across
+          the loop rather than released together — three bubbles leaving at once
+          reads as a burst, one at a time reads as a room reacting. */}
+      <View style={styles.commentLayer} pointerEvents="none">
+        {comments.map((c, i) => (
+          <FloatingComment
+            key={`${postId}-${c.id}`}
+            comment={c}
+            delay={i * (COMMENT_MS / Math.max(1, comments.length))}
+          />
+        ))}
       </View>
 
       {/* Scrims at BOTH ends, because the content is now at both: the title top
@@ -207,6 +315,27 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     justifyContent: 'space-between',
   },
   noteLayer: { ...StyleSheet.absoluteFillObject, top: '30%' },
+  // Its own band, below the notes' start and above the play control, so a bubble
+  // is never under the button or over the title.
+  commentLayer: {
+    position: 'absolute', left: SPACING.md, right: SPACING.md,
+    bottom: 74, height: 150, justifyContent: 'flex-end',
+  },
+  bubble: {
+    position: 'absolute', bottom: 0, left: 0,
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    maxWidth: '82%',
+    backgroundColor: 'rgba(0,0,0,0.42)',
+    borderRadius: RADIUS.full,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)',
+    paddingLeft: 4, paddingRight: 11, paddingVertical: 4,
+  },
+  bubbleAvatar: { width: 24, height: 24, borderRadius: 12 },
+  bubbleText: { flexShrink: 1, minWidth: 0 },
+  bubbleName: { color: 'rgba(255,255,255,0.72)', fontSize: 10.5, fontWeight: '700' },
+  bubbleBody: { color: '#fff', fontSize: 12.5, fontWeight: '600', flexShrink: 1 },
+  bubbleGifRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  bubbleGif: { width: 34, height: 22, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.12)' },
   scrimTop: { position: 'absolute', left: 0, right: 0, top: 0, height: '46%' },
   scrimBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '32%' },
   // Top-left, and the width is capped so a marqueeing title does not run the
