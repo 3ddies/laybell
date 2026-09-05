@@ -1,4 +1,4 @@
-import { isFilm } from '../../lib/tv';
+import { isFilm, filmName, fmtRuntime } from '../../lib/tv';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, ActivityIndicator, RefreshControl, PanResponder,
@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { orderProfileTabs, tabContent } from '../../lib/profileTabOrder';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
+import { isAudioPost } from '../../lib/genres';
 import { useAudio } from '../../contexts/AudioContext';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { supabase } from '../../lib/supabase';
@@ -63,6 +64,11 @@ const TABS = [
 ];
 const TAB_KEYS = TABS.map(t => t.key);
 const SCREEN_W = Dimensions.get('window').width;
+// Films shelf geometry — 16:9, two across, matching Laybell TV's tiles.
+const FILM_GAP = 8;
+const FILM_W = (SCREEN_W - SPACING.md * 2 - FILM_GAP) / 2;
+const FILM_H = Math.round(FILM_W * (9 / 16));
+
 
 export default function PublicProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -594,15 +600,73 @@ export default function PublicProfileScreen() {
     if (films.length === 0) return renderGrid(all, 'videos');
     const clips = all.filter((p: any) => !isFilm(p));
     return (
-      <View>
-        {clips.length > 0 && <Text style={styles.sectionLabel}>{t('profile.sectionFilms')}</Text>}
-        {renderGrid(films, 'videos')}
+      <View style={styles.videosTab}>
+        {clips.length > 0 && <Text style={[styles.sectionLabel, styles.videosLabel]}>{t('profile.sectionFilms')}</Text>}
+        {renderFilmShelf(films)}
         {clips.length > 0 && (
           <>
-            <Text style={[styles.sectionLabel, styles.sectionLabelStacked]}>{t('profile.sectionVideos')}</Text>
+            <Text style={[styles.sectionLabel, styles.videosLabel, styles.sectionLabelStacked]}>{t('profile.sectionVideos')}</Text>
             {renderGrid(clips, 'videos')}
           </>
         )}
+      </View>
+    );
+  }
+
+  // The grid's tap, hoisted so the films shelf opens a film exactly the way the
+  // grid opens a video — measured rect and all, so the shared-element expand is
+  // the same motion from either shelf.
+  function openFromGrid(post: any, data: any[]) {
+    if (isAudioPost(post.type)) {
+      const songs = data.filter((s: any) => isAudioPost(s.type));
+      const idx = songs.findIndex((s: any) => s.id === post.id);
+      playQueue(
+        songs.map((s: any) => ({ id: s.id, uri: s.media_url, caption: s.caption, artist: s.profiles?.display_name ?? profile?.display_name ?? '', cover: s.cover_url })),
+        Math.max(0, idx),
+      );
+      return;
+    }
+    const node = gridRefs.current[post.id];
+    const immersive = post.type === 'video' || isSlideshow(post.type);
+    const pathname = immersive ? '/reel/[id]' : '/post/[id]';
+    const seed = JSON.stringify(post);
+    if (node?.measureInWindow) {
+      node.measureInWindow((x: number, y: number, width: number, height: number) =>
+        router.push({ pathname, params: { id: post.id, post: seed, src: JSON.stringify({ x, y, width, height }) } }));
+    } else {
+      router.push({ pathname, params: { id: post.id, post: seed } });
+    }
+  }
+
+  // Films as 16:9 POSTERS, the shape Laybell TV uses — a film is a thing you
+  // pick by its title and its runtime, and a square thumbnail in a three-up grid
+  // shows neither. Two per row, so the frame is big enough to read.
+  function renderFilmShelf(films: any[]) {
+    return (
+      <View style={styles.filmGrid}>
+        {films.map((post: any) => (
+          <TouchableOpacity
+            key={post.id}
+            ref={(n) => { if (n) gridRefs.current[post.id] = n; }}
+            style={styles.filmTile}
+            activeOpacity={0.9}
+            accessibilityRole="button"
+            accessibilityLabel={filmName(post)}
+            onLongPress={undefined}
+            onPress={() => openFromGrid(post, films)}
+          >
+            <VideoThumb thumbnailUrl={post.thumbnail_url} mediaUrl={post.media_url} style={styles.filmThumb} />
+            <View style={styles.filmRuntime}>
+              <Text style={styles.filmRuntimeText}>{fmtRuntime(post.duration_seconds)}</Text>
+            </View>
+            {/* The title sits ON the poster under a scrim rather than beneath it:
+                a caption line under every tile turns a shelf of posters into a
+                list with pictures. */}
+            <LinearGradient colors={['transparent', 'rgba(0,0,0,0.88)']} style={styles.filmOverlay}>
+              <Text style={styles.filmName} numberOfLines={1}>{filmName(post)}</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        ))}
       </View>
     );
   }
@@ -931,6 +995,34 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // reusing it here indented Singles further than every other line on the tab.
   // A second section heading needs air above it; the first sits flush under the
   // tab strip and does not.
+  // Films shelf. Padded, unlike the square grid below it, which is deliberately
+  // full-bleed — a poster wants a margin, a contact sheet does not.
+  videosTab: { paddingTop: SPACING.sm },
+  // The labels carry the page margin themselves. sectionLabel has none, because
+  // on the Music tab it lives inside musicList which already supplies it; here
+  // the grid under it is edge-to-edge, so without this the heading sat flush in
+  // the corner. That was the "cut off" look.
+  videosLabel: { paddingHorizontal: SPACING.md },
+  filmGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: FILM_GAP,
+    paddingHorizontal: SPACING.md, marginBottom: SPACING.xs,
+  },
+  filmTile: {
+    width: FILM_W, height: FILM_H, borderRadius: RADIUS.md,
+    overflow: 'hidden', backgroundColor: colors.surfaceLight,
+  },
+  filmThumb: { width: '100%', height: '100%' },
+  filmOverlay: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    paddingHorizontal: SPACING.sm, paddingTop: SPACING.lg, paddingBottom: SPACING.sm - 2,
+  },
+  filmName: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  filmRuntime: {
+    position: 'absolute', top: SPACING.xs + 2, right: SPACING.xs + 2,
+    backgroundColor: 'rgba(0,0,0,0.62)', borderRadius: RADIUS.sm,
+    paddingHorizontal: 6, paddingVertical: 2,
+  },
+  filmRuntimeText: { color: '#fff', fontSize: 10.5, fontWeight: '700' },
   sectionLabelStacked: { marginTop: SPACING.md },
   sectionLabel: {
     color: quietText(colors), fontSize: 12, fontWeight: '800',

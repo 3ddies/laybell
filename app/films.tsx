@@ -8,7 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SwipeBackPager from '../components/SwipeBackPager';
 import VideoThumb from '../components/VideoThumb';
-import { fetchFilmCatalog } from '../lib/tv';
+import { fetchFilmCatalog, filmName, fmtRuntime } from '../lib/tv';
 import { useProfile } from '../contexts/ProfileContext';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -34,20 +34,6 @@ const TILE_H = Math.round(TILE_W * (9 / 16));
 const GRID_GAP = SPACING.sm;
 const COL_W = (SCREEN_W - H_PADDING * 2 - GRID_GAP) / 2;
 const COL_H = Math.round(COL_W * (9 / 16));
-
-function fmtRuntime(sec?: number | null): string {
-  const s = Math.max(0, Math.round(sec ?? 0));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const r = s % 60;
-  return h > 0
-    ? `${h}:${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`
-    : `${m}:${String(r).padStart(2, '0')}`;
-}
-
-function filmName(p: any): string {
-  return p.film_title || p.caption || p.profiles?.display_name || p.profiles?.username || '';
-}
 
 export default function FilmsScreen() {
   const router = useRouter();

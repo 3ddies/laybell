@@ -852,7 +852,17 @@ export default function HomeScreen() {
     // upload begins is the worst case for it, and the symptom was brutal:
     // the composer said "Posted" and the feed showed nothing at all.
     const head = pending.length ? [{ id: '__pending', __pending: true } as unknown as Post] : [];
-    return [...head, ...pins, ...rest];
+    // The stories tray is the first ROW of the feed, so it scrolls away with the
+    // content instead of riding the floating header.
+    //
+    // A real list item, NOT ListHeaderComponent — that distinction is the whole
+    // reason this is safe. FlashList v2 + Fabric detaches a list HEADER natively
+    // when it scrolls out, and re-attaches it wrong: that is what produced the
+    // squished ghost tray stuck over the tab bar, and why the tray was moved into
+    // the header block in the first place. Rows are recycled, never detached,
+    // which is exactly why in-flight uploads were moved out of the header too.
+    const stories = [{ id: '__stories', __stories: true } as unknown as Post];
+    return [...stories, ...head, ...pins, ...rest];
   }, [posts, pinnedPosts, pinnedIds, pinnedSet, pendingPostIds, pending.length]);
   // Live copy for the (stable) viewability callback below — it scans around the
   // viewport for upcoming videos to pre-warm without re-subscribing.
@@ -866,8 +876,9 @@ export default function HomeScreen() {
   const gateArmedRef = useRef(false);
   const gateUnlockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gatedFeedData = useMemo(() => {
-    if (feedGateUnlocked || feedData.length <= GATE_POSTS) return feedData;
-    return [...feedData.slice(0, GATE_POSTS), { id: '__feed_gate__', __gate: true } as unknown as Post];
+    if (feedGateUnlocked || feedData.length <= GATE_POSTS + 1) return feedData;
+    // +1 so the stories row does not consume one of the gate's posts.
+    return [...feedData.slice(0, GATE_POSTS + 1), { id: '__feed_gate__', __gate: true } as unknown as Post];
   }, [feedData, feedGateUnlocked]);
 
   // People-to-follow rail, woven in after PEOPLE_AFTER real posts.
@@ -886,7 +897,7 @@ export default function HomeScreen() {
     let posts = 0;
     for (let i = 0; i < gatedFeedData.length; i++) {
       const row = gatedFeedData[i] as any;
-      if (row.__pending || row.__gate) continue;
+      if (row.__stories || row.__pending || row.__gate) continue;
       posts++;
       if (posts === PEOPLE_AFTER) {
         const out = gatedFeedData.slice();
@@ -2233,6 +2244,7 @@ export default function HomeScreen() {
   }, []);
 
   const renderPost = useCallback(({ item }: { item: Post }) => (
+    (item as any).__stories ? <StoriesTray /> :
     (item as any).__pending ? <PendingUploads /> :
     (item as any).__gate ? <FeedGateCard onArm={onGateArm} /> :
     (item as any).__people ? <PeopleRow currentUserId={currentUserId} /> :
@@ -2436,24 +2448,6 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </View>
-      {/* The StoriesTray lives HERE — inside the floating header block, riding
-          its hide/show glide — NOT inside the FlashList header. FlashList v2's
-          recycling detaches the list header natively when it scrolls out, and
-          Fabric's re-attach is what produced the squished ghost tray stuck over
-          the tab bar on Android (verified via labeled scene probes: scenes were
-          all healthy; the tray alone was orphaned). Hosting it in a plain View
-          removes the detach path entirely. onLayout above measures the taller
-          block, so the feed's paddingTop and the slide distance adapt
-          automatically.
-
-          iOS used to keep the tray in-list, and lost it the same way — the
-          detach is FlashList v2 + Fabric, not an Android quirk, and SDK 54
-          defaults to the New Architecture on both platforms. Same host, both
-          platforms now. */}
-      <Animated.View
-      >
-        <StoriesTray />
-      </Animated.View>
       </Animated.View>
 
       {/* Feed-mode dropdown */}
@@ -2504,11 +2498,11 @@ export default function HomeScreen() {
         // Spotlight instances key off their campaign so a promoted post can
         // never key-collide with itself (organic copies are filtered at merge).
         // In v2 this is also the recycler's stable id — load-bearing.
-        keyExtractor={(item) => ((item as any).__pending ? 'pending' : (item as any).__people ? 'people' : item.__spotlight ? `spot:${item.__spotlight.campaignId}` : item.id)}
+        keyExtractor={(item) => ((item as any).__stories ? 'stories' : (item as any).__pending ? 'pending' : (item as any).__people ? 'people' : item.__spotlight ? `spot:${item.__spotlight.campaignId}` : item.id)}
         // Recycle pools are per-type: an ad cell must never be recycled into a
         // post cell (renderPost's root ternary would swap component trees —
         // a full remount AND a polluted pool).
-        getItemType={(item) => ((item as any).__pending ? 'pending' : (item as any).__people ? 'people' : (item as any).__gate ? 'gate' : (item as any).__ad ? 'ad' : 'post')}
+        getItemType={(item) => ((item as any).__stories ? 'stories' : (item as any).__pending ? 'pending' : (item as any).__people ? 'people' : (item as any).__gate ? 'gate' : (item as any).__ad ? 'ad' : 'post')}
         renderItem={renderPost}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={feedContentStyle}

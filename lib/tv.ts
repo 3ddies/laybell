@@ -14,6 +14,29 @@ export function isHorizontalVideo(p: any): boolean {
 // A FILM = landscape video past the free 9-minute window (Premium+ posts them;
 // everyone watches free). The 540 boundary matches FILM_MIN_SEC in
 // lib/entitlements.ts and the enforce_film_rights trigger in premium_plus.sql.
+/**
+ * A film's display name. film_title is the movie-shelf name an artist chose;
+ * a caption makes a poor movie title but is better than nothing.
+ *
+ * Lives here rather than in the Films screen because the profile's Videos tab
+ * now labels the same films, and a film called one thing on TV and another on
+ * its owner's profile is worse than either name.
+ */
+export function filmName(p: any): string {
+  return p?.film_title || p?.caption || p?.profiles?.display_name || p?.profiles?.username || '';
+}
+
+/** h:mm:ss for a feature, m:ss for anything under an hour. */
+export function fmtRuntime(sec?: number | null): string {
+  const s = Math.max(0, Math.round(sec ?? 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`
+    : `${m}:${String(r).padStart(2, '0')}`;
+}
+
 export function isFilm(p: any): boolean {
   return isHorizontalVideo(p) && (p?.duration_seconds ?? 0) > 540;
 }
