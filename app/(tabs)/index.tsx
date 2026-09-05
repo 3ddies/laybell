@@ -180,6 +180,8 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import { trackVideoProgress } from '../../lib/viewTracker';
 import TrackRow from '../../components/TrackRow';
+import SongSquareCard from '../../components/SongSquareCard';
+import { parseFeatures } from '../../lib/features';
 import StoriesTray from '../../components/StoriesTray';
 import PendingUploads from '../../components/PendingUploads';
 import Spinner from '../../components/Spinner';
@@ -250,9 +252,13 @@ type PostCardProps = {
   isLiked: boolean;
   isSaved: boolean;
   audioActive: boolean;
+  /** Render this song as the square poster card rather than a TrackRow. */
+  songSquare: boolean;
   videoMuted: boolean;
   songMuted: boolean;
   onProfile: (item: Post) => void;
+  /** Open a profile by id — used by credited collaborators, who are not the poster. */
+  onProfileId: (id: string) => void;
   onOptions: (item: Post) => void;
   onOpenPost: (item: Post, src?: SourceRect, index?: number) => void;
   onOpenReel: (item: Post, src?: SourceRect) => void;
@@ -276,8 +282,8 @@ type PostCardProps = {
 // from HomeScreen are referentially stable, and `item` keeps its reference for
 // unchanged posts, so React.memo's shallow compare skips them.
 const PostCard = memo(function PostCard({
-  item, isOwn, isLiked, isSaved, audioActive, videoMuted, songMuted,
-  onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onMediaZoom,
+  item, isOwn, isLiked, isSaved, audioActive, songSquare, videoMuted, songMuted,
+  onProfile, onProfileId, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onMediaZoom,
 }: PostCardProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -490,7 +496,21 @@ const PostCard = memo(function PostCard({
         </View>
       )}
 
-      {isAudioPost(item.type) && (
+      {isAudioPost(item.type) && songSquare && (
+        <SongSquareCard
+          postId={item.id}
+          title={item.caption || ''}
+          artist={item.profiles?.display_name || item.profiles?.username || ''}
+          features={parseFeatures((item as any).features)}
+          cover={item.cover_url ?? item.thumbnail_url ?? null}
+          isPlaying={audioActive}
+          onPlay={() => onPlayTrack(item)}
+          onOpen={() => onExpandTrack(item)}
+          onOpenProfile={onProfileId}
+        />
+      )}
+
+      {isAudioPost(item.type) && !songSquare && (
         <View style={styles.audioCardWrap}>
           <TrackRow
             caption={item.caption}
@@ -734,6 +754,26 @@ export default function HomeScreen() {
   const { share: openShare } = useShare();
   const linkGuard = useLinkGuard();
   const [posts, setPosts] = useState<Post[]>([]);
+  // Which songs render as the square poster card: one in every three, counted
+  // across the songs in the feed rather than across all posts, so the rhythm is
+  // "every third song you meet" regardless of how much sits between them.
+  //
+  // Derived from the list instead of stamped onto the rows. The feed reshuffles
+  // on every refresh and rows are added and removed in half a dozen places; a
+  // flag written at build time would go stale in all of them, while this is
+  // recomputed from whatever the list currently is. The FIRST of each three is
+  // the square one, so a feed holding only one or two songs still shows the
+  // format — picking the third would hide it entirely on a young app.
+  const songSquareIds = useMemo(() => {
+    const ids = new Set<string>();
+    let n = 0;
+    for (const p of posts) {
+      if ((p as any).__ad || !isAudioPost(p.type)) continue;
+      if (n % 3 === 0) ids.add(p.id);
+      n++;
+    }
+    return ids;
+  }, [posts]);
   // Background video uploads: optimistic cards render at the top of the feed while
   // the upload/encode runs (see PendingUploads), and completedTick pulls the real
   // row in once it lands.
@@ -2062,6 +2102,9 @@ export default function HomeScreen() {
   // isSwipeTap guards: a tab swipe gliding over the feed must not open
   // posts/reels/profiles (the swipe's touch can read as a tap on a card).
   const onProfile = useCallback((item: Post) => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push(`/profile/${item.user_id}`); }, []);
+  // By id rather than by post: a song's CREDITED collaborator is not the poster,
+  // so onProfile (which reads item.user_id) would send you to the wrong person.
+  const onProfileId = useCallback((id: string) => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push(`/profile/${id}`); }, []);
   const onOpenPost = useCallback((item: Post, src?: SourceRect, index?: number) => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push({ pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}), ...(index != null ? { index: String(index) } : {}) } }); }, []);
   const onOpenReel = useCallback((item: Post, src?: SourceRect) => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push({ pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}) } }); }, []);
   // The spotlight tap is NOT recorded here — opening the sheet to read isn't
@@ -2164,9 +2207,11 @@ export default function HomeScreen() {
           isLiked={likedPosts.has(item.id)}
           isSaved={savedPosts.has(item.id)}
           audioActive={isPlaying && playingTrackId === item.id}
+          songSquare={songSquareIds.has(item.id)}
           videoMuted={videoMuted}
           songMuted={songMuted}
           onProfile={onProfile}
+          onProfileId={onProfileId}
           onOptions={onOptions}
           onOpenPost={onOpenPost}
           onOpenReel={onOpenReel}
@@ -2187,8 +2232,11 @@ export default function HomeScreen() {
   // in lib/feedVideo — cards subscribe directly): renderPost identity now only
   // changes on user-initiated events (like/save, track change, mute), never
   // during a plain scroll — so FlatList's mounted cells bail via PureComponent.
-  ), [currentUserId, likedPosts, savedPosts, isPlaying, playingTrackId, videoMuted, songMuted,
-      onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions, onGateArm]);
+  // songSquareIds is a NEW Set whenever the list changes, which is exactly when
+  // the square positions can move — so it belongs here. Leaving it out would
+  // freeze the pattern at whatever the first load happened to be.
+  ), [currentUserId, likedPosts, savedPosts, isPlaying, playingTrackId, videoMuted, songMuted, songSquareIds,
+      onProfile, onProfileId, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions, onGateArm]);
 
   if (loading) {
     return (
