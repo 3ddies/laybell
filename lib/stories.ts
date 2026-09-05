@@ -252,8 +252,128 @@ async function rankStoryGroups(groups: StoryGroup[], viewerId: string): Promise<
   return scored.map((s) => s.g);
 }
 
+/**
+ * How many story-tellers the viewer does NOT follow get added to the tray.
+ *
+ * Five is the brief, and the reasoning is that it is enough to always have
+ * something worth opening — so the tray is never empty for someone who follows
+ * nobody, and the feature is discoverable at all — while staying well short of
+ * feeling like a wall of strangers. Raising this trades that off directly.
+ */
+export const DISCOVERY_STORY_AUTHORS = 5;
+
+// How many active stories to look at when picking those five. A cap, because
+// this reads across the WHOLE app rather than one person's follows: without it
+// the query grows with the platform and the tray gets slower for everybody as
+// Laybell succeeds. Newest-first, so the cap trims the stalest candidates.
+const DISCOVERY_SCAN_LIMIT = 500;
+
+// How many AUTHORS get their engagement measured, after the scan above narrows
+// the field by recency.
+//
+// This exists because of a URL limit, not a database one. PostgREST sends
+// filters in the query string, so `.in('story_id', [...])` over 500 uuids builds
+// an ~18KB URL that a gateway will reject long before Postgres sees it. Ranking
+// the most recent 40 story-tellers keeps that list small, and costs nothing real:
+// stories live 24 hours, so "recent" is nearly everything, and five slots cannot
+// be filled from more than five of them anyway.
+const DISCOVERY_RANK_AUTHORS = 40;
+
+/**
+ * The most-watched active stories from people the viewer does not follow.
+ *
+ * Ranked on the same currency as rankStoryGroups — a like counts double a view —
+ * blended with recency so a story posted an hour ago can beat one that has been
+ * accumulating views for twenty. Returns [] rather than throwing: discovery is a
+ * bonus rail, and failing to compute it must never cost somebody the stories
+ * they actually subscribed to.
+ */
+async function fetchDiscoveryGroups(
+  viewerId: string,
+  exclude: Set<string>,
+  limit: number,
+  localSeen: Set<string>,
+): Promise<StoryGroup[]> {
+  const nowIso = new Date().toISOString();
+  const { data: active } = await supabase
+    .from('stories')
+    .select('id, user_id, created_at')
+    .gt('expires_at', nowIso)
+    .order('created_at', { ascending: false })
+    .limit(DISCOVERY_SCAN_LIMIT);
+  if (!active || active.length === 0) return [];
+
+  const candidates = (active as any[]).filter((s) => !exclude.has(s.user_id));
+  if (candidates.length === 0) return [];
+
+  const candidateAuthors = Array.from(new Set(candidates.map((s) => s.user_id)));
+
+  // Blocked and hidden accounts are dropped BEFORE ranking, not after, so a
+  // hidden author cannot occupy one of the five slots and silently shrink the
+  // rail to four. `hidden` is checked in app code because there is no RLS policy
+  // on profiles covering it — see the note in docs about public-surface gaps.
+  const [{ data: blocks }, { data: profs }] = await Promise.all([
+    supabase.from('blocks').select('blocked_id').eq('blocker_id', viewerId),
+    supabase.from('profiles').select('id, hidden').in('id', candidateAuthors),
+  ]);
+
+  const blocked = new Set<string>((blocks ?? []).map((b: any) => b.blocked_id));
+  const hidden = new Set<string>((profs ?? []).filter((p: any) => p.hidden).map((p: any) => p.id));
+  const visible = candidates.filter((s) => !blocked.has(s.user_id) && !hidden.has(s.user_id));
+  if (visible.length === 0) return [];
+
+  // `active` came back newest-first, so first-seen order here IS recency order —
+  // which is what bounds the engagement queries below to a sane size.
+  const byRecency: string[] = [];
+  for (const s of visible) {
+    if (!byRecency.includes(s.user_id)) byRecency.push(s.user_id);
+    if (byRecency.length >= DISCOVERY_RANK_AUTHORS) break;
+  }
+  const shortlist = new Set(byRecency);
+  const allowed = visible.filter((s) => shortlist.has(s.user_id));
+
+  const [{ data: views }, { data: likes }] = await Promise.all([
+    supabase.from('story_views').select('story_id').in('story_id', allowed.map((s) => s.id)),
+    supabase.from('story_likes').select('story_id').in('story_id', allowed.map((s) => s.id)),
+  ]);
+
+  const authorOf = new Map<string, string>(allowed.map((s) => [s.id, s.user_id]));
+  const pop: Record<string, number> = {};
+  (views ?? []).forEach((v: any) => { const a = authorOf.get(v.story_id); if (a) pop[a] = (pop[a] || 0) + 1; });
+  (likes ?? []).forEach((l: any) => { const a = authorOf.get(l.story_id); if (a) pop[a] = (pop[a] || 0) + 2; });
+
+  const now = Date.now();
+  const newestOf: Record<string, number> = {};
+  for (const s of allowed) {
+    const t = Date.parse(s.created_at) || 0;
+    if (t > (newestOf[s.user_id] ?? 0)) newestOf[s.user_id] = t;
+  }
+
+  const authors = Array.from(new Set(allowed.map((s) => s.user_id)));
+  const maxPop = Math.max(1, ...authors.map((a) => pop[a] || 0));
+  const top = authors
+    .map((a) => ({
+      a,
+      score:
+        0.6 * ((pop[a] || 0) / maxPop) +
+        0.4 * Math.max(0, Math.min(1, 1 - (now - (newestOf[a] ?? 0)) / (24 * 60 * 60 * 1000))),
+    }))
+    .sort((x, y) => y.score - x.score || (newestOf[y.a] ?? 0) - (newestOf[x.a] ?? 0))
+    .slice(0, limit)
+    .map((s) => s.a);
+  if (top.length === 0) return [];
+
+  const map = await loadGroups(top, viewerId, localSeen);
+  // Back into ranked order — loadGroups keys by author and does not preserve it.
+  return top.map((id) => map.get(id)).filter((g): g is StoryGroup => !!g);
+}
+
 // The Home tray: the current user's active stories first, then active stories from
-// people they follow, ordered by relevance (see rankStoryGroups).
+// people they follow, ordered by relevance (see rankStoryGroups), then up to
+// DISCOVERY_STORY_AUTHORS of the most-watched stories from people they do NOT
+// follow. Discovery goes LAST on purpose — the people you chose to follow lead
+// the rail, and a viewer with no follows sees discovery immediately because
+// there is nothing in front of it.
 export async function fetchStoryTray(userId: string, localSeen: Set<string> = new Set()): Promise<StoryGroup[]> {
   const { data: follows } = await supabase
     .from('follows')
@@ -267,11 +387,21 @@ export async function fetchStoryTray(userId: string, localSeen: Set<string> = ne
 
   const own = list.find((g) => g.user.id === userId) ?? null;
   const others = list.filter((g) => g.user.id !== userId);
+
+  // Excluded by FOLLOW, not by "has a story in the tray": somebody you follow
+  // who has not posted today is still not a stranger, and surfacing them under
+  // discovery would be odd. Self is excluded for the obvious reason.
+  const exclude = new Set<string>([userId, ...followingIds]);
+  let discovery: StoryGroup[] = [];
+  try {
+    discovery = await fetchDiscoveryGroups(userId, exclude, DISCOVERY_STORY_AUTHORS, localSeen);
+  } catch { discovery = []; }
+
   try {
     const ranked = await rankStoryGroups(others, userId);
-    return own ? [own, ...ranked] : ranked; // your own story always leads
+    return [...(own ? [own] : []), ...ranked, ...discovery]; // your own story always leads
   } catch {
-    return baselineTraySort(list, userId);
+    return [...baselineTraySort(list, userId), ...discovery];
   }
 }
 

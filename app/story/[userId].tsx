@@ -20,7 +20,9 @@ import {
   fetchStoryLiked, setStoryLike,
   type Story, type StoryProfile, type StoryGroup, type SourceRect, type StoryViewer,
 } from '../../lib/stories';
+import { saveRemoteToLibrary } from '../../lib/saveToLibrary';
 import { reportUser } from '../../lib/postActions';
+import { showPermissionDenied } from '../../lib/permissions';
 import { storyReplyBody } from '../../lib/postLinks';
 import { createNotification } from '../../lib/createNotification';
 import SongAttribution from '../../components/SongAttribution';
@@ -102,6 +104,10 @@ export default function StoryViewerScreen() {
   const [replyText, setReplyText] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
   const [sentFlash, setSentFlash] = useState(false);
+  // Camera-roll save: `saving` gates re-taps during the download, `savedFlash`
+  // reuses the reply confirmation so a save says so in the same voice.
+  const [saving, setSaving] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
   // The story id whose IMAGE has finished decoding and is actually on screen.
   // The story id whose media has actually painted its first frame (image onLoad
   // or video onReady, see AppVideo). A full-screen grey cover stays up until this
@@ -337,21 +343,35 @@ export default function StoryViewerScreen() {
     anim.start();
   }
 
+  // Zero the fill the instant the index moves, BEFORE React renders the new one.
+  //
+  // The segments read `i < storyIndex ? 1 : i === storyIndex ? progressAnim : 0`,
+  // and progressAnim is one shared value. Changing the index without clearing it
+  // meant the INCOMING segment painted its first frame at the outgoing story's
+  // fill — skip at 70% and the next bar flashed 70% full before snapping back to
+  // zero to start its own run. The bar you skipped past was always solid; the
+  // half-full one was the story you had just arrived at.
+  function resetProgress() {
+    stopProgressAnim();
+    progressAnim.setValue(0);
+  }
+
   // ─── advance / back (tap + auto-advance, story-by-story) ─────────────────────
   function goNext() {
     const { userIndex: ui, storyIndex: si } = posRef.current;
     const g = groupsRef.current[ui];
     if (!g) return;
-    if (si < g.stories.length - 1) { setStoryIndex(si + 1); return; }
-    if (ui < groupsRef.current.length - 1) { setUserIndex(ui + 1); setStoryIndex(0); return; }
+    if (si < g.stories.length - 1) { resetProgress(); setStoryIndex(si + 1); return; }
+    if (ui < groupsRef.current.length - 1) { resetProgress(); setUserIndex(ui + 1); setStoryIndex(0); return; }
     dismiss();
   }
 
   function goPrev() {
     const { userIndex: ui, storyIndex: si } = posRef.current;
-    if (si > 0) { setStoryIndex(si - 1); return; }
+    if (si > 0) { resetProgress(); setStoryIndex(si - 1); return; }
     if (ui > 0) {
       const prevG = groupsRef.current[ui - 1];
+      resetProgress();
       setUserIndex(ui - 1);
       setStoryIndex(Math.max(0, (prevG?.stories.length ?? 1) - 1));
       return;
@@ -359,20 +379,19 @@ export default function StoryViewerScreen() {
     // already at the very first story — restart it from the top (and unpause).
     pausedRef.current = false;
     setPaused(false);
-    stopProgressAnim();
-    progressAnim.setValue(0);
+    resetProgress();
     if (story?.media_type === 'image' && readyRef.current) startImageProgress(0);
   }
 
   // ─── horizontal swipe = jump to the next / previous PERSON ───────────────────
   function goNextUser() {
     const { userIndex: ui } = posRef.current;
-    if (ui < groupsRef.current.length - 1) { setUserIndex(ui + 1); setStoryIndex(0); }
+    if (ui < groupsRef.current.length - 1) { resetProgress(); setUserIndex(ui + 1); setStoryIndex(0); }
     else dismiss();
   }
   function goPrevUser() {
     const { userIndex: ui } = posRef.current;
-    if (ui > 0) { setUserIndex(ui - 1); setStoryIndex(0); }
+    if (ui > 0) { resetProgress(); setUserIndex(ui - 1); setStoryIndex(0); }
     else resume();
   }
 
@@ -588,6 +607,28 @@ export default function StoryViewerScreen() {
     reportUser(group.user.id, resume);
   }
 
+  // Save the story you are looking at to the camera roll.
+  //
+  // Paused for the duration: a story is on a timer, and a download that outlasts
+  // it would otherwise advance to the next one and leave you unsure which story
+  // you actually saved. A video story is the whole file, so this is not instant
+  // on a phone network.
+  async function onSaveStory() {
+    if (!story || saving) return;
+    setSaving(true);
+    pause();
+    const res = await saveRemoteToLibrary(story.media_url, story.media_type);
+    setSaving(false);
+    resume();
+    if (res.ok) {
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1800);
+      return;
+    }
+    if (res.reason === 'permission') { showPermissionDenied('photos', t); return; }
+    Alert.alert(t('storyCamera.saveFailTitle'), t('storyCamera.saveFailBody'));
+  }
+
   // After a delete reshapes groups, keep indices in range.
   useEffect(() => {
     if (loading) return;
@@ -753,6 +794,24 @@ export default function StoryViewerScreen() {
                     <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={21} color="#fff" />
                   </TouchableOpacity>
                 )}
+                {/* Save to camera roll — on ANY story, not just your own, which
+                    is the ask. Placed before the delete/report control so the
+                    destructive one stays furthest from the thumb's resting
+                    position and closest to the X it sits beside. */}
+                {ready && (
+                  <TouchableOpacity
+                    style={styles.headerBtn}
+                    onPress={onSaveStory}
+                    hitSlop={8}
+                    disabled={saving}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('story.saveToPhotos')}
+                  >
+                    {saving
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Ionicons name="download-outline" size={22} color="#fff" />}
+                  </TouchableOpacity>
+                )}
                 {ready && (isOwn ? (
                   // Archived replay is read-only — manage (restore/delete) from the
                   // Archive screen, so no trash button here.
@@ -865,6 +924,14 @@ export default function StoryViewerScreen() {
               <View style={[styles.sentFlash, { bottom: insets.bottom + 60 }]} pointerEvents="none">
                 <Ionicons name="checkmark-circle" size={16} color="#fff" />
                 <Text style={styles.sentFlashText}>{t('story.sent')}</Text>
+              </View>
+            )}
+
+            {/* ...and after a save lands, in the same place and voice. */}
+            {savedFlash && (
+              <View style={[styles.sentFlash, { bottom: insets.bottom + 60 }]} pointerEvents="none">
+                <Ionicons name="checkmark-circle" size={16} color="#fff" />
+                <Text style={styles.sentFlashText}>{t('story.savedToPhotos')}</Text>
               </View>
             )}
 
