@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TextInput,
   TouchableOpacity, ActivityIndicator, ScrollView, Alert, Image,
 } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Stack, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -51,6 +51,14 @@ export default function EditProfileScreen() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [age, setAge] = useState<number | null>(null); // read-only, derived from dob
+  // What the form looked like when it loaded. Cancel compares against this
+  // rather than tracking a dirty flag on every keystroke, so typing a character
+  // and deleting it again correctly counts as no change at all.
+  //
+  // The AVATAR is deliberately absent: picking one uploads and writes it
+  // immediately (see uploadAvatar), so it is already saved and warning about it
+  // would be a lie. Only the six fields handleSave writes are pending.
+  const initial = useRef<Record<string, string>>({});
 
   useEffect(() => { fetchProfile(); }, []);
 
@@ -72,7 +80,16 @@ export default function EditProfileScreen() {
           : null,
       );
     }
-    setPhone(await loadOwnPhone()); // plaintext lives on-device only
+    const loadedPhone = await loadOwnPhone(); // plaintext lives on-device only
+    setPhone(loadedPhone);
+    initial.current = {
+      displayName: data?.display_name || '',
+      username: data?.username || '',
+      bio: data?.bio || '',
+      link: data?.link || '',
+      gender: data?.gender || '',
+      phone: loadedPhone,
+    };
     setLoading(false);
   }
 
@@ -110,6 +127,41 @@ export default function EditProfileScreen() {
       if (oldAvatar && oldAvatar !== publicUrl) removePublicUrls([oldAvatar]);
     }
     setUploadingPhoto(false);
+  }
+
+  /** True when any field handleSave writes differs from what was loaded. */
+  function hasUnsavedChanges(): boolean {
+    const i = initial.current;
+    return (
+      displayName !== i.displayName ||
+      username !== i.username ||
+      bio !== i.bio ||
+      link !== i.link ||
+      (gender || '') !== i.gender ||
+      phone !== i.phone
+    );
+  }
+
+  /**
+   * Leave the screen, asking first if anything would be lost.
+   *
+   * Only asks when something ACTUALLY changed. A confirm on every Cancel trains
+   * people to dismiss it without reading, which is exactly how the one that
+   * mattered gets dismissed too.
+   */
+  function handleCancel() {
+    if (!hasUnsavedChanges()) { router.back(); return; }
+    Alert.alert(
+      t('editProfile.discardTitle'),
+      t('editProfile.discardBody'),
+      [
+        // Keep editing is the CANCEL role and comes first, so the safe choice is
+        // the one a reflex tap lands on and the destructive one has to be aimed
+        // at. Discard is marked destructive so iOS colours it red.
+        { text: t('editProfile.keepEditing'), style: 'cancel' },
+        { text: t('editProfile.discard'), style: 'destructive', onPress: () => router.back() },
+      ],
+    );
   }
 
   async function handleSave() {
@@ -265,7 +317,7 @@ export default function EditProfileScreen() {
       <Stack.Screen options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={handleCancel}>
           <Text style={styles.cancelBtn}>{t('common.cancel')}</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('profile.editProfile')}</Text>

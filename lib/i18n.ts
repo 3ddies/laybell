@@ -1250,6 +1250,10 @@ const en: Record<string, string> = {
   'editProfile.errUnsafeLink': 'That link was flagged as unsafe and can’t be saved. Please use a trusted https link.',
   'editProfile.errUsernameTaken': 'Username is already taken',
   'editProfile.savedTitle': 'Saved!',
+  'editProfile.discardTitle': "Discard changes?",
+  'editProfile.discardBody': "Your edits to this profile will not be saved.",
+  'editProfile.keepEditing': "Keep editing",
+  'editProfile.discard': "Discard",
   'editProfile.savedBody': 'Your profile has been updated',
 
   // Badges
@@ -2062,8 +2066,8 @@ const en: Record<string, string> = {
 
   // Live tab + livestreams
   'live.live': 'LIVE',
-  'live.empty': "Go live and get Discovered",
-  'live.emptySub': 'Start a broadcast and your fans will find it here.',
+  'live.empty': "No one is live right now",
+  'live.emptySub': "Go live and get Discovered",
   'live.goLive': 'Go Live',
   // Screen-reader labels for icon-only controls. Without these a screen reader
   // announces nothing but 'button'.
@@ -2903,8 +2907,8 @@ const es: Record<string, string> = {
   'communities.reportThanks': 'Nuestro equipo revisará esta comunidad.',
   'shop.error': 'Algo salió mal. Inténtalo de nuevo.',
   'live.live': 'EN VIVO',
-  'live.empty': "Transmite en vivo y hazte descubrir",
-  'live.emptySub': 'Inicia una transmisión y tus fans la encontrarán aquí.',
+  'live.empty': "Nadie está en vivo ahora",
+  'live.emptySub': "Transmite en vivo y hazte descubrir",
   'live.goLive': 'Transmitir en vivo',
   'live.chatPlaceholder': 'Di algo…',
   'live.react': "Enviar una reacción",
@@ -4055,6 +4059,10 @@ const es: Record<string, string> = {
   'editProfile.errUsernameChars': 'El nombre de usuario solo puede contener letras, números y guiones bajos',
   'editProfile.errUsernameTaken': 'El nombre de usuario ya está en uso',
   'editProfile.savedTitle': '¡Guardado!',
+  'editProfile.discardTitle': "¿Descartar cambios?",
+  'editProfile.discardBody': "Los cambios en este perfil no se guardarán.",
+  'editProfile.keepEditing': "Seguir editando",
+  'editProfile.discard': "Descartar",
   'editProfile.savedBody': 'Tu perfil se ha actualizado',
 
   // Badges
@@ -4978,8 +4986,8 @@ const fr: Record<string, string> = {
   'communities.reportThanks': 'Notre équipe examinera cette communauté.',
   'shop.error': 'Une erreur est survenue. Réessaie.',
   'live.live': 'EN DIRECT',
-  'live.empty': "Passe en direct et fais-toi découvrir",
-  'live.emptySub': 'Lance une diffusion et tes fans la trouveront ici.',
+  'live.empty': "Personne n’est en direct pour le moment",
+  'live.emptySub': "Passe en direct et fais-toi découvrir",
   'live.goLive': 'Passer en direct',
   'live.chatPlaceholder': 'Dis quelque chose…',
   'live.react': "Envoyer une réaction",
@@ -6130,6 +6138,10 @@ const fr: Record<string, string> = {
   'editProfile.errUsernameChars': "Le nom d'utilisateur ne peut contenir que des lettres, des chiffres et des tirets bas",
   'editProfile.errUsernameTaken': "Ce nom d'utilisateur est déjà pris",
   'editProfile.savedTitle': 'Enregistré !',
+  'editProfile.discardTitle': "Annuler les modifications ?",
+  'editProfile.discardBody': "Vos modifications de ce profil ne seront pas enregistrées.",
+  'editProfile.keepEditing': "Continuer",
+  'editProfile.discard': "Annuler",
   'editProfile.savedBody': 'Votre profil a été mis à jour',
 
   // Badges
@@ -7053,8 +7065,8 @@ const de: Record<string, string> = {
   'communities.reportThanks': 'Unser Team wird diese Community prüfen.',
   'shop.error': 'Etwas ist schiefgelaufen. Versuch es erneut.',
   'live.live': 'LIVE',
-  'live.empty': "Geh live und lass dich entdecken",
-  'live.emptySub': 'Starte eine Übertragung — deine Fans finden sie hier.',
+  'live.empty': "Gerade ist niemand live",
+  'live.emptySub': "Geh live und lass dich entdecken",
   'live.goLive': 'Live gehen',
   'live.chatPlaceholder': 'Sag etwas…',
   'live.react': "Reaktion senden",
@@ -8205,6 +8217,10 @@ const de: Record<string, string> = {
   'editProfile.errUsernameChars': 'Der Benutzername darf nur Buchstaben, Zahlen und Unterstriche enthalten',
   'editProfile.errUsernameTaken': 'Dieser Benutzername ist bereits vergeben',
   'editProfile.savedTitle': 'Gespeichert!',
+  'editProfile.discardTitle': "Änderungen verwerfen?",
+  'editProfile.discardBody': "Deine Änderungen an diesem Profil werden nicht gespeichert.",
+  'editProfile.keepEditing': "Weiter bearbeiten",
+  'editProfile.discard': "Verwerfen",
   'editProfile.savedBody': 'Dein Profil wurde aktualisiert',
 
   // Badges
@@ -9128,8 +9144,8 @@ const pt: Record<string, string> = {
   'communities.reportThanks': 'Nossa equipe vai revisar esta comunidade.',
   'shop.error': 'Algo deu errado. Tente de novo.',
   'live.live': 'AO VIVO',
-  'live.empty': "Fique ao vivo e seja descoberto",
-  'live.emptySub': 'Comece uma transmissão e seus fãs vão encontrá-la aqui.',
+  'live.empty': "Ninguém está ao vivo agora",
+  'live.emptySub': "Fique ao vivo e seja descoberto",
   'live.goLive': 'Entrar ao vivo',
   'live.chatPlaceholder': 'Diga algo…',
   'live.react': "Enviar uma reação",
@@ -10280,6 +10296,10 @@ const pt: Record<string, string> = {
   'editProfile.errUsernameChars': 'O nome de usuário só pode conter letras, números e sublinhados',
   'editProfile.errUsernameTaken': 'Esse nome de usuário já está em uso',
   'editProfile.savedTitle': 'Salvo!',
+  'editProfile.discardTitle': "Descartar alterações?",
+  'editProfile.discardBody': "Suas alterações neste perfil não serão salvas.",
+  'editProfile.keepEditing': "Continuar editando",
+  'editProfile.discard': "Descartar",
   'editProfile.savedBody': 'Seu perfil foi atualizado',
 
   // Badges
@@ -11203,8 +11223,8 @@ const it: Record<string, string> = {
   'communities.reportThanks': 'Il nostro team esaminera questa community.',
   'shop.error': 'Qualcosa è andato storto. Riprova.',
   'live.live': 'LIVE',
-  'live.empty': "Vai in diretta e fatti scoprire",
-  'live.emptySub': 'Avvia una trasmissione e i tuoi fan la troveranno qui.',
+  'live.empty': "Nessuno è in diretta al momento",
+  'live.emptySub': "Vai in diretta e fatti scoprire",
   'live.goLive': 'Vai in diretta',
   'live.chatPlaceholder': 'Di’ qualcosa…',
   'live.react': "Invia una reazione",
@@ -12355,6 +12375,10 @@ const it: Record<string, string> = {
   'editProfile.errUsernameChars': 'Il nome utente può contenere solo lettere, numeri e trattini bassi',
   'editProfile.errUsernameTaken': 'Questo nome utente è già in uso',
   'editProfile.savedTitle': 'Salvato!',
+  'editProfile.discardTitle': "Annullare le modifiche?",
+  'editProfile.discardBody': "Le modifiche a questo profilo non verranno salvate.",
+  'editProfile.keepEditing': "Continua",
+  'editProfile.discard': "Annulla",
   'editProfile.savedBody': 'Il tuo profilo è stato aggiornato',
 
   // Badges
@@ -13278,8 +13302,8 @@ const ru: Record<string, string> = {
   'communities.reportThanks': 'Наша команда проверит это сообщество.',
   'shop.error': 'Что-то пошло не так. Попробуйте ещё раз.',
   'live.live': 'В ЭФИРЕ',
-  'live.empty': "Выходите в эфир — и вас заметят",
-  'live.emptySub': 'Начните трансляцию — ваши фанаты найдут её здесь.',
+  'live.empty': "Сейчас никто не в эфире",
+  'live.emptySub': "Выходите в эфир — и вас заметят",
   'live.goLive': 'Выйти в эфир',
   'live.chatPlaceholder': 'Напишите что-нибудь…',
   'live.react': "Отправить реакцию",
@@ -14395,6 +14419,10 @@ const ru: Record<string, string> = {
   'editProfile.errUsernameChars': 'Имя пользователя может содержать только буквы, цифры и подчёркивания',
   'editProfile.errUsernameTaken': 'Это имя пользователя уже занято',
   'editProfile.savedTitle': 'Сохранено!',
+  'editProfile.discardTitle': "Отменить изменения?",
+  'editProfile.discardBody': "Изменения профиля не будут сохранены.",
+  'editProfile.keepEditing': "Продолжить",
+  'editProfile.discard': "Отменить",
   'editProfile.savedBody': 'Ваш профиль обновлён',
 
   // Badges
@@ -15318,8 +15346,8 @@ const zh: Record<string, string> = {
   'communities.reportThanks': '我们的团队将审核此社区。',
   'shop.error': '出了点问题，请重试。',
   'live.live': '直播中',
-  'live.empty': "开始直播，让更多人发现你",
-  'live.emptySub': '开始一场直播，你的粉丝会在这里看到。',
+  'live.empty': "现在没有人在直播",
+  'live.emptySub': "开始直播，让更多人发现你",
   'live.goLive': '开始直播',
   'live.chatPlaceholder': '说点什么…',
   'live.react': "发送互动表情",
@@ -16435,6 +16463,10 @@ const zh: Record<string, string> = {
   'editProfile.errUsernameChars': '用户名只能包含字母、数字和下划线',
   'editProfile.errUsernameTaken': '该用户名已被使用',
   'editProfile.savedTitle': '已保存！',
+  'editProfile.discardTitle': "放弃更改？",
+  'editProfile.discardBody': "你对该资料的修改将不会被保存。",
+  'editProfile.keepEditing': "继续编辑",
+  'editProfile.discard': "放弃",
   'editProfile.savedBody': '你的资料已更新',
 
   // Badges
@@ -17358,8 +17390,8 @@ const ja: Record<string, string> = {
   'communities.reportThanks': '運営チームがこのコミュニティを確認します。',
   'shop.error': '問題が発生しました。もう一度お試しください。',
   'live.live': 'ライブ',
-  'live.empty': "ライブを始めて見つけてもらおう",
-  'live.emptySub': '配信を始めれば、ファンがここで見つけてくれます。',
+  'live.empty': "今は誰も配信していません",
+  'live.emptySub': "ライブを始めて見つけてもらおう",
   'live.goLive': 'ライブ配信する',
   'live.chatPlaceholder': 'コメントする…',
   'live.react': "リアクションを送る",
@@ -18475,6 +18507,10 @@ const ja: Record<string, string> = {
   'editProfile.errUsernameChars': 'ユーザー名には英数字とアンダースコアのみ使用できます',
   'editProfile.errUsernameTaken': 'このユーザー名はすでに使われています',
   'editProfile.savedTitle': '保存しました！',
+  'editProfile.discardTitle': "変更を破棄しますか？",
+  'editProfile.discardBody': "このプロフィールの編集内容は保存されません。",
+  'editProfile.keepEditing': "編集を続ける",
+  'editProfile.discard': "破棄",
   'editProfile.savedBody': 'プロフィールを更新しました',
 
   // Badges
@@ -19398,8 +19434,8 @@ const hi: Record<string, string> = {
   'communities.reportThanks': 'हमारी टीम इस समुदाय की समीक्षा करेगी।',
   'shop.error': 'कुछ गड़बड़ हुई। फिर से कोशिश करें।',
   'live.live': 'लाइव',
-  'live.empty': "लाइव जाएं और लोगों तक पहुंचें",
-  'live.emptySub': 'एक प्रसारण शुरू करें — आपके फ़ैन्स इसे यहाँ पाएँगे।',
+  'live.empty': "अभी कोई लाइव नहीं है",
+  'live.emptySub': "लाइव जाएं और लोगों तक पहुंचें",
   'live.goLive': 'लाइव जाएँ',
   'live.chatPlaceholder': 'कुछ कहें…',
   'live.react': "रिएक्शन भेजें",
@@ -20515,6 +20551,10 @@ const hi: Record<string, string> = {
   'editProfile.errUsernameChars': 'उपयोगकर्ता नाम में केवल अक्षर, संख्याएं और अंडरस्कोर हो सकते हैं',
   'editProfile.errUsernameTaken': 'यह उपयोगकर्ता नाम पहले से लिया जा चुका है',
   'editProfile.savedTitle': 'सहेजा गया!',
+  'editProfile.discardTitle': "बदलाव छोड़ें?",
+  'editProfile.discardBody': "इस प्रोफ़ाइल में किए गए बदलाव सेव नहीं होंगे।",
+  'editProfile.keepEditing': "एडिट जारी रखें",
+  'editProfile.discard': "छोड़ें",
   'editProfile.savedBody': 'आपकी प्रोफ़ाइल अपडेट हो गई है',
 
   // Badges
