@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, Modal, FlatList, TextInput,
-  TouchableOpacity, Keyboard,
+  TouchableOpacity, Keyboard, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { useEffect, useRef, useState } from 'react';
@@ -371,8 +371,23 @@ export default function SongPickerModal({ visible, onClose, onSelect, ownOnly = 
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
+      {/* Lift the sheet clear of the keyboard. Without this the sheet keeps its
+          full height and the keyboard simply covers it: the search field ended up
+          sitting directly on top of the keyboard with NO list left visible, so
+          you were typing a search you could not see the results of — and
+          keyboardDismissMode="on-drag" could not help, because there was nothing
+          left on screen to drag. */}
+      <KeyboardAvoidingView
+        style={styles.fill}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={close}>
-        <TouchableOpacity style={styles.sheet} activeOpacity={1}>
+        {/* Tapping the sheet itself already had to be swallowed so it would not
+            reach the overlay and close the picker. Now that same dead tap puts
+            the keyboard away — so any inert part of the sheet (the title row, the
+            gaps between tabs, the padding) is a way out of the keyboard without
+            losing the search you typed. */}
+        <TouchableOpacity style={styles.sheet} activeOpacity={1} onPress={() => Keyboard.dismiss()}>
           <View style={styles.handle} />
           <View style={styles.head}>
             <Text style={styles.title}>{t('songPicker.title')}</Text>
@@ -500,11 +515,13 @@ export default function SongPickerModal({ visible, onClose, onSelect, ownOnly = 
           )}
         </TouchableOpacity>
       </TouchableOpacity>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  fill: { flex: 1 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,

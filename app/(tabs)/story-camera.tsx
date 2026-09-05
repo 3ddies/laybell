@@ -828,7 +828,11 @@ export default function StoryCameraScreen() {
                 onPress={() => (previewing ? stopSong('story-editor') : playSong('story-editor', song.id))}
                 hitSlop={6}
               >
-                <Ionicons name={previewing ? 'pause-circle' : 'play-circle'} size={44} color={colors.text} />
+                {/* White in BOTH themes. This card floats on the photo, not on
+                    the theme — its swap and close icons are already hardcoded
+                    #fff for that reason — so following colors.text turned the
+                    play button into a black disc on the media in light mode. */}
+                <Ionicons name={previewing ? 'pause-circle' : 'play-circle'} size={44} color="#fff" />
               </TouchableOpacity>
               <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.flipCamera')} style={styles.songCardBtn} onPress={() => setShowSongPicker(true)} hitSlop={6}>
                 <Ionicons name="swap-horizontal" size={20} color="#fff" />

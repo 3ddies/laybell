@@ -343,28 +343,17 @@ export default function StoryViewerScreen() {
     anim.start();
   }
 
-  // Freeze the fill — do NOT zero it here.
-  //
-  // One Animated.Value drives whichever segment is current, and the segments read
-  // `i < storyIndex ? 1 : i === storyIndex ? progressAnim : 0`. That makes the
-  // ORDER of these two operations visible on screen, and both naive orders flash:
-  //
-  //   setValue(0) then change index → the OUTGOING segment is still bound to the
-  //     value in the committed tree, so it snaps to empty for a frame before the
-  //     re-render gives it the literal 1. You skip a story and its bar blinks
-  //     black instead of completing.
-  //   change index then setValue(0) → the INCOMING segment mounts bound to the
-  //     old story's fill, so the next bar flashes 70% full before starting.
-  //
-  // So: stop the animation without touching the value, let the commit repaint the
-  // outgoing segment as a solid literal 1, and zero the value in a layout effect
-  // that runs after that commit but before the frame is drawn. Neither bar ever
-  // shows a value that was meant for the other.
+  // Stop the run and zero the value, so the segment the next story mounts into
+  // starts empty rather than inheriting the last one's fill. Safe to do before
+  // the index moves now that only the CURRENT segment is animated — a passed bar
+  // is a plain View and no longer listens to this at all.
   function resetProgress() {
     stopProgressAnim();
+    progressAnim.setValue(0);
   }
 
-  // Zero the (now newly-current) segment after the commit, before paint.
+  // Belt and braces for the paths that change the story WITHOUT going through
+  // resetProgress — a group reshaping under a delete, or the initial mount.
   useLayoutEffect(() => {
     progressAnim.setValue(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -391,13 +380,9 @@ export default function StoryViewerScreen() {
       return;
     }
     // already at the very first story — restart it from the top (and unpause).
-    // Zeroed explicitly: story.id does not change here, so the layout effect that
-    // normally does it will not fire, and a video story has no
-    // startImageProgress(0) to fall back on.
     pausedRef.current = false;
     setPaused(false);
     resetProgress();
-    progressAnim.setValue(0);
     if (story?.media_type === 'image' && readyRef.current) startImageProgress(0);
   }
 
@@ -771,12 +756,30 @@ export default function StoryViewerScreen() {
             <View style={[styles.progressRow, { top: insets.top + 6 }]} pointerEvents="none">
               {group.stories.map((s, i) => (
                 <View key={s.id} style={styles.progressTrack}>
-                  <Animated.View
-                    style={[
-                      styles.progressFill,
-                      { transform: [{ scaleX: i < storyIndex ? 1 : i === storyIndex ? progressAnim : 0 }] },
-                    ]}
-                  />
+                  {/* Only the CURRENT segment is an Animated.View.
+
+                      Every segment used to be one, switching between progressAnim
+                      and a literal 1 as the index moved — and that cannot work
+                      with useNativeDriver. Attaching a value to a view's
+                      transform hands ownership to the NATIVE side, and
+                      re-rendering the same view with a literal does not detach
+                      it: the native node keeps driving it. So a passed segment
+                      stayed bound to progressAnim and displayed whatever the
+                      current story's fill happened to be — stuck part-full, or
+                      empty once that value was reset. Reordering the reset could
+                      not fix it because the binding, not the timing, was wrong.
+
+                      A plain View has no such binding, so a watched bar is
+                      simply a solid white bar. Switching element types also
+                      forces React to unmount the Animated.View, which is what
+                      actually releases the native node. */}
+                  {i < storyIndex ? (
+                    <View style={styles.progressFill} />
+                  ) : i === storyIndex ? (
+                    <Animated.View
+                      style={[styles.progressFill, { transform: [{ scaleX: progressAnim }] }]}
+                    />
+                  ) : null}
                 </View>
               ))}
             </View>
