@@ -22,11 +22,20 @@ const MAX_SUGGESTIONS = 10;
 // (gradient) ahead of seen ones. Reads global story state from StoriesContext so
 // the rings/ordering match story rings shown elsewhere in the app.
 //
-// SUGGESTIONS BACKFILL THE REST. A new account follows nobody, so this row was
-// their own circle and nothing else — the emptiest thing on the busiest screen,
-// and no way out of it from here. Below MIN_STORIES it fills with accounts worth
-// following, which turns a dead row into the one place a new user can find
-// people without going looking.
+// THE ROW BACKFILLS ITSELF, for every account rather than only new ones.
+//
+// A new account follows nobody, so this row was their own circle and nothing
+// else — the emptiest thing on the busiest screen. But an account is not the
+// same as its age: follow twenty people who never post stories and the row is
+// just as empty, and that user needs the way out just as much.
+//
+// So the test is how many of the people YOU FOLLOW have a story right now, and
+// nothing else. Below MIN_STORIES the row fills, in two layers that stack:
+//   • up to five of the app's most-watched stories from people you do not
+//     follow (lib/stories fetchDiscoveryGroups — always appended, for everyone,
+//     so there is something to watch even with no follows at all), and
+//   • accounts worth following, below the hairline.
+// Neither layer counts toward the test that decides whether to show them.
 //
 // They are NOT dressed up as stories. StoryAvatar draws a ring only when the
 // user genuinely has an active story, so a suggestion with nothing to watch
@@ -81,6 +90,19 @@ export default function StoriesTray() {
   const ownTier = chosenTier(profile);
   const addColors = ownTier ? badgeRingColors(ownTier) : undefined;
 
+  // Counted over the people you actually FOLLOW, not over everything in the rail.
+  //
+  // This is the whole question of "is your rail thin", and it has nothing to do
+  // with how old the account is: somebody who has followed twenty people who
+  // never post stories has exactly the same empty row as somebody who signed up
+  // this morning, and both should be offered a way out of it.
+  //
+  // It also has to exclude the discovery stories, which are themselves backfill.
+  // Counting them meant five strangers' stories pushed the total past the
+  // threshold and switched the suggestions off — backfill suppressing backfill,
+  // so the row stopped offering anyone to follow the moment it started working.
+  const followedWithStories = others.filter((g) => following.has(g.user.id)).length;
+
   // Decided at RENDER, from the story count as it stands now — so suggestions
   // withdraw on their own the moment the people you follow start posting, with
   // no second fetch and no state to keep in step.
@@ -89,7 +111,7 @@ export default function StoriesTray() {
   // updates the instant you follow someone from their profile: tap a suggestion,
   // follow, come back, and they are gone rather than sitting there offering to
   // introduce you to somebody you now follow.
-  const shownSuggestions = others.length < MIN_STORIES
+  const shownSuggestions = followedWithStories < MIN_STORIES
     ? suggestions
         .filter((s) => s.id !== currentUserId
           && !following.has(s.id)
