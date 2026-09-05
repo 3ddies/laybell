@@ -158,6 +158,16 @@ export default function OnboardingScreen() {
       await supabase.from('profiles').update({ gender, age: ageNum }).eq('id', user.id);
       await supabase.from('profiles').update({ dob: dobToISO(dob) }).eq('id', user.id);
       if (isMinor) {
+        // Off the email list, always, whatever was ticked at signup.
+        //
+        // Age is captured HERE and not at signup, so the checkbox on that screen
+        // was answered before anyone knew this was a 15-year-old. Marketing mail
+        // to a minor is a fight nobody needs, and CAN-SPAM permitting it is not
+        // the same as it being a good idea. Its own update so a pre-migration gap
+        // cannot drop the consent writes below.
+        await supabase.from('profiles')
+          .update({ marketing_opt_in: false, marketing_opt_in_at: new Date().toISOString() })
+          .eq('id', user.id);
         // Record parental-consent intent in its own update so a pre-migration
         // gap on these columns can't drop the gender/age/dob writes above.
         await supabase.from('profiles').update({

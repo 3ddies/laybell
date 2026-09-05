@@ -35,6 +35,11 @@ export default function SignupScreen() {
   const [showPass, setShowPass] = useState(false);
   // Must be checked before an account can be created (ToS + Privacy consent).
   const [agreed, setAgreed] = useState(false);
+  // Ticked by default. Lawful because Laybell is US-only and CAN-SPAM is an
+  // OPT-OUT regime — see supabase/sql/email_marketing_optin.sql for where that
+  // stops being true (a pre-ticked box is expressly not consent under GDPR).
+  // Unlike `agreed`, this never gates the button: it is a preference, not a term.
+  const [wantsEmail, setWantsEmail] = useState(true);
   // Backstop for the deliberate "keep spinning on success" in handleSignup.
   const stuckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (stuckTimer.current) clearTimeout(stuckTimer.current); }, []);
@@ -78,7 +83,14 @@ export default function SignupScreen() {
       ({ data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(), password,
         options: {
-          data: { username: uname.toLowerCase(), display_name: displayName.trim() },
+          // marketing_opt_in rides in the metadata and is read by
+          // handle_new_user, because the profile row is created by that trigger
+          // rather than by this screen — writing it here would race the insert.
+          data: {
+            username: uname.toLowerCase(),
+            display_name: displayName.trim(),
+            marketing_opt_in: wantsEmail,
+          },
           // Send the confirmation LINK back into the app instead of dead-ending
           // in a browser. app/_layout.tsx turns that inbound URL into a session
           // and shows a confirmation toast. The code path is unaffected.
@@ -219,6 +231,23 @@ export default function SignupScreen() {
                 return part;
               })}
             </Text>
+          </View>
+
+          {/* Laybell's email list. Below the terms row on purpose: the one above
+              is a condition of signing up and this is a choice about it, and
+              stacking them the other way makes the optional one look required. */}
+          <View style={styles.consentRow}>
+            <TouchableOpacity
+              onPress={() => setWantsEmail(v => !v)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={[styles.checkbox, wantsEmail && styles.checkboxOn]}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: wantsEmail }}
+              accessibilityLabel={t('auth.emailsOptIn')}
+            >
+              {wantsEmail && <Ionicons name="checkmark" size={15} color={colors.text} />}
+            </TouchableOpacity>
+            <Text style={styles.consent}>{t('auth.emailsOptIn')}</Text>
           </View>
 
           <AuthSubmitButton
