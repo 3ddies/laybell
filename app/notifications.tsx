@@ -17,6 +17,7 @@ import BadgeEmblem from '../components/BadgeEmblem';
 import FollowButton from '../components/FollowButton';
 import SwipeBackPager from '../components/SwipeBackPager';
 import { NotificationsSkeleton } from '../components/Skeleton';
+import { destForSystemKey } from '../lib/notificationRoute';
 
 // The app icon, standing in for the avatar on a message from Laybell itself.
 // Bundled, so it draws with the row instead of arriving a moment later the way
@@ -202,6 +203,9 @@ export default function NotificationsScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  // The signed-in account, captured on load. Only the "N people followed you"
+  // row needs it, to open /followers/<id> — their OWN list, not a stranger's.
+  const [selfId, setSelfId] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -217,6 +221,7 @@ export default function NotificationsScreen() {
   async function fetchNotifications() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
+    setSelfId(user.id);
 
     const { data: notifData, error } = await supabase
       .from('notifications')
@@ -310,29 +315,15 @@ export default function NotificationsScreen() {
     // a nudge to DO something, so landing on a screen that is not the thing it
     // named would waste the one moment the person came back for.
     if (notif.type === 'system') {
-      switch (notif.system_key) {
-        // /wallet and /badges are ordinary screens in this same stack, so a
-        // push is right for them — it slides in over the list as anything else
-        // on this screen does.
-        case 'earnings':    router.push('/wallet'); break;
-        case 'badge_first': router.push('/badges'); break;
-        // The TABS are not. See goToTab.
-        //
-        // Both of these say "post something", so both land on the composer.
-        // 'back' used to open the feed, which asked someone to share and then
-        // put them somewhere they could only read.
-        case 'first_post':
-        case 'back':        goToTab('/(tabs)/post'); break;
-        // "N people followed you" -> their own profile, where the followers are.
-        case 'followers':   goToTab('/(tabs)/profile'); break;
-        // Already answered by being on this screen.
-        case 'unread':      break;
-        // A key this build does not know, sent by a newer server. The message
-        // is unread here, so the feed is the one landing that cannot be wrong —
-        // never the composer, which would be a stranger's idea put in someone's
-        // hands as an instruction to post.
-        default:            goToTab('/(tabs)'); break;
-      }
+      // The destination comes from lib/notificationRoute, shared with the push
+      // handler so a tapped notification and a tapped row cannot disagree.
+      const dest = destForSystemKey(notif.system_key, selfId);
+      // 'unread' resolves to this very screen — already answered by being here.
+      if (!dest || dest.href === '/notifications') return;
+      // A tab has to be popped down to, not stacked on top. Anything else is an
+      // ordinary screen in this stack, where sliding in over the list is right.
+      if (dest.tab) goToTab(dest.href);
+      else router.push(dest.href as any);
       return;
     }
     // An offer lives in the DM thread, where it can actually be answered.
