@@ -23,6 +23,7 @@ import { NotificationsSkeleton } from '../components/Skeleton';
 // a remote avatar does.
 const LAYBELL_MARK = require('../assets/icon.png');
 
+
 type Notification = {
   id: string; type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag' | 'offer' | 'system';
   post_id: string | null; actor_id: string | null; read: boolean; created_at: string;
@@ -281,6 +282,28 @@ export default function NotificationsScreen() {
     setNotifications(prev => prev.map(n => (set.has(n.id) ? { ...n, read: true } : n)));
   }
 
+  /**
+   * Go to a TAB from this screen.
+   *
+   * This screen is presented as a sheet over the tabs, so `router.push` to a
+   * tab href stacks a whole second copy of the app on top of the sheet — which
+   * reads as the home page sliding DOWN over the notifications, and is as
+   * strange as it sounds. dismissTo pops back to the pager already mounted
+   * underneath, in one dispatch, which is what tapping these rows should feel
+   * like.
+   *
+   * Not only cosmetic. app/spotlight.tsx carries the long version: a tab href
+   * pushed from a modal can be re-resolved by the root Stack into a SECOND
+   * (tabs) group, which starts on Home and double-mounts HomeScreen — the
+   * realtime-channel crash. The group-qualified href plus dismissTo avoids
+   * both. Same shape as app/saved.tsx, fallback for an older router included.
+   */
+  function goToTab(href: string) {
+    const r = router as any;
+    if (typeof r.dismissTo === 'function') r.dismissTo(href);
+    else { try { r.dismissAll?.(); } catch {} r.navigate(href); }
+  }
+
   function handlePress(notif: Notification) {
     markReadLocally([notif.id]);
     // A Laybell message goes wherever it just said to go. Every one of these is
@@ -288,15 +311,19 @@ export default function NotificationsScreen() {
     // named would waste the one moment the person came back for.
     if (notif.type === 'system') {
       switch (notif.system_key) {
+        // /wallet and /badges are ordinary screens in this same stack, so a
+        // push is right for them — it slides in over the list as anything else
+        // on this screen does.
         case 'earnings':    router.push('/wallet'); break;
         case 'badge_first': router.push('/badges'); break;
-        case 'first_post':  router.push('/(tabs)/post'); break;
+        // The TABS are not. See goToTab.
+        case 'first_post':  goToTab('/(tabs)/post'); break;
         // "N people followed you" -> their own profile, where the followers are.
-        case 'followers':   router.push('/(tabs)/profile'); break;
+        case 'followers':   goToTab('/(tabs)/profile'); break;
         // 'unread' is already answered by being on this screen; 'back' and any
         // key an older build does not know both belong on the feed.
         case 'unread':      break;
-        default:            router.push('/(tabs)'); break;
+        default:            goToTab('/(tabs)'); break;
       }
       return;
     }
