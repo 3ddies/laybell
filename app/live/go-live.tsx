@@ -39,28 +39,45 @@ type Phase = 'setup' | 'preview' | 'waiting' | 'live';
 type Mode = 'webrtc' | 'rtmp';
 
 /**
- * The fill a selected field gets: the SAME gradient as the Go Live button
- * (GRADIENTS.primary), just far weaker.
+ * The frame a selected field gets: a real GRADIENT BORDER in the Go Live
+ * button's own two colours, drawn the way StoryAvatar draws its ring — a
+ * LinearGradient with padding, holding an inner view filled with the card
+ * colour, so only the padding shows as a border.
  *
- * The highlights used to be a thin flat line in c.primary — which is the
- * gradient's end colour, so it was technically in the family and still looked
- * nothing like the button. A button that is a rich orange sweep and a selection
- * that is one orange hairline do not read as the same idea. Washing the row in
- * the same two colours is what makes "this is chosen" and "this is the button
- * that does it" obviously related.
+ * The first attempt washed the row in that gradient at low alpha instead. It
+ * matched on paper and not on screen: 20% orange over a near-black card is
+ * BROWN, so the button stayed vivid and the selection went muddy. Fill cannot
+ * fix that — anything saturated enough to read as orange is too dark to put a
+ * label on.
  *
- * Kept to ~20%/14%: it has to sit under a label without dimming it. Measured at
- * 10:1 or better against the text in every theme.
+ * A border has no such problem. At full strength it is literally the button's
+ * gradient, and the row behind it keeps the card colour and its own contrast.
  */
-function ActiveWash() {
+// Border thickness for a selected field. 1.5 rather than 1: a gradient needs a
+// little width before it reads as a gradient rather than as a single colour.
+const FRAME_W = 1.5;
+
+function ActiveFrame({ active, style, innerStyle, children }: {
+  active: boolean;
+  /** The box: radius, and flex behaviour in its parent. */
+  style?: any;
+  /** The CONTENT: padding and alignment, which differ per control. */
+  innerStyle?: any;
+  children: React.ReactNode;
+}) {
+  const styles = useThemedStyles(makeStyles);
+  if (!active) {
+    return <View style={[styles.frameOff, style]}><View style={[styles.frameInner, innerStyle]}>{children}</View></View>;
+  }
   return (
     <LinearGradient
-      colors={['rgba(232,64,28,0.20)', 'rgba(242,101,34,0.14)']}
+      colors={GRADIENTS.primary}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
-      style={StyleSheet.absoluteFill}
-      pointerEvents="none"
-    />
+      style={[styles.frameOn, style]}
+    >
+      <View style={[styles.frameInner, innerStyle]}>{children}</View>
+    </LinearGradient>
   );
 }
 
@@ -440,20 +457,20 @@ export default function GoLiveScreen() {
               />
               {/* Mode picker */}
               <TouchableOpacity
-                style={[styles.modeRow, mode === 'webrtc' && styles.modeRowActive, !webrtcAvailable() && { opacity: 0.45 }]}
+                style={!webrtcAvailable() ? { opacity: 0.45 } : undefined}
                 disabled={!webrtcAvailable()}
                 onPress={() => setMode('webrtc')}
               >
-                {mode === 'webrtc' && <ActiveWash />}
-                <Ionicons name="phone-portrait-outline" size={20} color={colors.text} />
-                <View style={styles.modeTextWrap}>
-                  <Text style={styles.modeTitle}>{t('live.phone')}</Text>
-                  <Text style={styles.modeSub}>{webrtcAvailable() ? t('live.phoneSub') : t('live.rebuildNeeded')}</Text>
-                </View>
-                {mode === 'webrtc' && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
+                <ActiveFrame active={mode === 'webrtc'} style={styles.modeRow} innerStyle={styles.modeRowInner}>
+                  <Ionicons name="phone-portrait-outline" size={20} color={colors.text} />
+                  <View style={styles.modeTextWrap}>
+                    <Text style={styles.modeTitle}>{t('live.phone')}</Text>
+                    <Text style={styles.modeSub}>{webrtcAvailable() ? t('live.phoneSub') : t('live.rebuildNeeded')}</Text>
+                  </View>
+                  {mode === 'webrtc' && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
+                </ActiveFrame>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modeRow, mode === 'rtmp' && styles.modeRowActive]}
                 onPress={() => {
                   setMode('rtmp');
                   // OBS and every other RTMP encoder ships a 16:9 canvas, so an
@@ -462,13 +479,14 @@ export default function GoLiveScreen() {
                   if (!orientTouched) setOrientation('horizontal');
                 }}
               >
-                {mode === 'rtmp' && <ActiveWash />}
-                <Ionicons name="desktop-outline" size={20} color={colors.text} />
-                <View style={styles.modeTextWrap}>
-                  <Text style={styles.modeTitle}>{t('live.encoder')}</Text>
-                  <Text style={styles.modeSub}>{t('live.encoderSub')}</Text>
-                </View>
-                {mode === 'rtmp' && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
+                <ActiveFrame active={mode === 'rtmp'} style={styles.modeRow} innerStyle={styles.modeRowInner}>
+                  <Ionicons name="desktop-outline" size={20} color={colors.text} />
+                  <View style={styles.modeTextWrap}>
+                    <Text style={styles.modeTitle}>{t('live.encoder')}</Text>
+                    <Text style={styles.modeSub}>{t('live.encoderSub')}</Text>
+                  </View>
+                  {mode === 'rtmp' && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
+                </ActiveFrame>
               </TouchableOpacity>
 
               {/* Orientation — horizontal/both also land in Laybell TV. Shown for
@@ -486,12 +504,13 @@ export default function GoLiveScreen() {
                     ]).map((o) => (
                       <TouchableOpacity
                         key={o.key}
-                        style={[styles.orientBtn, orientation === o.key && styles.orientBtnActive]}
+                        style={styles.orientSlot}
                         onPress={() => { setOrientTouched(true); setOrientation(o.key); }}
                       >
-                        {orientation === o.key && <ActiveWash />}
-                        <Ionicons name={o.icon as never} size={18} color={orientation === o.key ? colors.primary : colors.textSecondary} />
-                        <Text style={[styles.orientText, orientation === o.key && { color: colors.primary }]}>{o.label}</Text>
+                        <ActiveFrame active={orientation === o.key} style={styles.orientBtn} innerStyle={styles.orientBtnInner}>
+                          <Ionicons name={o.icon as never} size={18} color={orientation === o.key ? colors.primary : colors.textSecondary} />
+                          <Text style={[styles.orientText, orientation === o.key && { color: colors.primary }]}>{o.label}</Text>
+                        </ActiveFrame>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -623,20 +642,25 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   body: { flex: 1, justifyContent: 'flex-end', padding: 16, paddingBottom: Platform.OS === 'ios' ? 34 : 22 },
   card: { backgroundColor: c.surfaceElevated, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 16, gap: 12 },
   titleInput: { backgroundColor: c.surfaceLight, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: c.text, fontSize: 15 },
-  // overflow hidden so ActiveWash is clipped by the rounded corners rather than
-  // painting square ones back on.
-  modeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 12, borderWidth: 1, borderColor: c.border, padding: 12, overflow: 'hidden' },
-  modeRowActive: { borderColor: c.primary },
+  // ActiveFrame's two states. BORDER_W of padding on the gradient is what shows
+  // as the border; the inner view paints the card colour back over the rest.
+  // The unselected state keeps an ordinary hairline of the same thickness, so
+  // selecting a row cannot nudge the layout by a pixel.
+  frameOn: { borderRadius: 12, padding: FRAME_W },
+  frameOff: { borderRadius: 12, borderWidth: FRAME_W, borderColor: c.border },
+  // No padding here — each caller supplies its own via innerStyle, because a
+  // mode row and an orientation chip are not the same shape.
+  frameInner: { borderRadius: 12 - FRAME_W, backgroundColor: c.surfaceElevated },
+  modeRow: { borderRadius: 12 },
+  modeRowInner: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 },
   orientWrap: { gap: 8, marginTop: 2 },
   orientLabel: { color: c.textTertiary, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
   orientRow: { flexDirection: 'row', gap: 8 },
-  orientBtn: {
-    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4,
-    borderWidth: 1, borderColor: c.border, borderRadius: 12, paddingVertical: 10, overflow: 'hidden',
-  },
-  // No flat tint any more — ActiveWash supplies the fill, in the button's own
-  // two colours rather than a single one at 7% alpha.
-  orientBtnActive: { borderColor: c.primary },
+  // The touchable is now just a slot; ActiveFrame draws the box inside it.
+  orientSlot: { flex: 1 },
+  orientBtn: { borderRadius: 12 },
+  orientBtnInner: { alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 10 },
+
   orientText: { color: c.textSecondary, fontSize: 11, fontWeight: '600' },
   tvNote: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   tvNoteText: { flex: 1, color: c.textTertiary, fontSize: 11.5, lineHeight: 16 },
