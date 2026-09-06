@@ -117,11 +117,21 @@ select
   join auth.users u on u.id = p.id
  where p.marketing_opt_in = true
    and coalesce(p.hidden, false) = false
+   -- Minors, belt AND braces. Onboarding already sets marketing_opt_in = false
+   -- the moment a date of birth says under 18, and that is the mechanism. This
+   -- is the backstop for when it does not run: an account that was already a
+   -- minor before this shipped, a failed write on that one update, or is_minor
+   -- arriving by some other route.
+   --
+   -- It was NOT here originally, and a test caught it: with is_minor true and
+   -- opt_in true the view happily returned the row. One client-side write was
+   -- the only thing standing between a fifteen-year-old and a marketing email.
+   and coalesce(p.is_minor, false) = false
    and u.email is not null
    and u.email_confirmed_at is not null;   -- never mail an unverified address
 
 comment on view public.marketing_email_list is
-  'Mailable accounts. Excludes opt-outs, hidden accounts and unconfirmed addresses. Minors are excluded by their opt_in being set false at onboarding.';
+  'Mailable accounts. Excludes opt-outs, hidden accounts, minors and unconfirmed addresses.';
 
 -- The view reads auth.users, so it must not be reachable with the anon key.
 revoke all on public.marketing_email_list from anon, authenticated;
