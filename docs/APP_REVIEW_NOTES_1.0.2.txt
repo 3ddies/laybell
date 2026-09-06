@@ -1,0 +1,41 @@
+Laybell is a music-focused social platform for independent artists and their listeners. Sign-in is required for all features.
+
+DEMO ACCOUNT
+Email: 3ddiemusic@gmail.com / Password: review1
+Sign in with the EMAIL above, not a username. Pre-loaded with posts, a shop listing and a credit balance, with both subscription tiers active, so every paid feature is reachable without buying anything.
+
+NOTIFICATIONS (Guideline 4.5.4)
+New in 1.0.2. Two reminders: one when an earned badge is about to lapse, one if the app has not been opened for twelve days. Both are OFF by default and require an explicit opt-in, offered twice: an UNTICKED checkbox on the onboarding profile-setup step, and Settings > Notifications > "Reminders from Laybell", which is also the opt-out. Turning "All notifications" off turns these off; turning it back on does not turn them on. Activity notifications (likes, comments, follows, going live) are not promotional and are not gated by it. No push carries a balance or any other financial detail.
+
+USER-GENERATED CONTENT (Guideline 1.2)
+- Automated filtering of objectionable terms on captions and comments.
+- Reporting: the "..." menu on any post, profile, comment or message > Report.
+- Blocking: the "..." menu > Block. Their posts leave the feed and Explore and they cannot make contact. Unblock from Settings > Blocked.
+- Published contact information in the app and at laybell.app.
+
+MINORS
+Users under 18 are identified at signup. For them the app disables location capture and targeted advertising, defaults posts to friends-only, limits incoming messages to accounts they follow, blocks broadcasting, and hides mature content. They are also excluded from the reminders above and from marketing email, in the app and again in the database. The messaging and mature-content rules are enforced server-side.
+
+PURCHASES (Guideline 3.1.1)
+All digital purchases use In-App Purchase. Consumable credit packs at $4.99, $9.99, $19.99, $49.99 and $99.99 - Settings > Credits. Credits are spent in-app on tips, Shop purchases and promoting a post, and cannot be converted back into money or transferred. Creator earnings are a separate balance, paid out by bank transfer through Stripe, never redeemable as credits.
+
+SUBSCRIPTION
+Two auto-renewing tiers in one group - Laybell Premium at $9.99/month and Laybell Premium+ at $19.99/month - Settings > Promotion Tools > the Premium card. Premium+ is the higher service level and adds Films (landscape video up to one hour), removal of all advertising, and unlimited offline downloads.
+
+FILMS
+Landscape videos over nine minutes, for Premium+ subscribers, on their own shelf in Laybell TV: Explore tab (magnifying glass, bottom bar) > the TV icon at the top right. The demo account has Premium+ active, so no purchase is needed.
+
+LIVESTREAMING
+The LIVE button sits beside the home logo. Our provider serves live playback out of its recording pipeline, so a broadcast is necessarily recorded while live. That recording is deleted automatically when the broadcast ends; no replay is retained, published or offered for download.
+
+MUSIC LICENSING
+Laybell does not license, host or distribute a commercial catalogue. All audio is uploaded by users, who warrant they own or control the rights. Laybell LLC holds BMI and ASCAP public performance licences. A DMCA agent is registered with the U.S. Copyright Office, and a repeat-infringer policy is published in the Terms and enforced.
+
+EXTERNAL SERVICES
+Supabase (auth, database, storage); RevenueCat (entitlements); Cloudflare Stream (video, live); LiveKit (studio audio); Stripe Connect (payouts only); Resend (email); Google Cloud Translation; Tenor (GIFs); Expo/EAS (build, push). No AI services.
+
+AVAILABILITY AND TRACKING
+United States only, and identical for every user there. The app does not track users across other companies' apps or websites, so no App Tracking Transparency prompt appears. Ad personalisation is opt-in and off by default.
+
+CONTACT
+support@laybell.app
