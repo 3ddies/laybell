@@ -63,6 +63,15 @@ export function destForPushData(data: any, selfId?: string | null): Dest | null 
 
   if (type === 'system') return destForSystemKey(data?.key, selfId);
 
+  // Straight into the stream that just started. The push carries the id; the
+  // notification ROW does not (it has only the host), so that one settles for
+  // the live rail — see destForNotificationRow.
+  if (type === 'live_started') {
+    return data?.liveId
+      ? { href: `/live?streamId=${data.liveId}`, tab: false }
+      : { href: '/live', tab: false };
+  }
+
   // like / comment / mention / tag / song_used — all carry the post.
   if (data?.postId) return { href: `/post/${data.postId}`, tab: false };
 

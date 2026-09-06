@@ -26,7 +26,7 @@ const LAYBELL_MARK = require('../assets/icon.png');
 
 
 type Notification = {
-  id: string; type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag' | 'offer' | 'system';
+  id: string; type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag' | 'offer' | 'system' | 'live_started';
   post_id: string | null; actor_id: string | null; read: boolean; created_at: string;
   // 'system' only: a message from Laybell itself, so there is no actor. The key
   // names which message and the app translates it (server-side copy would be
@@ -128,6 +128,7 @@ function notificationText(t: TFunc, type: string) {
     case 'tag': return t('notifications.tagged');
     case 'song_used': return t('notifications.songUsed');
     case 'song_story': return t('notifications.songStory');
+    case 'live_started': return t('notifications.wentLive');
     // Names the sender and stops there, exactly as the push does — the amount
     // is on the offer card in the thread this row opens.
     case 'offer': return t('notifications.offered');
@@ -163,6 +164,9 @@ function notificationIcon(type: string): { name: any; color: string; ink?: strin
     // "used your audio in a post" — the row already says so.
     case 'song_used': return null;
     case 'song_story': return { name: 'musical-notes', color: COLORS.primaryLight };
+    // The one notification that is time-limited: it is only true while the
+    // stream is up, so it earns an emblem rather than blending into the list.
+    case 'live_started': return { name: 'radio', color: COLORS.like, ink: '#FFFFFF' };
     case 'offer': return { name: 'pricetags', color: COLORS.success };
     // "interacted with you" — a bell emblem beside the word "interacted" adds
     // nothing; it is the catch-all type, so its badge was the least specific
@@ -326,6 +330,9 @@ export default function NotificationsScreen() {
       else router.push(dest.href as any);
       return;
     }
+    // The live rail, not a specific stream: this row records WHO went live,
+    // not which broadcast, and by the time it is read the stream may be over.
+    if (notif.type === 'live_started') { router.push('/live'); return; }
     // An offer lives in the DM thread, where it can actually be answered.
     if (notif.type === 'message' || notif.type === 'offer') router.push(`/messages/${notif.actor_id}`);
     // A song-in-story notification opens the poster's story (only up for 24h).

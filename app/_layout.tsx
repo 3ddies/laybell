@@ -51,6 +51,7 @@ import { useListenMode } from '../contexts/ListenModeContext';
 import CastBar from '../components/CastBar';
 import UploadFailedBanner from '../components/UploadFailedBanner';
 import UploadProgressBanner from '../components/UploadProgressBanner';
+import ActivityBanner from '../components/ActivityBanner';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { setResumeDraftPending } from '../lib/drafts';
 import { reconcileInterruptedUpload, dismissRecovery } from '../lib/uploadRecovery';
@@ -358,6 +359,9 @@ function AppContent() {
       />
       <NowPlaying />
       <BadgeUpgradeToast />
+      {/* Live activity from people you follow. Sits beside the other overlays
+          so it paints above pushed screens on iOS, same as the toasts. */}
+      <ActivityBanner />
       {/* Themed confirm for leaving Listen mode to enter an immersive surface —
           its own overlay so it paints above pushed screens on iOS. */}
       <ListenLeaveConfirm />
