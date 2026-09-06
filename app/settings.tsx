@@ -153,6 +153,13 @@ export default function SettingsScreen() {
   // screen opens, rather than after a round-trip.
   const [emailsOn, setEmailsOn] = useState(true);
   useEffect(() => { setEmailsOn((profile as any)?.marketing_opt_in !== false); }, [profile]);
+
+  // Re-engagement push. Note the comparison runs the OTHER way to the email one
+  // above: email is opt-out and so reads "not false", this is opt-in and reads
+  // "is true". An account that has never chosen is OFF, and stays off until it
+  // says otherwise. See supabase/sql/reengagement.sql for why the two differ.
+  const [remindersOn, setRemindersOn] = useState(false);
+  useEffect(() => { setRemindersOn((profile as any)?.reengage_opt_in === true); }, [profile]);
   const { colors, mode, setMode } = useTheme();
   const { usageBytes, prefs: offlinePrefs, setPref: setOfflinePref } = useOffline();
   const { isPremium, isPremiumPlus } = usePremium();
@@ -188,6 +195,15 @@ export default function SettingsScreen() {
     const next: NotifPrefs = { likes: value, comments: value, follows: value, messages: value };
     setNotifPrefs(next);
     saveNotifPrefs(next);
+    // Turning everything OFF turns reminders off too — "all notifications, off"
+    // has to mean it, and a promotional push arriving after that switch is the
+    // most annoying notification the app could send.
+    //
+    // Turning everything ON does NOT turn reminders back on, and the asymmetry
+    // is the point: App Store guideline 4.5.4 wants promotional push to be
+    // something the user explicitly opted into. A master switch quietly opting
+    // them in is exactly what that rule exists to stop. They turn it on itself.
+    if (!value && remindersOn) toggleReminders(false);
   }
 
   function handleLogout() { setDialog('logout'); }
@@ -304,6 +320,30 @@ export default function SettingsScreen() {
     } catch {
       setEmailsOn(!next);
       Alert.alert(t('editProfile.error'), t('settings.emailsSaveFailed'));
+    }
+  }
+
+  /**
+   * The opt-in half of App Store guideline 4.5.4, and the opt-out half too —
+   * this one switch is both, which is what the guideline asks for.
+   *
+   * The timestamp is stamped in both directions, same as the email toggle: the
+   * moment someone turns this OFF is the one there may later be a complaint
+   * about, so it is the more important of the two to have on record.
+   */
+  async function toggleReminders(next: boolean) {
+    setRemindersOn(next);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('no session');
+      const { error } = await supabase.from('profiles')
+        .update({ reengage_opt_in: next, reengage_opt_in_at: new Date().toISOString() })
+        .eq('id', user.id);
+      if (error) throw error;
+      update({ reengage_opt_in: next } as any); // keep the cached profile in step
+    } catch {
+      setRemindersOn(!next);
+      Alert.alert(t('editProfile.error'), t('notif.remindersSaveFailed'));
     }
   }
 
@@ -512,6 +552,19 @@ export default function SettingsScreen() {
       label: t('notif.messages'),
       value: notifPrefs.messages,
       onValueChange: (v) => setNotifPref('messages', v),
+      chevron: false,
+    },
+    {
+      // After the four kinds of "someone did something", because it is not one
+      // of those — nobody did anything, which is the whole point of it. The
+      // subtitle is the consent language App Store guideline 4.5.4 asks for, so
+      // it says plainly what arrives and how often; a row labelled "Reminders"
+      // with no explanation would not be consent to anything.
+      icon: 'alarm-outline',
+      label: t('notif.reminders'),
+      subtitle: t('notif.remindersSub'),
+      value: remindersOn,
+      onValueChange: toggleReminders,
       chevron: false,
     },
     {

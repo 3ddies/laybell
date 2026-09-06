@@ -18,9 +18,19 @@ import FollowButton from '../components/FollowButton';
 import SwipeBackPager from '../components/SwipeBackPager';
 import { NotificationsSkeleton } from '../components/Skeleton';
 
+// The app icon, standing in for the avatar on a message from Laybell itself.
+// Bundled, so it draws with the row instead of arriving a moment later the way
+// a remote avatar does.
+const LAYBELL_MARK = require('../assets/icon.png');
+
 type Notification = {
-  id: string; type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag' | 'offer';
-  post_id: string | null; actor_id: string; read: boolean; created_at: string;
+  id: string; type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag' | 'offer' | 'system';
+  post_id: string | null; actor_id: string | null; read: boolean; created_at: string;
+  // 'system' only: a message from Laybell itself, so there is no actor. The key
+  // names which message and the app translates it (server-side copy would be
+  // English-only); system_n is the one number a message may carry, e.g. how many
+  // people followed you. See supabase/sql/reengagement.sql.
+  system_key?: string | null; system_n?: number | null;
   actor: { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null } | null;
 };
 
@@ -60,7 +70,11 @@ function groupByProximity(items: Notification[]): DisplayNotif[] {
   const out: DisplayNotif[] = [];
   const open = new Map<string, DisplayNotif>(); // `${type}:${actor}` → the open group
   for (const n of items) {
-    if (n.type === 'follow' || n.type === 'friend') {
+    // follow/friend carry a Follow button and only happen once. A Laybell
+    // message never groups either: they arrive a month apart and each says a
+    // different thing, so "Laybell did 2 things" would be nonsense — and with
+    // actor_id null they would all share one grouping key and collapse together.
+    if (n.type === 'follow' || n.type === 'friend' || n.type === 'system') {
       out.push({ ...n, groupCount: 1, children: [n] });
       continue;
     }
@@ -77,6 +91,28 @@ function groupByProximity(items: Notification[]): DisplayNotif[] {
     }
   }
   return out;
+}
+
+/**
+ * The body of a message from Laybell itself, translated.
+ *
+ * The push that carried it was English — every push this app sends is (see
+ * supabase/functions/send-push/index.ts) — but the row it lands on is read
+ * inside the app, where the language is known, so it is rendered properly here.
+ *
+ * An unknown key falls back to the generic message rather than rendering blank:
+ * the server can start sending a new key the moment someone edits the SQL, and
+ * an older build must still show that person SOMETHING true.
+ */
+function systemText(t: TFunc, key?: string | null, n?: number | null): string {
+  switch (key) {
+    case 'earnings':    return t('sysNotif.earnings');
+    case 'followers':   return n === 1 ? t('sysNotif.follower') : t('sysNotif.followers', { count: n ?? 0 });
+    case 'unread':      return n === 1 ? t('sysNotif.unreadOne') : t('sysNotif.unread', { count: n ?? 0 });
+    case 'first_post':  return t('sysNotif.firstPost');
+    case 'badge_first': return t('sysNotif.badgeFirst');
+    default:            return t('sysNotif.back');
+  }
 }
 
 function notificationText(t: TFunc, type: string) {
@@ -183,7 +219,7 @@ export default function NotificationsScreen() {
 
     const { data: notifData, error } = await supabase
       .from('notifications')
-      .select('id, type, post_id, read, created_at, actor_id')
+      .select('id, type, post_id, read, created_at, actor_id, system_key, system_n')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50);
@@ -191,10 +227,15 @@ export default function NotificationsScreen() {
     if (error) console.error('notifications fetch error:', error.message);
 
     if (notifData && notifData.length > 0) {
-      const actorIds = [...new Set(notifData.map(n => n.actor_id))];
+      // filter(Boolean) is load-bearing now that a row can have no actor: a
+      // Laybell message carries actor_id null, and passing that straight into
+      // .in('id', [...]) asks Postgres for a profile whose id IS null.
+      const actorIds = [...new Set(notifData.map(n => n.actor_id).filter(Boolean))] as string[];
       const postIds = [...new Set(notifData.map(n => n.post_id).filter(Boolean))] as string[];
       const [{ data: profileData }, postsRes] = await Promise.all([
-        supabase.from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden').in('id', actorIds),
+        actorIds.length
+          ? supabase.from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden').in('id', actorIds)
+          : Promise.resolve({ data: [] as any[] }),
         postIds.length
           ? supabase.from('posts').select('id, type, media_url, cover_url, thumbnail_url').in('id', postIds)
           : Promise.resolve({ data: [] as any[] }),
@@ -207,7 +248,7 @@ export default function NotificationsScreen() {
         if (url) previewMap[p.id] = url;
       }
       setPreviews(previewMap);
-      setNotifications(notifData.map(n => ({ ...n, actor: profileMap[n.actor_id] ?? null })) as any);
+      setNotifications(notifData.map(n => ({ ...n, actor: (n.actor_id ? profileMap[n.actor_id] : null) ?? null })) as any);
     } else {
       setNotifications([]);
       setPreviews({});
@@ -242,6 +283,23 @@ export default function NotificationsScreen() {
 
   function handlePress(notif: Notification) {
     markReadLocally([notif.id]);
+    // A Laybell message goes wherever it just said to go. Every one of these is
+    // a nudge to DO something, so landing on a screen that is not the thing it
+    // named would waste the one moment the person came back for.
+    if (notif.type === 'system') {
+      switch (notif.system_key) {
+        case 'earnings':    router.push('/wallet'); break;
+        case 'badge_first': router.push('/badges'); break;
+        case 'first_post':  router.push('/(tabs)/post'); break;
+        // "N people followed you" -> their own profile, where the followers are.
+        case 'followers':   router.push('/(tabs)/profile'); break;
+        // 'unread' is already answered by being on this screen; 'back' and any
+        // key an older build does not know both belong on the feed.
+        case 'unread':      break;
+        default:            router.push('/(tabs)'); break;
+      }
+      return;
+    }
     // An offer lives in the DM thread, where it can actually be answered.
     if (notif.type === 'message' || notif.type === 'offer') router.push(`/messages/${notif.actor_id}`);
     // A song-in-story notification opens the poster's story (only up for 24h).
@@ -313,7 +371,8 @@ export default function NotificationsScreen() {
             }
             renderItem={({ item }) => {
               const icon = notificationIcon(item.type);
-              const isDiamond = displayedTier(item.actor) === 'diamond';
+              const isSystem = item.type === 'system';
+              const isDiamond = !isSystem && displayedTier(item.actor) === 'diamond';
               const preview = item.post_id ? previews[item.post_id] : undefined;
               const count = item.groupCount ?? 1;
               const grouped = count > 1;
@@ -334,12 +393,19 @@ export default function NotificationsScreen() {
                     activeOpacity={0.7}
                   >
                     <View style={styles.avatarWrap}>
-                      <StoryAvatar
-                        userId={item.actor?.id}
-                        avatarUrl={item.actor?.avatar_url}
-                        name={item.actor?.display_name}
-                        size={52}
-                      />
+                      {isSystem ? (
+                        // The Laybell mark, not an avatar and not a StoryAvatar
+                        // — that one opens a story ring and there is no story
+                        // and no person behind it to open.
+                        <Image source={LAYBELL_MARK} style={styles.systemMark} />
+                      ) : (
+                        <StoryAvatar
+                          userId={item.actor?.id}
+                          avatarUrl={item.actor?.avatar_url}
+                          name={item.actor?.display_name}
+                          size={52}
+                        />
+                      )}
                       {/* One emblem per avatar, never two. A diamond account
                           already carries the badge below, and that badge says
                           more about them than a type icon does — stacking both
@@ -359,10 +425,27 @@ export default function NotificationsScreen() {
                     </View>
 
                     <View style={styles.body}>
-                      <Text style={styles.text} numberOfLines={2}>
-                        <Text style={styles.name}>{item.actor?.display_name ?? t('notifications.someone')}</Text>
-                        {' '}{grouped ? groupedText(t, item.type, count) : notificationText(t, item.type)}
-                      </Text>
+                      {/* A Laybell message stacks — sender on its own line, then
+                          the message. Every other row is one sentence with the
+                          name as its subject ("<name> liked your post"), and
+                          these are not: "Laybell You have earnings waiting" run
+                          together is not a sentence in any of the ten languages.
+                          Three lines, because these are whole sentences and
+                          clipping one mid-word makes a message meant to bring
+                          someone back read as broken instead. */}
+                      {isSystem ? (
+                        <>
+                          <Text style={styles.name}>Laybell</Text>
+                          <Text style={styles.text} numberOfLines={3}>
+                            {systemText(t, item.system_key, item.system_n)}
+                          </Text>
+                        </>
+                      ) : (
+                        <Text style={styles.text} numberOfLines={2}>
+                          <Text style={styles.name}>{item.actor?.display_name ?? t('notifications.someone')}</Text>
+                          {' '}{grouped ? groupedText(t, item.type, count) : notificationText(t, item.type)}
+                        </Text>
+                      )}
                       <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
                     </View>
 
@@ -435,6 +518,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   rowUnread: { backgroundColor: colors.primary + '12' },
   avatarWrap: { position: 'relative', width: 52, height: 52 },
+  // Square-with-soft-corners rather than a circle, so a Laybell message is
+  // distinguishable from a person's row at a glance and from across the list.
+  // The hairline keeps the mark from bleeding into a light background.
+  systemMark: {
+    width: 52, height: 52, borderRadius: RADIUS.lg,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+  },
   iconBadge: {
     position: 'absolute', bottom: -2, right: -2, width: 21, height: 21, borderRadius: 10.5,
     alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.background,

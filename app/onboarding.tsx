@@ -65,6 +65,12 @@ export default function OnboardingScreen() {
   // Parental consent for users aged 13–17 (captured in the About-you step).
   const [parentEmail, setParentEmail] = useState('');
   const [minorConsent, setMinorConsent] = useState(false);
+  // UNTICKED, unlike the email box at signup, and the difference is not an
+  // oversight. Email is CAN-SPAM, an opt-out regime where a pre-ticked box is
+  // lawful. This is push, which is Apple's rule 4.5.4: promotional notifications
+  // need an explicit opt-in "via consent language displayed in your app's UI".
+  // A box the user has to tick themselves is that. See supabase/sql/reengagement.sql.
+  const [wantsReminders, setWantsReminders] = useState(false);
   const [dobMonth, setDobMonth] = useState('');
   const [dobDay, setDobDay] = useState('');
   const [dobYear, setDobYear] = useState('');
@@ -157,6 +163,15 @@ export default function OnboardingScreen() {
     if (user) {
       await supabase.from('profiles').update({ gender, age: ageNum }).eq('id', user.id);
       await supabase.from('profiles').update({ dob: dobToISO(dob) }).eq('id', user.id);
+      // The re-engagement opt-in, in its own update so a pre-migration gap on
+      // these columns cannot drop the writes above. A minor is forced to false
+      // regardless of the box: age is known by now, and this is promotional push.
+      await supabase.from('profiles')
+        .update({
+          reengage_opt_in: isMinor ? false : wantsReminders,
+          reengage_opt_in_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
       if (isMinor) {
         // Off the email list, always, whatever was ticked at signup.
         //
@@ -557,6 +572,16 @@ export default function OnboardingScreen() {
               </Text>
             </View>
           )}
+
+          {/* Outside the minor block: everyone sees this, and a minor who ticks
+              it is overridden below anyway (and again by the server, which will
+              not send to a minor whatever this column says). */}
+          <TouchableOpacity style={styles.consentRow} onPress={() => setWantsReminders(v => !v)} activeOpacity={0.7}>
+            <View style={[styles.checkbox, wantsReminders && styles.checkboxOn]}>
+              {wantsReminders && <Ionicons name="checkmark" size={14} color={colors.text} />}
+            </View>
+            <Text style={styles.consentText}>{t('onboarding.remindersConsent')}</Text>
+          </TouchableOpacity>
         </ScrollView>
 
         <View style={styles.bottomBar}>
