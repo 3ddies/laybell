@@ -113,6 +113,21 @@ things a build alone does not do.
       nobody. Verified 0 opted in, 0 due. Quiet period is **12 days**.
 - [x] **`ehall1@ncat.edu` deleted** (2026-09-06). 14 → 13 accounts, ledger
       verified clean (0 violations, global sum 0).
+- [x] **Verified ON THE DEVICE** (2026-09-06), not just in tests:
+      - The Laybell notification row renders and its rows do not group.
+      - A real push was delivered (`supabase/sql/_DEV_test_push.sql`) and a
+        **COLD START** tap landed on the followers list. That was the case most
+        at risk: the router is not ready at cold start, and the
+        `useRootNavigationState` guard had never run on hardware.
+      - The Settings toggle writes (`reengage_opt_in_at` stamped), and the
+        asymmetry holds — All-notifications-off turns reminders off, turning it
+        back on does NOT turn them on. That is the 4.5.4 requirement.
+      - Test rows removed afterwards; the owner's account is left opted OUT.
+
+      **Still verified in logic only:** the badge-lapse reminder. 34 assertions
+      against the real compiled rule code, but it has never fired on a phone —
+      triggering it needs a held streak AND a skipped day. Local notification,
+      no server dependency, so the blast radius is small.
 
 ## Store console — forms, not builds
 
