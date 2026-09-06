@@ -124,6 +124,36 @@ things a build alone does not do.
         back on does NOT turn them on. That is the 4.5.4 requirement.
       - Test rows removed afterwards; the owner's account is left opted OUT.
 
+- [x] **`live_notifications.sql` applied to production** (2026-09-06). Adds six
+      tables to the `supabase_realtime` publication, the `live_started`
+      notification type, and the go-live trigger.
+
+      ⚠️ **The publication half is a FIX THAT IS ALREADY LIVE FOR 1.0.1 USERS.**
+      The app subscribed to realtime on notifications, messages, comments,
+      message_reactions and live_streams, and none of those tables published, so
+      every one of those subscriptions was silently dead with no polling
+      fallback — a DM did not appear until you left the thread and came back.
+      Publishing them switched all of that on server-side, no build needed.
+      RLS was verified enabled with SELECT policies on all six BEFORE publishing:
+      realtime enforces RLS on postgres_changes, so publishing a table with RLS
+      off would broadcast every row to every subscriber.
+
+      Go-live trigger verified in a rolled-back transaction against the real
+      follow graph: all 9 followers notified, host not self-notified, one
+      batched push, three heartbeats added nothing (the guard that matters —
+      live_streams updates every ~15s during a broadcast), and a restart inside
+      two hours does not re-announce.
+
+      Banner verified ON THE DEVICE: a real notification row written to the
+      owner's account arrived as a banner through realtime. Test rows removed.
+
+      **Purchases are deliberately NOT bannered.** Telling someone's followers
+      what they bought exposes their spending. If it is ever wanted it needs its
+      own opt-in and its own consent language.
+
+      **Still unverified on hardware:** the "someone you follow posted" banner
+      (needs a second account posting while you watch).
+
       **Still verified in logic only:** the badge-lapse reminder. 34 assertions
       against the real compiled rule code, but it has never fired on a phone —
       triggering it needs a held streak AND a skipped day. Local notification,

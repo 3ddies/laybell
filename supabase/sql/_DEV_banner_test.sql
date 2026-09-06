@@ -34,8 +34,11 @@ begin
 
   if host is null then raise exception 'That account follows nobody to test with.'; end if;
 
+  -- Clear EVERY previous test row, not just this host's. Scoped to actor_id
+  -- first, it left one behind per host it had ever picked, so re-running piled
+  -- up "went live" rows from a different person each time.
   delete from public.notifications
-   where user_id = me and type = 'live_started' and actor_id = host;
+   where user_id = me and type = 'live_started';
 
   insert into public.notifications (user_id, actor_id, type, read)
   values (me, host, 'live_started', false);
