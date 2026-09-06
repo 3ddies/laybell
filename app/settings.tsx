@@ -475,17 +475,10 @@ export default function SettingsScreen() {
 
   const notifItems: SectionItem[] = [
     {
-      // Sits with notifications rather than with account settings: to somebody
-      // looking for it, "stop emailing me" is the same errand as "stop
-      // notifying me", and it is the first place they will look.
-      icon: 'mail-outline',
-      label: t('settings.emails'),
-      subtitle: t('settings.emailsSub'),
-      value: emailsOn,
-      onValueChange: toggleMarketingEmail,
-      chevron: false,
-    },
-    {
+      // FIRST, because it governs every row under it. A master switch below the
+      // things it controls reads as one more item in the list rather than as the
+      // one that turns them all off — and this one was pushed into second place
+      // when the email row was added.
       icon: 'notifications-outline',
       label: t('notif.all'),
       subtitle: t('notif.allSub'),
@@ -519,6 +512,18 @@ export default function SettingsScreen() {
       label: t('notif.messages'),
       value: notifPrefs.messages,
       onValueChange: (v) => setNotifPref('messages', v),
+      chevron: false,
+    },
+    {
+      // LAST, and deliberately not under the master switch. This is email, not
+      // push: "All notifications" does not govern it, and a row sitting directly
+      // beneath that switch would say it does. At the end of the section it
+      // reads as the other way Laybell can reach you, which is what it is.
+      icon: 'mail-outline',
+      label: t('settings.emails'),
+      subtitle: t('settings.emailsSub'),
+      value: emailsOn,
+      onValueChange: toggleMarketingEmail,
       chevron: false,
     },
   ];
