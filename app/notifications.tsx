@@ -317,12 +317,20 @@ export default function NotificationsScreen() {
         case 'earnings':    router.push('/wallet'); break;
         case 'badge_first': router.push('/badges'); break;
         // The TABS are not. See goToTab.
-        case 'first_post':  goToTab('/(tabs)/post'); break;
+        //
+        // Both of these say "post something", so both land on the composer.
+        // 'back' used to open the feed, which asked someone to share and then
+        // put them somewhere they could only read.
+        case 'first_post':
+        case 'back':        goToTab('/(tabs)/post'); break;
         // "N people followed you" -> their own profile, where the followers are.
         case 'followers':   goToTab('/(tabs)/profile'); break;
-        // 'unread' is already answered by being on this screen; 'back' and any
-        // key an older build does not know both belong on the feed.
+        // Already answered by being on this screen.
         case 'unread':      break;
+        // A key this build does not know, sent by a newer server. The message
+        // is unread here, so the feed is the one landing that cannot be wrong —
+        // never the composer, which would be a stranger's idea put in someone's
+        // hands as an instruction to post.
         default:            goToTab('/(tabs)'); break;
       }
       return;
