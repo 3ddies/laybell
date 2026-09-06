@@ -38,6 +38,32 @@ import { fetchStreamEarnings, fmtCents } from '../../lib/donations';
 type Phase = 'setup' | 'preview' | 'waiting' | 'live';
 type Mode = 'webrtc' | 'rtmp';
 
+/**
+ * The fill a selected field gets: the SAME gradient as the Go Live button
+ * (GRADIENTS.primary), just far weaker.
+ *
+ * The highlights used to be a thin flat line in c.primary — which is the
+ * gradient's end colour, so it was technically in the family and still looked
+ * nothing like the button. A button that is a rich orange sweep and a selection
+ * that is one orange hairline do not read as the same idea. Washing the row in
+ * the same two colours is what makes "this is chosen" and "this is the button
+ * that does it" obviously related.
+ *
+ * Kept to ~20%/14%: it has to sit under a label without dimming it. Measured at
+ * 10:1 or better against the text in every theme.
+ */
+function ActiveWash() {
+  return (
+    <LinearGradient
+      colors={['rgba(232,64,28,0.20)', 'rgba(242,101,34,0.14)']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={StyleSheet.absoluteFill}
+      pointerEvents="none"
+    />
+  );
+}
+
 export default function GoLiveScreen() {
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
@@ -418,6 +444,7 @@ export default function GoLiveScreen() {
                 disabled={!webrtcAvailable()}
                 onPress={() => setMode('webrtc')}
               >
+                {mode === 'webrtc' && <ActiveWash />}
                 <Ionicons name="phone-portrait-outline" size={20} color={colors.text} />
                 <View style={styles.modeTextWrap}>
                   <Text style={styles.modeTitle}>{t('live.phone')}</Text>
@@ -435,6 +462,7 @@ export default function GoLiveScreen() {
                   if (!orientTouched) setOrientation('horizontal');
                 }}
               >
+                {mode === 'rtmp' && <ActiveWash />}
                 <Ionicons name="desktop-outline" size={20} color={colors.text} />
                 <View style={styles.modeTextWrap}>
                   <Text style={styles.modeTitle}>{t('live.encoder')}</Text>
@@ -461,6 +489,7 @@ export default function GoLiveScreen() {
                         style={[styles.orientBtn, orientation === o.key && styles.orientBtnActive]}
                         onPress={() => { setOrientTouched(true); setOrientation(o.key); }}
                       >
+                        {orientation === o.key && <ActiveWash />}
                         <Ionicons name={o.icon as never} size={18} color={orientation === o.key ? colors.primary : colors.textSecondary} />
                         <Text style={[styles.orientText, orientation === o.key && { color: colors.primary }]}>{o.label}</Text>
                       </TouchableOpacity>
@@ -594,16 +623,20 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   body: { flex: 1, justifyContent: 'flex-end', padding: 16, paddingBottom: Platform.OS === 'ios' ? 34 : 22 },
   card: { backgroundColor: c.surfaceElevated, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 16, gap: 12 },
   titleInput: { backgroundColor: c.surfaceLight, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: c.text, fontSize: 15 },
-  modeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 12, borderWidth: 1, borderColor: c.border, padding: 12 },
+  // overflow hidden so ActiveWash is clipped by the rounded corners rather than
+  // painting square ones back on.
+  modeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 12, borderWidth: 1, borderColor: c.border, padding: 12, overflow: 'hidden' },
   modeRowActive: { borderColor: c.primary },
   orientWrap: { gap: 8, marginTop: 2 },
   orientLabel: { color: c.textTertiary, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
   orientRow: { flexDirection: 'row', gap: 8 },
   orientBtn: {
     flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4,
-    borderWidth: 1, borderColor: c.border, borderRadius: 12, paddingVertical: 10,
+    borderWidth: 1, borderColor: c.border, borderRadius: 12, paddingVertical: 10, overflow: 'hidden',
   },
-  orientBtnActive: { borderColor: c.primary, backgroundColor: c.primary + '12' },
+  // No flat tint any more — ActiveWash supplies the fill, in the button's own
+  // two colours rather than a single one at 7% alpha.
+  orientBtnActive: { borderColor: c.primary },
   orientText: { color: c.textSecondary, fontSize: 11, fontWeight: '600' },
   tvNote: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   tvNoteText: { flex: 1, color: c.textTertiary, fontSize: 11.5, lineHeight: 16 },
