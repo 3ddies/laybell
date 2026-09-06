@@ -193,9 +193,30 @@ ships. Then, roughly three weeks later, the first ones become possible.
 
 ## Still open from before
 
-- [ ] `expo-audio` bump for Play's foreground-service warning — **native, forces
-      a prebuild**, so it needs a deliberate decision rather than being folded
-      into a build.
+- [x] ~~`expo-audio` bump for Play's foreground-service warning~~ — **investigated
+      2026-09-06: THERE IS NO BUMP TO DO, and doing one would break the app.**
+      - `expo-audio@~1.1.1` resolves to **1.1.1**, which is what is installed and
+        the newest *stable* release in that line. Everything above it on npm is
+        either a `1.1.x` canary or `58.0.0`, a different major for a much later
+        SDK. `npx expo install --check` does not list expo-audio at all.
+      - The concern behind the item is already satisfied. expo-audio 1.1.1 ships
+        `FOREGROUND_SERVICE_MEDIA_PLAYBACK` and types **both** its services
+        (`mediaPlayback`, `microphone`) in its own manifest, which merges into
+        the build.
+      - Audited every `AndroidManifest.xml` in `node_modules`: no dependency
+        declares an untyped foreground service. (`expo-notifications`'
+        `ExpoFirebaseMessagingService` has no type because it is a
+        `FirebaseMessagingService`, not a foreground service — correct as is.)
+      - The `FOREGROUND_SERVICE` line in `app.json` is fine. **Permissions do not
+        have types — services do**, which is what the old checklist entry at
+        `LAUNCH_CHECKLIST.md` §2138 got wrong.
+      - One real gap, currently unreachable: expo-audio types `AudioRecordingService`
+        as `microphone` but declares no `FOREGROUND_SERVICE_MICROPHONE`
+        permission, which would throw on Android 14+. That service only starts
+        when `allowsBackgroundRecording` is true, and this app never sets it
+        (`useForegroundService` defaults false; the only recording call is
+        `app/(tabs)/post.tsx:957`). **If background recording is ever turned on,
+        that permission has to be added to `app.json` first.**
 - [ ] Play's 16 KB library alignment (has a future Play deadline), edge-to-edge
       deprecation, large-screen resizability.
 - [ ] The Play listing still describes Laybell TV as turning sideways. It does

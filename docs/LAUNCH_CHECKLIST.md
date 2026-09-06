@@ -2135,9 +2135,13 @@ safe move is to **run the whole list top to bottom** rather than guess what's ap
       (repo Settings → Pages → custom domain + GoDaddy A-records), then flip `WEB` in
       `supabase/functions/share-page/index.ts` and `STATIC_WEB_ORIGIN` in `lib/appLinks.ts`
       back to `https://laybell.app` and redeploy/rebuild.
-- [ ] **[CODE]** **Android `FOREGROUND_SERVICE` has no declared type.** Android 14+ requires
-      a typed foreground service and Play requires a justification form for several types.
-      Verify against current Play policy before submitting.
+- [x] **[CODE]** ~~**Android `FOREGROUND_SERVICE` has no declared type.**~~ **Resolved
+      2026-09-06 — the premise was wrong.** A *permission* has no type; a *service* does,
+      and every foreground service in the dependency graph already declares one
+      (expo-audio `mediaPlayback` + `microphone`, expo-location `location`,
+      react-native-track-player `mediaPlayback`, LiveKit `mediaProjection`). Audited every
+      `AndroidManifest.xml` under `node_modules`. The bare `FOREGROUND_SERVICE` line in
+      `app.json` is correct as written. Full working in `docs/RELEASE_NOTES_1.0.2.md`.
 - [ ] **[OWNER]** `READ_CONTACTS` and `ACCESS_COARSE_LOCATION` are sensitive permissions —
       expect a Play Console declaration and Data Safety detail for both.
 - [ ] **[CODE]** **iOS privacy manifest** — confirm `PrivacyInfo.xcprivacy` is generated with
