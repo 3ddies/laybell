@@ -9,11 +9,32 @@
 // first, App Store second. Exits non-zero if either is over, so this can gate a
 // submission step.
 
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 
-// Takes the file as an argument so each release checks its own notes; the 1.0.1
-// path stays the default so any existing habit or CI step keeps working.
-const FILE = process.argv[2] || 'docs/RELEASE_NOTES_1.0.1.md';
+// Takes the file as an argument so each release can check its own notes.
+//
+// With no argument it finds the HIGHEST-VERSIONED notes in docs/, which is what
+// someone running this bare means. It used to default to the 1.0.1 path, and
+// that quietly measured the previous release's notes: 1.0.2 gained a thousand
+// characters and the reported count did not move, because it was reading a
+// different file. A checker that measures the wrong thing is worse than none,
+// and that is now twice this script has found a way to do it.
+async function newestNotes() {
+  const files = (await readdir('docs')).filter(f => /^RELEASE_NOTES_.+\.md$/.test(f));
+  if (files.length === 0) throw new Error('No docs/RELEASE_NOTES_*.md found.');
+  const key = (f) => (f.match(/\d+/g) ?? []).map(Number);
+  files.sort((a, b) => {
+    const [x, y] = [key(a), key(b)];
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+      if ((x[i] ?? -1) !== (y[i] ?? -1)) return (y[i] ?? -1) - (x[i] ?? -1);
+    }
+    return 0;
+  });
+  return `docs/${files[0]}`;
+}
+
+const FILE = process.argv[2] || await newestNotes();
+console.log(`  ${FILE}`);
 // Play: 500. App Store: 4000. Both are the documented console limits.
 const LIMITS = [
   { name: 'Google Play  "What\'s new"', max: 500 },

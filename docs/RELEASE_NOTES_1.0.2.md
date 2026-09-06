@@ -60,6 +60,14 @@ MAIL FROM LAYBELL
 
 You can now choose to hear from us about new features and artists worth knowing about — there is a checkbox when you sign up and a switch in Settings, and you can change your mind at any point. Account and security messages are separate and always sent.
 
+A REMINDER, IF YOU ASK FOR ONE
+
+If you have not opened Laybell in a few weeks, we can send you a single notification — what you have earned, who followed you while you were away, or just that your listeners are still there. It is off unless you turn it on: there is a box when you set up your profile and a switch in Settings under Notifications, and it is never more than one every thirty days. Turning off All Notifications turns it off too.
+
+MORE ROOM TO POST
+
+The limit your badge puts on public posts now counts music and everything else separately. A Bronze badge that allowed six posts in total now allows six songs AND six of everything else, so putting up a photo no longer costs you a slot you were saving for a track.
+
 A LOT OF SMALLER THINGS
 
 Cropping one photo in a slideshow no longer re-crops the rest, so every picture in a post can be framed the way you want it.
@@ -69,6 +77,8 @@ Light mode got a real pass: the Diamond badge that was invisible against a pale 
 Messages sits closer to the edge of the screen, the search field lights up when you use it, and the tab you are on no longer looks like a black slab.
 
 Editing your profile can no longer be swiped away by accident, and asks before it throws away changes you have not saved.
+
+Setting up a broadcast, the fields you have selected now glow in the same colours as the Go Live button itself.
 ```
 
 ---
@@ -91,6 +101,12 @@ things a build alone does not do.
 - [x] **Privacy Policy updated and LIVE** at laybell.app/privacy — §19 "Marketing
       Email", §18 corrected, dates moved to September 5 2026. The
       `deploy-legal` workflow published it on push to `dev`; no action needed.
+- [x] **`reengagement.sql` applied to production** (2026-09-06). Adds the
+      opt-in + cadence columns, the `system` notification type, `pg_net`, the
+      daily `send-reengagement-nudges` cron at 17:00 UTC, and the two functions.
+      **It is inert until this build ships**: `reengage_opt_in` defaults to
+      false and nothing in the live 1.0.1 app can set it, so the job selects
+      nobody. Verified 0 opted in, 0 due.
 
 ## Store console — forms, not builds
 
@@ -105,6 +121,11 @@ These can be done today, before or after the build, and need no release.
       same purpose (**Marketing**). Play re-reviews the Data safety form
       separately from the APK, so a stale one can hold up a release that is
       otherwise fine.
+- [ ] **Both consoles → App activity / Usage data.** The re-engagement reminder
+      reads when an account was last seen and sends a promotional push off it,
+      so **Marketing** belongs on that purpose too, not just on the email
+      address. Same reasoning as the two rows above: the label has to match what
+      the build actually does.
 
 ## Build and submit
 
@@ -122,6 +143,11 @@ These can be done today, before or after the build, and need no release.
       cap at 4000 characters. If the demo account or the walkthrough changed,
       write a 1.0.2 version — and hand reviewers the demo **email**
       (`3ddiemusic@gmail.com`), never the username: login takes email only.
+- [ ] **Say where the reminder opt-in is, in the review notes.** Guideline 4.5.4
+      is the one this feature lives under, and a reviewer who does not find the
+      consent will assume there is none. Two lines is enough: the unticked box
+      on the profile-setup step, and Settings → Notifications → "Reminders when
+      you're away", which is also the opt-out. Point at both.
 - [ ] **Tag the release** once approved, matching `v1.0.1-build7`'s format.
 
 ## First send — not part of this release
@@ -135,6 +161,24 @@ Do not email anyone until these exist. See `docs/EMAIL_LIST.md`.
       switch has flipped.
 - [ ] Bounce and complaint handling (a Resend webhook flipping `marketing_opt_in`
       off) before any real volume — that is what protects the sending domain.
+
+## First reminders — after the build is live
+
+Nothing fires until someone opts in, and nobody can opt in until this build
+ships. Then, roughly three weeks later, the first ones become possible.
+
+- [ ] **Look before it sends.** `select * from public.reengagement_due();` is
+      read-only and shows exactly who would be nudged and with what. Run it once
+      the first accounts pass three weeks of silence, and read the messages.
+- [ ] **Check the job's outcome, not its status.** The lesson from the deletion
+      sweep: an exception handler had pg_cron reporting success hourly while
+      deleting nothing. What matters is `select count(*) from notifications
+      where type = 'system'` going up, and `net._http_response` returning 200
+      with Expo tickets that are not `DeviceNotRegistered`.
+- [ ] **Prune dead push tokens.** Expo answers `DeviceNotRegistered` for a token
+      whose app was deleted. Nothing reads those responses yet, so the tokens
+      stay and every run re-sends to them. Harmless at 8 tokens, worth fixing
+      before it is thousands.
 
 ## Still open from before
 
