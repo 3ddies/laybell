@@ -18,7 +18,7 @@ import { supabase } from '../../lib/supabase';
 import {
   type Album, fetchAlbums, createAlbum, addTrack as addAlbumTrack,
 } from '../../lib/albums';
-import { bumpBadge, publicPostLimit, rawTier, tierLabel } from '../../lib/badges';
+import { bumpBadge, publicPostLimit, postKindOf, MUSIC_POST_TYPES, rawTier, tierLabel } from '../../lib/badges';
 import { useProfile } from '../../contexts/ProfileContext';
 import { usePremium } from '../../contexts/PremiumContext';
 import { FILM_MIN_SEC, FILM_MAX_SEC } from '../../lib/entitlements';
@@ -1190,21 +1190,34 @@ export default function PostScreen() {
       // Tier gate for PUBLIC posts — checked fresh before any upload work so a
       // full slot count never wastes a long video upload. Friends-only always OK.
       if (isPublic && Number.isFinite(myPostLimit)) {
-        const base = () => supabase.from('posts')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('is_public', true);
+        // Counted PER KIND. Music and everything else hold separate allowances,
+        // so a full catalogue of tracks never blocks a photo and vice versa —
+        // see PUBLIC_POST_LIMIT. The filter has to match postKindOf exactly, or
+        // the count and the limit would be describing different sets.
+        const kind = postKindOf(postType === 'audio' ? 'audio' : postType);
+        const base = () => {
+          const q = supabase.from('posts')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id)
+            .eq('is_public', true);
+          return kind === 'music'
+            ? q.in('type', MUSIC_POST_TYPES as unknown as string[])
+            : q.not('type', 'in', `(${MUSIC_POST_TYPES.join(',')})`);
+        };
         const filtered = await base().is('archived_at', null);
         const count = (!filtered.error ? filtered.count : (await base()).count) ?? 0;
         setPublicCount(count);
         if (count >= myPostLimit) {
           setLoading(false);
           const tier = rawTier(profile);
+          // The message names the KIND that is full, because "you have hit your
+          // limit" is misleading when there is room for the other one.
+          const kindLabel = t(kind === 'music' ? 'post.limitKindMusic' : 'post.limitKindRegular');
           Alert.alert(
             t('post.publicLimitTitle'),
             tier
-              ? t('post.publicLimitTieredBody', { tier: tierLabel(tier), limit: myPostLimit })
-              : t('post.publicLimitFreeBody'),
+              ? t('post.publicLimitTieredBody', { tier: tierLabel(tier), limit: myPostLimit, kind: kindLabel })
+              : t('post.publicLimitFreeBody', { kind: kindLabel }),
           );
           return;
         }

@@ -217,12 +217,36 @@ export function publicPlaylistLimit(tier: Tier | null): number {
   return tier ? PUBLIC_PLAYLIST_LIMIT[tier] : 0;
 }
 
-// How many PUBLIC posts each earned tier may have live at once (checked at
-// post time; deleting or archiving one frees its slot). No badge shares the
-// bronze allowance; diamond is unlimited. Friends-only posts are never gated.
+// How many PUBLIC posts each earned tier may have live at once — PER KIND, not
+// in total (checked at post time; deleting or archiving one frees its slot). No
+// badge shares the bronze allowance; diamond is unlimited. Friends-only posts
+// are never gated.
+//
+// PER KIND is the point. A single pooled ceiling meant an artist who filled it
+// with music could not post a photo, and somebody who filled it with photos
+// could not put up a track — the two compete for slots despite having nothing
+// to do with each other, and the person hitting the wall is being told to
+// delete work in a medium they were not even using. Music and everything else
+// now get the same allowance each, so the number below doubles real capacity
+// without changing what any single kind is worth.
 export const PUBLIC_POST_LIMIT: Record<Tier, number> = { bronze: 6, silver: 12, gold: 24, diamond: Infinity };
 export function publicPostLimit(tier: Tier | null): number {
   return tier ? PUBLIC_POST_LIMIT[tier] : 6;
+}
+
+/**
+ * The two buckets a public post can fill. Music is audio/podcast/audiobook —
+ * the same set isAudioPost recognises; everything else (photo, video,
+ * slideshow) is one bucket between them.
+ *
+ * Two rather than one-per-type deliberately: a per-type ceiling would make a
+ * slideshow and a photo compete with nothing, and the distinction people
+ * actually feel is "my music" versus "my posts".
+ */
+export const MUSIC_POST_TYPES = ['audio', 'podcast', 'audiobook'] as const;
+export type PostKind = 'music' | 'regular';
+export function postKindOf(type?: string | null): PostKind {
+  return (MUSIC_POST_TYPES as readonly string[]).includes(type ?? '') ? 'music' : 'regular';
 }
 
 // How many tracks each tier may keep DOWNLOADED for offline at once (checked at
