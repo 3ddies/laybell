@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { touchLogin, evaluateBadges, onBadgeTierChange, type Tier } from '../lib/badges';
+import { startBadgeRiskReminders } from '../lib/badgeRisk';
 import { upsertOwnIdentifiers, loadOwnPhone } from '../lib/identifiers';
 import { endMyStaleLiveStreams } from '../lib/live';
 import { syncEntitlementsFromProfile } from '../lib/purchases';
@@ -74,6 +75,9 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     syncEntitlementsFromProfile(data as any);
     // Badges: mark today's login and recompute the emblem. Fire-and-forget so it
     // never blocks profile load; no-ops if the badges SQL isn't applied yet.
+    // startBadgeRiskReminders subscribes BEFORE the evaluation so the first one
+    // of the session is not the one that gets missed.
+    startBadgeRiskReminders();
     touchLogin().then(() => evaluateBadges({ silent: true })).catch(() => {});
     // Keep our contact-discovery hashes in sync (email always; phone only if it's
     // stored on this device, so a fresh device never wipes an existing phone hash).

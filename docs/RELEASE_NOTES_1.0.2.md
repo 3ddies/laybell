@@ -60,9 +60,13 @@ MAIL FROM LAYBELL
 
 You can now choose to hear from us about new features and artists worth knowing about — there is a checkbox when you sign up and a switch in Settings, and you can change your mind at any point. Account and security messages are separate and always sent.
 
-A REMINDER, IF YOU ASK FOR ONE
+REMINDERS, IF YOU ASK FOR THEM
 
-If you have not opened Laybell in a few weeks, we can send you a single notification — what you have earned, who followed you while you were away, or just that your listeners are still there. It is off unless you turn it on: there is a box when you set up your profile and a switch in Settings under Notifications, and it is never more than one every thirty days. Turning off All Notifications turns it off too.
+Laybell can tell you when a badge you have earned is about to lapse — naming the badge, in time to do something about it. Streak badges only, so it is the ones that took days to build rather than the ones you re-earn in a minute.
+
+And if you have not opened Laybell in a while, a single notification: what you have earned, who followed you while you were away, or just that your listeners are still there. Never more than one every thirty days.
+
+Both are off unless you turn them on. There is a box when you set up your profile and a switch in Settings under Notifications, and turning off All Notifications turns these off too.
 
 MORE ROOM TO POST
 
@@ -106,7 +110,9 @@ things a build alone does not do.
       daily `send-reengagement-nudges` cron at 17:00 UTC, and the two functions.
       **It is inert until this build ships**: `reengage_opt_in` defaults to
       false and nothing in the live 1.0.1 app can set it, so the job selects
-      nobody. Verified 0 opted in, 0 due.
+      nobody. Verified 0 opted in, 0 due. Quiet period is **12 days**.
+- [x] **`ehall1@ncat.edu` deleted** (2026-09-06). 14 → 13 accounts, ledger
+      verified clean (0 violations, global sum 0).
 
 ## Store console — forms, not builds
 
@@ -179,6 +185,11 @@ ships. Then, roughly three weeks later, the first ones become possible.
       whose app was deleted. Nothing reads those responses yet, so the tokens
       stay and every run re-sends to them. Harmless at 8 tokens, worth fixing
       before it is thousands.
+- [ ] **Watch the badge reminder for nagginess.** It is a LOCAL notification
+      scheduled by the app (see `lib/badgeRisk.ts`) at 20:00 UTC — 4pm Eastern —
+      and only for streak badges, so someone with no streak never sees one. If
+      it turns out to fire more than feels right, the lever is
+      `STREAK_BADGE_KEYS` in `lib/badges.ts`, not the timing.
 
 ## Still open from before
 

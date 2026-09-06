@@ -654,6 +654,76 @@ function emitTierUpgrade(tier: Tier) {
   for (const f of tierUpgradeListeners) { try { f(tier); } catch {} }
 }
 
+// Badges the user HOLDS TODAY that lapse at the next UTC day flip unless they do
+// something first. lib/badgeRisk subscribes and turns this into a reminder.
+//
+// A listener rather than a direct call because badgeRisk imports this module for
+// the catalogue, so calling into it from here would be a cycle — the same shape
+// entitlements.ts already uses for the premium getters.
+// `today` rides along because it is the SERVER-provided UTC day the evaluation
+// was anchored to. The reminder needs it to work out when the day flips, and
+// re-deriving it from the device clock there would reintroduce exactly the
+// timezone drift addDaysUTC above exists to avoid.
+export type BadgeRisk = { keys: string[]; optedIn: boolean; today: string };
+type RiskListener = (risk: BadgeRisk) => void;
+let riskListeners: RiskListener[] = [];
+export function onBadgeRisk(fn: RiskListener): () => void {
+  riskListeners.push(fn);
+  return () => { riskListeners = riskListeners.filter(f => f !== fn); };
+}
+function emitBadgeRisk(risk: BadgeRisk) {
+  for (const f of riskListeners) { try { f(risk); } catch {} }
+}
+
+/**
+ * Badges that stand for a RUN of days rather than one day's activity — the only
+ * ones worth warning anybody about.
+ *
+ * Losing `login_gold` throws away fourteen days and starts you at zero. Losing
+ * `music_streaming_bronze` costs ten minutes of listening you can redo whenever
+ * you like, and a daily notification about it would be pure nagging. Everything
+ * not listed here either resets every day by design or does not lapse at all
+ * (posts, curator, community, app-sharing are counts, not runs).
+ *
+ * Kept beside qualifyingTiersAt on purpose: these are exactly the keys that
+ * function derives from streakLength, so the two move together.
+ */
+export const STREAK_BADGE_KEYS: ReadonlySet<string> = new Set([
+  'login_bronze', 'login_silver', 'login_gold', 'login_diamond', 'login_diamond_perm',
+  // daily_like BRONZE is "10 likes today" — a day, not a run — so it is absent.
+  'daily_like_silver', 'daily_like_gold',
+]);
+
+/**
+ * Which held run-badges will be gone tomorrow if today ends with no more activity.
+ *
+ * Probes `qualifyingTiersAt`, the UNGRACED evaluator, at tomorrow's date. Going
+ * through the graced one instead does not work, and the reason is worth keeping:
+ * `withinGrace` compares the real wall clock against the day being asked about,
+ * so ANY future day is inside its window and yesterday always counts. Probing
+ * tomorrow that way reported nothing at risk in exactly the case the reminder
+ * exists for — a streak that ends today. A test caught it.
+ *
+ * No rule is restated here, so this cannot drift from the real rules the way a
+ * second copy of them in SQL would. That is why the reminder is computed in the
+ * app and not in the re-engagement cron.
+ *
+ * Permanent badges are excluded (never revoked), and so is everything while the
+ * Premium+ freeze is on, because nothing lapses then.
+ */
+export function badgesAtRisk(state: BadgeState, held: Iterable<string>): string[] {
+  if (_isFreezeGetter()) return [];
+  const keysAt = (day: string) =>
+    new Set((Object.entries(qualifyingTiersAt(state, day)) as [BadgeCategory, Tier][])
+      .map(([cat, tier]) => `${cat}_${tier}`));
+  const now = keysAt(state.today);
+  const next = keysAt(addDaysUTC(state.today, 1));
+  return Array.from(held).filter((k) => {
+    const def = BADGES_BY_KEY[k];
+    return !!def && !def.permanent && STREAK_BADGE_KEYS.has(k) && now.has(k) && !next.has(k);
+  });
+}
+
 // ── STAFF TIER ───────────────────────────────────────────────────────────────
 // Laybell's own accounts are held at a fixed tier and skip the normal recompute.
 // Diamond is a CAPABILITY tier — it gates creating communities
@@ -687,7 +757,7 @@ export async function evaluateBadges(opts: { silent?: boolean } = {}): Promise<E
     const [state, existingRes, profileRes] = await Promise.all([
       fetchBadgeState(),
       supabase.from('user_badges').select('badge_key, category, tier, is_permanent').eq('user_id', user.id),
-      supabase.from('profiles').select('badge_tier, username').eq('id', user.id).maybeSingle(),
+      supabase.from('profiles').select('badge_tier, username, reengage_opt_in').eq('id', user.id).maybeSingle(),
     ]);
 
     // STAFF TIER (see STAFF_TIER above): hold Laybell's own accounts at a fixed
@@ -785,6 +855,15 @@ export async function evaluateBadges(opts: { silent?: boolean } = {}): Promise<E
       // Only fire the upgrade notification when the tier actually went UP.
       if (tier && tierRank(tier) > tierRank(prevTier)) emitTierUpgrade(tier);
     }
+
+    // Announce anything about to lapse. Emitted on every evaluation, including
+    // when the list is EMPTY — that is what cancels a reminder already scheduled
+    // for someone who has since done the thing that saves the badge.
+    emitBadgeRisk({
+      keys: badgesAtRisk(state, heldKeys),
+      optedIn: (profileRes.data as any)?.reengage_opt_in === true,
+      today: state.today,
+    });
 
     return { tier, points, newlyEarned: toInsert, held: Array.from(heldKeys) };
   } catch {

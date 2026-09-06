@@ -98,7 +98,11 @@ alter table public.notifications add constraint notifications_system_key_check
 -- nudged today and with what" is then a plain select that sends nothing. Every
 -- rule that decides whether a push goes out lives here and nowhere else.
 create or replace function public.reengagement_due(
-  p_quiet_days integer default 21,   -- how long away counts as "away"
+  -- 12 days, not 21. Long enough that it is plainly a lapse rather than a busy
+  -- fortnight, short enough to catch a habit that is paused instead of gone.
+  -- The spacing is what keeps this from nagging: with a 30-day gap and a cap of
+  -- three, the most anyone can hear from Laybell is three times in a quarter.
+  p_quiet_days integer default 12,   -- how long away counts as "away"
   p_gap_days   integer default 30,   -- minimum spacing between two nudges
   p_max        integer default 3,    -- hard cap per absence
   p_limit      integer default 100   -- Expo takes 100 messages per request
