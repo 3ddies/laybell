@@ -262,6 +262,23 @@ async function rankStoryGroups(groups: StoryGroup[], viewerId: string): Promise<
  */
 export const DISCOVERY_STORY_AUTHORS = 5;
 
+/**
+ * How full the tray should be before discovery stops topping it up.
+ *
+ * Ten, so the rail reads as a rail rather than a gap — for somebody who follows
+ * nobody, and for somebody whose follows all happen to be quiet today. Discovery
+ * makes up the difference; see fetchStoryTray.
+ *
+ * This is a FLOOR ON THE ASK, not a promise. The tray cannot hold more stories
+ * than the app has: with a handful of accounts and nobody posting, ten slots and
+ * five slots produce the identical empty rail. It starts mattering the day there
+ * is a surplus of stories to draw on, which is exactly when it should.
+ *
+ * Someone who follows plenty of active people still gets DISCOVERY_STORY_AUTHORS
+ * on the end — the point of discovery is not only to fill space.
+ */
+export const TRAY_MIN_SLOTS = 10;
+
 // How many active stories to look at when picking those five. A cap, because
 // this reads across the WHOLE app rather than one person's follows: without it
 // the query grows with the platform and the tray gets slower for everybody as
@@ -392,9 +409,18 @@ export async function fetchStoryTray(userId: string, localSeen: Set<string> = ne
   // who has not posted today is still not a stranger, and surfacing them under
   // discovery would be odd. Self is excluded for the obvious reason.
   const exclude = new Set<string>([userId, ...followingIds]);
+
+  // Ask for enough to reach TRAY_MIN_SLOTS, never fewer than the baseline five.
+  // A viewer following nobody asks for ten; one whose follows already fill the
+  // rail still asks for five, because discovery is a way to meet people and not
+  // just padding. Counted off `others` rather than `followingIds`: what matters
+  // is how many followed people actually POSTED, not how many were followed.
+  const haveAlready = (own ? 1 : 0) + others.length;
+  const wantDiscovery = Math.max(DISCOVERY_STORY_AUTHORS, TRAY_MIN_SLOTS - haveAlready);
+
   let discovery: StoryGroup[] = [];
   try {
-    discovery = await fetchDiscoveryGroups(userId, exclude, DISCOVERY_STORY_AUTHORS, localSeen);
+    discovery = await fetchDiscoveryGroups(userId, exclude, wantDiscovery, localSeen);
   } catch { discovery = []; }
 
   try {

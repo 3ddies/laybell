@@ -1277,8 +1277,10 @@ export default function MusicScreen() {
                    below uses, so the two can never disagree about what is #1. */}
             <TopSongsSpotlight
               tracks={top20Tracks}
-              onPlay={(n) => playQueue(top20Queue(), n)}
-              onOpenPost={(id) => router.push(`/post/${id}`)}
+              // play THEN expand - the pattern every other cover-press in the
+              // app uses (profile.tsx, album/[id].tsx): playQueue does not open
+              // the full player on its own.
+              onPlay={(n) => { playQueue(top20Queue(), n); expand(); }}
               onOpenProfile={(id) => router.push(`/profile/${id}`)}
             />
 

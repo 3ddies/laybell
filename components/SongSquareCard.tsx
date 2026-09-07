@@ -188,14 +188,21 @@ export default function SongSquareCard({
           activeOpacity={0.85}
           hitSlop={10}
           accessibilityRole="button"
-          accessibilityLabel={isPlaying ? t('a11y.pause') : t('a11y.play')}
+          // STOP, not pause, because stopping is what this button does. The
+          // press runs playFeedSong, which re-issues playQueue for the track
+          // already playing rather than pausing it — so a pause glyph was
+          // promising a resume the control cannot give. Naming the real
+          // behaviour is the honest fix; the two states read play -> stop ->
+          // play, which is coherent on its own terms.
+          accessibilityLabel={isPlaying ? t('a11y.stop') : t('a11y.play')}
         >
           <Ionicons
-            name={isPlaying ? 'pause' : 'play'}
+            name={isPlaying ? 'stop' : 'play'}
             size={22}
             color="#fff"
             // Optical centring: a triangle's mass sits left of its bounding box,
-            // so a centred play glyph reads as if it has slipped backwards.
+            // so a centred play glyph reads as if it has slipped backwards. A
+            // stop square is symmetrical and needs no nudge.
             style={isPlaying ? undefined : { marginLeft: 3 }}
           />
         </TouchableOpacity>

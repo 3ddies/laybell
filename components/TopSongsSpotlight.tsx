@@ -45,16 +45,19 @@ export type SpotlightTrack = {
 
 type Props = {
   tracks: SpotlightTrack[];
-  /** Play the chart starting at this index, so it runs on into the Top 20. */
+  /**
+   * Play the chart from this index and open the full player. Choosing a song
+   * here means listening to it — there is no reading surface worth diverting to
+   * when the thing under the thumb is a piece of music.
+   */
   onPlay: (index: number) => void;
-  onOpenPost: (postId: string) => void;
   onOpenProfile: (userId: string) => void;
   /** How many to cycle through. */
   count?: number;
 };
 
 export default function TopSongsSpotlight({
-  tracks, onPlay, onOpenPost, onOpenProfile, count = 5,
+  tracks, onPlay, onOpenProfile, count = 5,
 }: Props) {
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
@@ -123,7 +126,7 @@ export default function TopSongsSpotlight({
 
       <TouchableOpacity
         activeOpacity={0.92}
-        onPress={() => onOpenPost(cur.id)}
+        onPress={() => onPlay(Math.min(i, top.length - 1))}
         style={[styles.card, { width: size, height: size }]}
       >
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: fade }]}>
