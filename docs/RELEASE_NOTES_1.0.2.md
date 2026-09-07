@@ -87,6 +87,21 @@ Setting up a broadcast, the fields you have selected now glow in the same colour
 
 ---
 
+# STATUS — submitted 2026-09-06
+
+**iOS `1.0.2 (9)` is SUBMITTED FOR REVIEW, set to AUTO-RELEASE.** Approval
+publishes it to users with no further step, whenever that lands. Review notes,
+What's New and the privacy labels were all entered before submitting.
+
+**Android is NOT submitted.** The `.aab` for build 9 is built and waiting:
+https://expo.dev/artifacts/eas/qGRpTAg9Uc7Sky5_sHdc9ELv-V6ZTzBOxLbMkbaLlRM.aab
+`eas.json` is already wired for `eas submit --platform android` — it needs the
+service-account key first, which is four minutes of console work in
+`docs/PLAY_SERVICE_ACCOUNT.md`. It is configured as a DRAFT release, so even
+after approval nothing reaches Play users until it is rolled out by hand.
+
+Tag `v1.0.2-build9` once Apple approves, matching `v1.0.1-build7`.
+
 # Before you submit
 
 Everything below is a manual step. The code is on `dev` and pushed; these are the
