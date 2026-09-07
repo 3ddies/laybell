@@ -264,6 +264,13 @@ ships. Then, roughly three weeks later, the first ones become possible.
         that permission has to be added to `app.json` first.**
 - [ ] Play's 16 KB library alignment (has a future Play deadline), edge-to-edge
       deprecation, large-screen resizability.
+- [ ] **Give the realtime screens a slow poll.** The six tables now publish, so
+      DMs, comments, the unread badge and the live rail update live again — but
+      they depend on the publication ALONE. If it is ever lost, or a fresh
+      database is stood up without `live_notifications.sql`, they go silent with
+      no symptom, which is exactly how this went unnoticed through 1.0.1. The
+      standing rule (see the realtime memory) is to pair every publication fix
+      with a poll; that half is still owed.
 - [ ] **In-app video recorder + editor ("like TikTok")** — deferred 2026-09-06 to a
       later update. Survey in `docs/VIDEO_EDITOR_PLAN.md`: recording and trimming
       already work (react-native-video-trim is a native module ALREADY in the
