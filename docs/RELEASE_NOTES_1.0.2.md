@@ -87,11 +87,17 @@ Setting up a broadcast, the fields you have selected now glow in the same colour
 
 ---
 
-# STATUS — submitted 2026-09-06
+# STATUS — iOS APPROVED AND RELEASING, 2026-09-06
 
-**iOS `1.0.2 (9)` is SUBMITTED FOR REVIEW, set to AUTO-RELEASE.** Approval
-publishes it to users with no further step, whenever that lands. Review notes,
-What's New and the privacy labels were all entered before submitting.
+🎉 **iOS `1.0.2 (9)` was APPROVED the same evening it was submitted** — in at
+19:45 PDT, "eligible for distribution" by 21:23. Auto-release was on, so approval
+published it. Apple's note: items can take **up to 24 hours** to become publicly
+available, and App Store search lags availability by longer still — the direct
+link works first (id 6795675871).
+
+Tagged **`v1.0.2-build9`** at `0a42bf2`, the commit EAS actually built (checked
+against the build record rather than assumed — a docs commit landed while the
+archive was uploading). 74 commits since `v1.0.1-build7`.
 
 **Android is NOT submitted.** The `.aab` for build 9 is built and waiting:
 https://expo.dev/artifacts/eas/qGRpTAg9Uc7Sky5_sHdc9ELv-V6ZTzBOxLbMkbaLlRM.aab
