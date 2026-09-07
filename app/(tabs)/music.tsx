@@ -38,6 +38,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GENRES, CONTENT_TAGS, isAudioPost, genreLabel } from '../../lib/genres';
 import { postMatchTier, profileMatchTier } from '../../lib/searchRank';
 import StoryAvatar from '../../components/StoryAvatar';
+import TopSongsSpotlight from '../../components/TopSongsSpotlight';
 import FollowButton from '../../components/FollowButton';
 import { MusicScreenSkeleton, DiscoverSkeleton, TrackListSkeleton } from '../../components/Skeleton';
 import {
@@ -1270,6 +1271,16 @@ export default function MusicScreen() {
               />
             }
           >
+
+            {/* — The chart as one big cycling square, before anything else on
+                   the page. It renders the SAME top20Tracks the Top 20 chart
+                   below uses, so the two can never disagree about what is #1. */}
+            <TopSongsSpotlight
+              tracks={top20Tracks}
+              onPlay={(n) => playQueue(top20Queue(), n)}
+              onOpenPost={(id) => router.push(`/post/${id}`)}
+              onOpenProfile={(id) => router.push(`/profile/${id}`)}
+            />
 
             {/* — Genres label (the major genre tabs live directly below) — */}
             <Text style={styles.discoverSectionTitleLg}>{t('music.genres')}</Text>
