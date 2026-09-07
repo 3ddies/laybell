@@ -10,6 +10,7 @@ import { COLORS, SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import StoryAvatar from './StoryAvatar';
+import { titleWithoutTrailingArtist } from '../lib/postSong';
 
 /**
  * The chart, as one big square that cycles — the top songs on Laybell right now,
@@ -30,6 +31,10 @@ import StoryAvatar from './StoryAvatar';
 /** How long each song holds before the next fades in. */
 const HOLD_MS = 5200;
 const FADE_MS = 620;
+
+/** The play button's diameter. Shared, because the title's right padding is
+ *  derived from it — hard-coding both is how they drift apart and collide. */
+const PLAY_SIZE = 52;
 
 export type SpotlightTrack = {
   id: string;
@@ -103,7 +108,12 @@ export default function TopSongsSpotlight({
   const name = who?.display_name || who?.username || '';
   // draft.untitledTrack rather than a new key — the app already has this string
   // in ten languages and a second one would only be a second thing to translate.
-  const title = (cur.caption ?? '').trim() || t('draft.untitledTrack');
+  //
+  // The byline right above already shows the artist, so a title ending in their
+  // name says it twice in one glance ("3ddie" over "Laybell Official Song -
+  // 3ddie"). Same rule the feed card uses, applied to the half that can give.
+  const raw = (cur.caption ?? '').trim();
+  const title = titleWithoutTrailingArtist(raw, name) || t('draft.untitledTrack');
   // Square, edge-inset to match the rails below it.
   const size = width - SPACING.md * 2;
 
@@ -166,7 +176,7 @@ export default function TopSongsSpotlight({
           onPress={() => onPlay(Math.min(i, top.length - 1))}
           hitSlop={8}
         >
-          <Ionicons name="play" size={22} color="#000" style={{ marginLeft: 2 }} />
+          <Ionicons name="play" size={24} color="#000" style={{ marginLeft: 3 }} />
         </TouchableOpacity>
       </TouchableOpacity>
 
@@ -188,7 +198,7 @@ export default function TopSongsSpotlight({
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
-  wrap: { marginBottom: SPACING.lg },
+  wrap: { marginBottom: SPACING.md },
   heading: {
     color: colors.text, fontSize: 20, fontWeight: '800',
     marginHorizontal: SPACING.md, marginBottom: SPACING.sm,
@@ -198,12 +208,24 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: colors.surfaceLight,
   },
   noCover: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceLight },
-  info: { position: 'absolute', left: SPACING.md, right: SPACING.md, bottom: SPACING.md },
+  // paddingRight CLEARS THE PLAY BUTTON. The button is 48 wide inset SPACING.md,
+  // so it owns the last 64pt of the card; without this the title simply runs
+  // underneath it — not clipped, occluded, which is worse because the text looks
+  // truncated at a place no line-break would choose.
+  info: {
+    position: 'absolute', left: SPACING.md, right: SPACING.md, bottom: SPACING.md,
+    paddingRight: PLAY_SIZE + SPACING.md,
+  },
   byline: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, marginBottom: 6 },
   // Fixed white, not the theme's text colour: this sits on a photographic scrim
   // in both themes, where the light theme's near-black would vanish.
   artist: { color: 'rgba(255,255,255,0.92)', fontSize: 13, fontWeight: '600', flexShrink: 1 },
-  title: { color: '#FFFFFF', fontSize: 24, fontWeight: '800', letterSpacing: -0.4 },
+  title: {
+    color: '#FFFFFF', fontSize: 23, fontWeight: '800', letterSpacing: -0.4, lineHeight: 27,
+    // The scrim does most of the work, but a cover can be pale exactly where the
+    // title lands. This costs nothing and stops that one bad photo.
+    textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
   rank: {
     position: 'absolute', top: SPACING.sm, left: SPACING.sm,
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: RADIUS.md,
@@ -212,13 +234,21 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   rankText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
   play: {
     position: 'absolute', right: SPACING.md, bottom: SPACING.md,
-    width: 48, height: 48, borderRadius: 24,
+    width: PLAY_SIZE, height: PLAY_SIZE, borderRadius: PLAY_SIZE / 2,
     alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF',
+    // Lifts the button off busy artwork so its edge is always findable.
+    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 }, elevation: 5,
   },
   dots: {
-    flexDirection: 'row', justifyContent: 'center', gap: 6,
-    marginTop: SPACING.sm,
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6,
+    marginTop: SPACING.sm + 2,
   },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.border },
-  dotOn: { backgroundColor: colors.primary, width: 18 },
+  // The theme's ink, not brand orange. Orange is the app's ACTION colour — it is
+  // the Listen button and the compose button on this very screen — and spending
+  // it on "which of five" says this pip is something to press. It is a position
+  // indicator. colors.text rather than a flat white so it survives light mode,
+  // where white on the page background would disappear entirely.
+  dotOn: { backgroundColor: colors.text, width: 18 },
 });

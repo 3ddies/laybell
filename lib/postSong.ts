@@ -204,6 +204,32 @@ export function names(haystack?: string | null, needle?: string | null): boolean
 }
 
 /**
+ * The title with a trailing "- Artist" taken off, for a surface that is ALREADY
+ * showing the artist beside it.
+ *
+ * The feed's square card solves this repetition the other way round — it drops
+ * the credit and leaves the title alone (see songSquareArtist) — because there
+ * the credit line is the thing that can go. The Music spotlight cannot do that:
+ * its byline is an avatar and a name, and it is the discovery hook, so the
+ * repetition has to come off the title instead. "Laybell Official Song - 3ddie"
+ * under a byline reading "3ddie" says the same name twice in one glance.
+ *
+ * Deliberately narrow. It removes the artist ONLY as a trailing tail after a
+ * separator, so "3ddie's Anthem" and "Anthem (feat. 3ddie)" are untouched —
+ * there the name is doing work mid-sentence. Gated on names() first so the two
+ * surfaces cannot disagree about what counts as already-named, and it never
+ * returns an empty string: a track titled only with its artist keeps its title.
+ */
+export function titleWithoutTrailingArtist(title?: string | null, artist?: string | null): string {
+  const t = (title ?? '').trim();
+  const a = (artist ?? '').trim();
+  if (!t || !a || !names(t, a)) return t;
+  const esc = a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const stripped = t.replace(new RegExp(`\\s*(?:[-–—·|]+|\\bby\\b)\\s*${esc}\\s*$`, 'i'), '').trim();
+  return stripped || t;
+}
+
+/**
  * The song credit as ONE line: "Break that · 3ddie" — but "Break that - 3ddie"
  * is returned untouched, because the artist is already in it.
  */
