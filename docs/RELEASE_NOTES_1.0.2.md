@@ -264,5 +264,11 @@ ships. Then, roughly three weeks later, the first ones become possible.
         that permission has to be added to `app.json` first.**
 - [ ] Play's 16 KB library alignment (has a future Play deadline), edge-to-edge
       deprecation, large-screen resizability.
+- [ ] **In-app video recorder + editor ("like TikTok")** — deferred 2026-09-06 to a
+      later update. Survey in `docs/VIDEO_EDITOR_PLAN.md`: recording and trimming
+      already work (react-native-video-trim is a native module ALREADY in the
+      binary), everything else needs re-encoding, and ffmpeg-kit was retired
+      2026-07-02. There is a no-new-native path — overlays as a recipe rendered
+      at playback — with one real trade-off written up there.
 - [ ] The Play listing still describes Laybell TV as turning sideways. It does
       not. Listing edit, not code.
