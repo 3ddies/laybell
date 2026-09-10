@@ -23,7 +23,7 @@ import {
 import { EMPTY_PROFILE, buildAffinityProfile } from '../../lib/feedScorer';
 import { postToCastItem, adToCastItem, type CastItem } from '../../lib/cast';
 import { selection } from '../../lib/haptics';
-import { markInteraction, msSinceInteraction, TV_IDLE_MS } from '../../lib/playbackPresence';
+import { markInteraction, msSinceInteraction, LEAN_BACK_IDLE_MS } from '../../lib/playbackPresence';
 import Scrubber from '../../components/Scrubber';
 
 // ─── Laybell TV over AirPlay (iOS) — a DEDICATED, fully isolated screen ───────
@@ -87,7 +87,7 @@ export default function AirPlayTvScreen() {
   const queueRef = useRef<CastItem[]>([]);
   const indexRef = useRef(0);
   const advancedRef = useRef(false); // guards playToEnd firing once per clip
-  // "Still watching?" — autoplay-next waits here after TV_IDLE_MS with no taps.
+  // "Still watching?" — autoplay-next waits here after LEAN_BACK_IDLE_MS with no taps.
   // pendingAdvanceRef holds the exact advance that was withheld, so Keep
   // watching resumes precisely where the queue was about to go.
   const [stillWatching, setStillWatching] = useState(false);
@@ -288,7 +288,7 @@ export default function AirPlayTvScreen() {
           // fetches a fresh feed, forever — and the phone is the AirPlay
           // source, its screen held awake by the playing video. Unguarded, an
           // unattended session never ends. So it asks instead of advancing.
-          if (msSinceInteraction() >= TV_IDLE_MS) {
+          if (msSinceInteraction() >= LEAN_BACK_IDLE_MS) {
             pendingAdvanceRef.current = advance;
             try { player.pause(); } catch {}
             setStillWatching(true);

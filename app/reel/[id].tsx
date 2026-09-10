@@ -1866,6 +1866,8 @@ export default function ReelScreen() {
             contentFit="contain"
             loop={item.trim_end == null}
             active={overlayId === item.id && !paused && !scrubbing && !overlayAd}
+            // Auto-scroll is hands-free watching: the hour clock, like ReelVideo.
+            leanBack
             showStallIndicator
             muted={songPlaysFor(item)}
             poster={poster}

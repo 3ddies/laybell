@@ -49,8 +49,10 @@ const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
   playRef.current = shouldPlay;
   // Owns loop — see hooks/useIdleAwareLoop. Stopping the loop also
   // ends the reels autoplay chain: the pager advances only on a WRAP, and a clip
-  // that finishes without looping never wraps.
-  const { idleRef, markEnded } = useIdleAwareLoop(player, { loop, shouldPlay, restartSec: trimStartSec ?? null });
+  // that finishes without looping never wraps. On the one-hour lean-back clock,
+  // not the five-minute one: auto-scroll is hands-free watching, and the owner
+  // chose to let it roll for an hour untouched (2026-09-10).
+  const { idleRef, markEnded } = useIdleAwareLoop(player, { loop, shouldPlay, restartSec: trimStartSec ?? null, leanBack: true });
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
   const mutedRef = useRef(muted);

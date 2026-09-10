@@ -7,6 +7,7 @@ import { EMPTY_PROFILE, buildAffinityProfile } from '../lib/feedScorer';
 import { useProfile } from './ProfileContext';
 import { useMediaSuspend } from './MediaSuspendContext';
 import type { SharePayload } from './ShareContext';
+import { LEAN_BACK_IDLE_MS, msSinceInteraction } from '../lib/playbackPresence';
 
 // ─── Laybell TV casting (Google Cast / Chromecast) ───────────────────────────
 //
@@ -444,6 +445,11 @@ function RealCastProvider({ children }: { children: ReactNode }) {
     if (transitionRef.current) return;
     if (st === 'idle' && reason === 'finished' && !advancedRef.current) {
       advancedRef.current = true;
+      // Nobody has touched the phone in an hour: stop here rather than roll on
+      // (or loop, below) to a TV that may have nobody in front of it. Same hour as
+      // AirPlay's "Still watching?" and reels auto-scroll; play or next on the
+      // remote picks it back up (loadIndex re-arms advancedRef).
+      if (msSinceInteraction() >= LEAN_BACK_IDLE_MS) return;
       // Loop replays stay seamless (no splash) — the card marks a POST CHANGE.
       if (holdAdvanceRef.current) { loadIndex(indexRef.current); return; }
       const nextI = indexRef.current + 1;

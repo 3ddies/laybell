@@ -73,6 +73,12 @@ export type AppVideoProps = {
    * not the bill.
    */
   idleBehavior?: IdleMode;
+  /**
+   * Wait for the one-hour lean-back clock instead of the five-minute one — for
+   * hands-free surfaces that roll on by themselves (the reels overlay). See
+   * LEAN_BACK_IDLE_MS in lib/playbackPresence.
+   */
+  leanBack?: boolean;
 };
 
 /** Imperative handle for scrubbing/seeking from a parent (e.g. a progress bar). */
@@ -98,6 +104,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   ignoreSuspend = false,
   showStallIndicator = false,
   idleBehavior = 'finishPass',
+  leanBack = false,
 }: AppVideoProps, ref) {
   const uri = typeof source === 'string' ? source : source.uri;
   // A full-screen takeover (e.g. the GIF maker) can globally pause background
@@ -167,7 +174,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   // Loop is OWNED by useIdleAwareLoop, not synced here. A looping video holds the
   // screen awake, so a phone left on one never locks, never backgrounds, and
   // streams the clip forever — see hooks/useIdleAwareLoop.
-  const { idleRef, markEnded } = useIdleAwareLoop(player, { loop, shouldPlay, restartSec: trimStartSec ?? null, whenIdle: idleBehavior });
+  const { idleRef, markEnded } = useIdleAwareLoop(player, { loop, shouldPlay, restartSec: trimStartSec ?? null, whenIdle: idleBehavior, leanBack });
 
   // Keep mutable player props in sync with React props.
   useEffect(() => { player.muted = muted; }, [muted, player]);

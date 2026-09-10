@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { VideoPlayer } from 'expo-video';
-import { useLoopIdle } from '../lib/playbackPresence';
+import { useLeanBackIdle, useLoopIdle } from '../lib/playbackPresence';
 import {
   cameBack, initialIdleLoopState, manualEnd, nativeLoop, playingChanged, reachedEnd, wentIdle,
   type IdleCmd, type IdleMode,
@@ -20,6 +20,10 @@ export type { IdleMode } from '../lib/idleLoopCore';
 //                 the room goes idle, resumed from the same spot on return;
 //   'finishPass'  (default) a video somebody opened — the current pass finishes,
 //                 the next repeat is withheld, nobody is cut off mid-watch.
+//
+// `leanBack` picks the clock: hands-free surfaces that roll on by themselves
+// (reels auto-scroll) wait an hour untouched instead of five minutes — see
+// LEAN_BACK_IDLE_MS in lib/playbackPresence.
 //
 // The default is 'finishPass' on purpose. A surface that forgets to say still
 // gets a bounded stop, and the mistake costs a few minutes of delivery rather
@@ -56,14 +60,20 @@ function narrate(text: string): void {
 
 export function useIdleAwareLoop(
   player: VideoPlayer | null,
-  { loop, shouldPlay, restartSec, whenIdle = 'finishPass' }: {
+  { loop, shouldPlay, restartSec, whenIdle = 'finishPass', leanBack = false }: {
     loop: boolean;
     shouldPlay: boolean;
     restartSec?: number | null;
     whenIdle?: IdleMode;
+    /** Wait for the one-hour lean-back clock instead of the five-minute one. */
+    leanBack?: boolean;
   },
 ) {
-  const idle = useLoopIdle();
+  // Both clocks are subscribed unconditionally (hooks may not be conditional);
+  // each turns at most a couple of times a session.
+  const loopIdle = useLoopIdle();
+  const leanBackIdle = useLeanBackIdle();
+  const idle = leanBack ? leanBackIdle : loopIdle;
   const idleRef = useRef(idle);
   idleRef.current = idle;
   const loopRef = useRef(loop);
@@ -74,6 +84,8 @@ export function useIdleAwareLoop(
   restartRef.current = restartSec ?? null;
   const modeRef = useRef<IdleMode>(whenIdle);
   modeRef.current = whenIdle;
+  const clockLabelRef = useRef('');
+  clockLabelRef.current = leanBack ? ' (hour clock)' : '';
   const stateRef = useRef(initialIdleLoopState());
 
   const run = useCallback((p: VideoPlayer, cmd: IdleCmd) => {
@@ -101,7 +113,7 @@ export function useIdleAwareLoop(
         const before = stateRef.current;
         stateRef.current = reachedEnd(before, { idle: idleRef.current, loop: loopRef.current });
         if (__DEV__ && stateRef.current !== before) {
-          narrate(`opened video ended while idle — stopped at ${at(player)}, not repeating`);
+          narrate(`opened video ended while idle — stopped at ${at(player)}, not repeating${clockLabelRef.current}`);
         }
       }),
       player.addListener('playingChange', (e) => {
@@ -141,7 +153,7 @@ export function useIdleAwareLoop(
       if (__DEV__ && playing) {
         narrate(cmd.kind === 'pause'
           ? `preview ${was ? 'arrived playing while idle — paused' : 'paused'} at ${at(p)}`
-          : `opened video finishing its pass at ${at(p)} — will not repeat`);
+          : `opened video finishing its pass at ${at(p)} — will not repeat${clockLabelRef.current}`);
       }
       run(p, cmd);
       if (__DEV__ && mode === 'pause') {
@@ -170,7 +182,7 @@ export function useIdleAwareLoop(
 
   const markEnded = useCallback(() => {
     stateRef.current = manualEnd(stateRef.current);
-    if (__DEV__) narrate('opened video hit its trim end while idle — stopped, not repeating');
+    if (__DEV__) narrate(`opened video hit its trim end while idle — stopped, not repeating${clockLabelRef.current}`);
   }, []);
 
   return { idleRef, markEnded };
