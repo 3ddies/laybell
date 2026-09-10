@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 // memory+disk cache — grid thumbnails paint instantly on revisit instead of
 // re-decoding multi-MP originals mid-scroll.
 import { Image as ExpoImage } from 'expo-image';
-import GridVideo from './GridVideo';
+import PreviewStills from './PreviewStills';
 import { feedDragEnd, feedDragStart, settleFeedChrome, trackFeedScroll } from '../lib/feedChrome';
 import { useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
@@ -22,7 +22,7 @@ import { usePostOptions } from '../contexts/PostOptionsContext';
 import { isSwipeTap } from '../contexts/PagerContext';
 import { isAudioPost } from '../lib/genres';
 import { isHorizontalVideo } from '../lib/tv';
-import { trackVideoProgress } from '../lib/viewTracker';
+import { cfStreamThumbnail } from '../lib/cast';
 import ThumbStat from './ThumbStat';
 import VideoThumb from './VideoThumb';
 import { isSlideshow, slideshowThumb } from '../lib/slideshow';
@@ -31,6 +31,8 @@ type GridPost = {
   id: string; type: string; media_url: string; caption: string;
   thumbnail_url?: string | null; aspect_ratio?: string | null; cover_url?: string | null;
   slides?: any; // slideshow media list (drives the still cover via slideshowThumb)
+  // Drive which moments a moving-stills preview shows (components/PreviewStills).
+  duration_seconds?: number | null; trim_start?: number | null; trim_end?: number | null;
   stream_count?: number; view_count?: number; user_id?: string;
   profiles?: { username: string; display_name: string } | null;
 };
@@ -48,8 +50,8 @@ const BANNER_H = Math.round(((COL_W * 2 + GAP) * 9) / 16);
 const COL3_W = (Dimensions.get('window').width - H_PADDING * 2 - GAP * 2) / 3; // genre 3-up grid
 const ROW_H = COL_W / 3;            // a song row is 1/3 of a picture tile
 const MUSIC_HEADER_H = 30;
-// Never autoplay more than this many video previews at once on the grid — only
-// the ones nearest the viewport center play, so previews never clump on screen.
+// Never move more than this many previews at once on the grid — only the ones
+// nearest the viewport center move, so motion never clumps on screen.
 const MAX_CONCURRENT_VIDEOS = 2;
 
 // Layered black outline for the yellow header word — RN has no text stroke, so we
@@ -191,19 +193,19 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     router.push({ pathname, params: { id: p.id, post: JSON.stringify(p), ...(src ? { src } : {}) } });
   };
 
-  // Videos that currently overlap the viewport (these play). Playback runs on
-  // POOLED players (lib/feedVideoPool explorePool via GridVideo) — scrolling
-  // away releases the player back to the pool (pause-only), scrolling back
-  // re-acquires; the thumbnail always sits underneath.
+  // Video tiles that currently overlap the viewport; the nearest of them move.
+  // Moving stills, not video (components/PreviewStills) — the poster always sits
+  // underneath.
   const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
   // Laybell-TV banner live-loop gate: plays whenever the banner is within a
   // screen of the viewport (pre-rolled, so it's ALWAYS moving when seen).
   const [bannerLive, setBannerLive] = useState(false);
-  // Previews play only while THIS screen is the one on top. Opening a video from
-  // the grid pushes the reel viewer over it, and nothing stopped these: the
-  // on-device test caught both previews — the 11.8-minute post among them —
-  // still streaming, muted and unseen, behind the reel it had opened. The same
-  // gate stops them when the tab itself is swiped away.
+  // Previews move only while THIS screen is the one on top. When they were video,
+  // opening a post pushed the reel viewer over the grid and nothing stopped them:
+  // the on-device test caught both previews — the 11.8-minute post among them —
+  // still streaming, muted and unseen, behind the reel they had opened. Stills
+  // cost nothing on the bill, but hidden motion is still wasted work, and the same
+  // gate covers the tab being swiped away.
   const isFocused = useIsFocused();
   const bannerPos = useRef({ y: 0, h: 0 });
   const scrollY = useRef(0);
@@ -238,8 +240,8 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       if (prev.size === next.size && [...next].every(id => prev.has(id))) return prev;
       return next;
     });
-    // Banner live-loop: pre-roll a full screen out so the preview is already
-    // playing by the time it scrolls into view.
+    // Banner: warm up a full screen out so the preview is already moving by the
+    // time it scrolls into view.
     const bp = bannerPos.current;
     const liveNow = bp.h > 0 && bp.y < bottom + SCREEN_H && bp.y + bp.h > top - SCREEN_H;
     setBannerLive(prev => (prev === liveNow ? prev : liveNow));
@@ -476,9 +478,10 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           activeOpacity={0.9}
           onPress={(e: any) => openMedia(p, e)}
         >
-          {/* VideoThumb generates a frame when thumbnail_url is missing, so still
-              (non-autoplaying) videos always show a preview — not a placeholder. */}
-          <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.mediaImage} />
+          {/* Still tile. A Stream post with no stored thumbnail gets Cloudflare's
+              poster frame: VideoThumb's own fallback grabs a frame on-device,
+              which cannot seek HLS. */}
+          <VideoThumb thumbnailUrl={p.thumbnail_url || cfStreamThumbnail(p.media_url)} mediaUrl={p.media_url} style={styles.mediaImage} />
           <View style={styles.playBadge}><Ionicons name="play" size={12} color="#fff" /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
@@ -497,16 +500,17 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           onPress={(e: any) => openMedia(p, e)}
           onLayout={e => { videoPos.current[p.id] = { y: e.nativeEvent.layout.y, h: cell.height }; recomputeActive(); }}
         >
-          {/* POOLED preview (explorePool): no player creation at scroll time,
-              thumbnail underneath, no black flash. Muted grid autoplay counts
-              toward views — the server enforces the fairness caps. */}
-          <GridVideo
-            id={p.id}
+          {/* Moving stills, not video: frames cost nothing on the Cloudflare bill,
+              so browsing Explore no longer does. No watch time, so previews no
+              longer count as views. See components/PreviewStills. */}
+          <PreviewStills
             uri={p.media_url}
             thumbnailUrl={p.thumbnail_url}
+            durationSec={p.duration_seconds}
+            trimStartSec={p.trim_start}
+            trimEndSec={p.trim_end}
             play={playing}
             style={styles.mediaImage}
-            onProgress={(pos, dur) => trackVideoProgress(p.id, pos, dur)}
           />
           <View style={styles.playBadge}><Ionicons name="play" size={12} color="#fff" /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
@@ -656,15 +660,17 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       onLayout={e => { bannerPos.current = { y: e.nativeEvent.layout.y, h: BANNER_H }; recomputeActive(); }}
     >
       <TouchableOpacity style={styles.tvBanner} activeOpacity={0.9} onPress={(e: any) => openMedia(p, e)}>
-        {/* ALWAYS a live loop (owner spec): pooled preview that pre-rolls a
-            full screen before entering the viewport, thumbnail underneath. */}
-        <GridVideo
-          id={p.id}
+        {/* ALWAYS moving (owner spec) — as moving stills since 2026-09-10, like
+            every Explore preview. It warms up a full screen before scrolling into
+            view, so it is already moving when it arrives. */}
+        <PreviewStills
           uri={p.media_url}
           thumbnailUrl={p.thumbnail_url}
+          durationSec={p.duration_seconds}
+          trimStartSec={p.trim_start}
+          trimEndSec={p.trim_end}
           play={isFocused && bannerLive}
           style={styles.mediaImage}
-          onProgress={(pos, dur) => trackVideoProgress(p.id, pos, dur)}
         />
         <View style={styles.tvTag}><Ionicons name="tv" size={13} color="#fff" /><Text style={styles.tvTagText}>Laybell TV</Text></View>
         <View style={styles.playBadge}><Ionicons name="play" size={14} color="#fff" /></View>
