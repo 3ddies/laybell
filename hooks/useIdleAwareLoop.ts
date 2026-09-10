@@ -33,6 +33,18 @@ export type { IdleMode } from '../lib/idleLoopCore';
 // Callers with a MANUAL loop (trimEnd seeking back) read `idleRef` at the loop
 // point, pause instead of seeking, and call `markEnded()`. Callers with a
 // self-heal must stand down while `idleRef.current` is true.
+
+// Dev builds narrate every decision with the playhead, so an on-device test reads
+// as a log — "paused at 41.2s … resumed at 41.2s" — rather than a judgement call
+// about whether a muted tile moved. Two tests came back ambiguous without it.
+function at(p: VideoPlayer): string {
+  try { return `${p.currentTime.toFixed(1)}s of ${Math.round(p.duration)}s`; } catch { return '(released)'; }
+}
+function narrate(text: string): void {
+  // eslint-disable-next-line no-console
+  console.log(`[idle] ${text}`);
+}
+
 export function useIdleAwareLoop(
   player: VideoPlayer | null,
   { loop, shouldPlay, restartSec, whenIdle = 'finishPass' }: {
@@ -78,40 +90,80 @@ export function useIdleAwareLoop(
     if (!player) return;
     const subs = [
       player.addListener('playToEnd', () => {
-        stateRef.current = reachedEnd(stateRef.current, { idle: idleRef.current, loop: loopRef.current });
+        const before = stateRef.current;
+        stateRef.current = reachedEnd(before, { idle: idleRef.current, loop: loopRef.current });
+        if (__DEV__ && stateRef.current !== before) {
+          narrate(`opened video ended while idle — stopped at ${at(player)}, not repeating`);
+        }
       }),
       player.addListener('playingChange', (e) => {
         const [next, cmd] = playingChanged(stateRef.current, {
           isPlaying: e.isPlaying, idle: idleRef.current, mode: modeRef.current,
         });
         stateRef.current = next;
+        if (__DEV__ && cmd.kind === 'pause') {
+          narrate(`preview started playing while idle — paused again at ${at(player)}`);
+        }
         run(player, cmd);
       }),
     ];
     return () => subs.forEach((s) => s.remove());
   }, [player, run]);
 
+  // Idle edges — and a player that ARRIVES while already idle: a pooled player
+  // handed to this surface, a banner that swapped posts. Whoever handed it over
+  // may have called play() before the playingChange listener above was attached,
+  // so that event is gone. The player's state is not, so read it.
   const wasIdleRef = useRef(idle);
+  const lastPlayerRef = useRef<VideoPlayer | null>(null);
   useEffect(() => {
     const was = wasIdleRef.current;
     wasIdleRef.current = idle;
-    if (!player || idle === was) return;
-    if (idle) {
+    const arrived = player !== lastPlayerRef.current;
+    lastPlayerRef.current = player;
+    let tripwire: ReturnType<typeof setInterval> | null = null;
+
+    if (player && idle && (!was || arrived)) {
+      const p = player;
+      const mode = modeRef.current;
       let playing = false;
-      try { playing = player.playing; } catch { /* released */ }
-      const [next, cmd] = wentIdle(stateRef.current, { mode: modeRef.current, playing });
+      try { playing = p.playing; } catch { /* released */ }
+      const [next, cmd] = wentIdle(stateRef.current, { mode, playing });
       stateRef.current = next;
-      run(player, cmd);
-    } else {
+      if (__DEV__ && playing) {
+        narrate(cmd.kind === 'pause'
+          ? `preview ${was ? 'arrived playing while idle — paused' : 'paused'} at ${at(p)}`
+          : `opened video finishing its pass at ${at(p)} — will not repeat`);
+      }
+      run(p, cmd);
+      if (__DEV__ && mode === 'pause') {
+        // Dev-only tripwire. Nothing should be able to start a preview while idle
+        // without the listener above catching it; if this ever prints, something can.
+        tripwire = setInterval(() => {
+          let still = false;
+          try { still = p.playing; } catch { /* released */ }
+          if (still) narrate(`⚠ preview STILL PLAYING while idle at ${at(p)}`);
+        }, 10_000);
+      }
+    } else if (player && !idle && was) {
       const [next, cmd] = cameBack(stateRef.current, {
         shouldPlay: shouldPlayRef.current, restartSec: restartRef.current,
       });
       stateRef.current = next;
+      if (__DEV__) {
+        if (cmd.kind === 'play') narrate(`preview resumed at ${at(player)}`);
+        else if (cmd.kind === 'restart') narrate(`opened video restarting from ${cmd.atSec.toFixed(1)}s`);
+      }
       run(player, cmd);
     }
+
+    return () => { if (tripwire) clearInterval(tripwire); };
   }, [idle, player, run]);
 
-  const markEnded = useCallback(() => { stateRef.current = manualEnd(stateRef.current); }, []);
+  const markEnded = useCallback(() => {
+    stateRef.current = manualEnd(stateRef.current);
+    if (__DEV__) narrate('opened video hit its trim end while idle — stopped, not repeating');
+  }, []);
 
   return { idleRef, markEnded };
 }
