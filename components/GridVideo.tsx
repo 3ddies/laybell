@@ -26,7 +26,7 @@ const GridVideo = memo(function GridVideo({ id, uri, thumbnailUrl, play, style, 
   const [ready, setReady] = useState(false);
   const playRef = useRef(play);
   playRef.current = play;
-  // Owns loop + keep-awake, and PAUSES the moment nobody is here — see
+  // Owns loop, and PAUSES the moment nobody is here — see
   // hooks/useIdleAwareLoop. Explore tiles and the "ALWAYS moving" TV banner are
   // previews nobody opened, and this is the surface the on-device test caught
   // still streaming a multi-minute video after the clock went idle. idleRef

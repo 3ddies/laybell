@@ -12,8 +12,8 @@ export type { IdleMode } from '../lib/idleLoopCore';
 // 8,075-minute post that made this necessary, and lib/idleLoopCore.ts for the
 // rules, which are pure and tested.
 //
-// The ONE writer of `player.loop` and `player.keepScreenOnWhilePlaying` for the
-// surface that calls it. Every looping or autoplaying video goes through here.
+// The ONE writer of `player.loop` for the surface that calls it. Every looping or
+// autoplaying video goes through here.
 //
 // `whenIdle` is the surface declaring what it is:
 //   'pause'       an ambient preview nobody asked to watch — paused the moment
@@ -27,8 +27,17 @@ export type { IdleMode } from '../lib/idleLoopCore';
 //
 // Both platforms read native `loop` only at the END of a pass (iOS in
 // onPlayedToEnd, Android via REPEAT_MODE_ONE), which is what makes 'finishPass'
-// gentle. Keep-awake is released whenever idle, so the phone can lock, the app
-// background, and expo-video's own background pause take over.
+// gentle.
+//
+// Keep-awake is deliberately left alone. A playing video holds the screen on
+// (expo-video's default), and that is right for whoever is watching it. By the
+// time the room counts as idle, the phone's own screen timeout has usually run
+// out already — an iPhone's longest, short of Never, is 5 minutes — so releasing
+// keep-awake here locks the screen almost at once: a live stream or a long post
+// cut off mid-watch, the one thing 'finishPass' promises not to do. The first
+// version did exactly that. It is not needed either: a paused preview and a video
+// that finished its pass are not playing, so neither holds the screen, and the
+// phone locks on its own.
 //
 // Callers with a MANUAL loop (trimEnd seeking back) read `idleRef` at the loop
 // point, pause instead of seeking, and call `markEnded()`. Callers with a
@@ -82,7 +91,6 @@ export function useIdleAwareLoop(
   useEffect(() => {
     if (!player) return;
     try { player.loop = nativeLoop(loop, idle); } catch { /* released */ }
-    try { player.keepScreenOnWhilePlaying = !idle; } catch { /* released */ }
   }, [player, loop, idle]);
 
   useEffect(() => {

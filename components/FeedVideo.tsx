@@ -65,7 +65,7 @@ const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, onProgress }: 
   const shouldPlay = play && !suspended;
   const shouldPlayRef = useRef(shouldPlay);
   shouldPlayRef.current = shouldPlay;
-  // Owns loop + keep-awake, and PAUSES the moment nobody is here. Feed autoplay is
+  // Owns loop, and PAUSES the moment nobody is here. Feed autoplay is
   // a preview nobody opened, and letting it "finish its pass" meant minutes more
   // streaming for a multi-minute video — the on-device Explore test proved that.
   // A touch resumes from the same spot. idleRef also stands down the self-heal

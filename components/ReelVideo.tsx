@@ -47,7 +47,7 @@ const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
   const shouldPlay = play && !suspended;
   const playRef = useRef(shouldPlay);
   playRef.current = shouldPlay;
-  // Owns loop + keep-awake — see hooks/useIdleAwareLoop. Stopping the loop also
+  // Owns loop — see hooks/useIdleAwareLoop. Stopping the loop also
   // ends the reels autoplay chain: the pager advances only on a WRAP, and a clip
   // that finishes without looping never wraps.
   const { idleRef, markEnded } = useIdleAwareLoop(player, { loop, shouldPlay, restartSec: trimStartSec ?? null });

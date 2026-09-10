@@ -164,9 +164,9 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
     seek: (sec: number) => { try { player.currentTime = Math.max(0, sec); } catch {} },
   }), [player]);
 
-  // Loop and keep-awake are OWNED by useIdleAwareLoop, not synced here. A looping
-  // video holds the screen awake, so a phone left on one never locks, never
-  // backgrounds, and streams the clip forever — see hooks/useIdleAwareLoop.
+  // Loop is OWNED by useIdleAwareLoop, not synced here. A looping video holds the
+  // screen awake, so a phone left on one never locks, never backgrounds, and
+  // streams the clip forever — see hooks/useIdleAwareLoop.
   const { idleRef, markEnded } = useIdleAwareLoop(player, { loop, shouldPlay, restartSec: trimStartSec ?? null, whenIdle: idleBehavior });
 
   // Keep mutable player props in sync with React props.
