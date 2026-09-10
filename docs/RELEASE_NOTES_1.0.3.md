@@ -60,17 +60,24 @@ billing. Shipping this soon is the mitigation.
 - [x] tsc clean; iOS and Android bundles export.
 
 **Still to verify ON A DEVICE — none of this has run on hardware yet:**
-- [ ] Open a looping video post and leave the phone untouched. After 5 minutes
-      the console prints `[presence] IDLE`; the clip finishes its current pass and
-      STOPS, and the screen is then allowed to auto-lock. Touch → `[presence] back`
-      and it resumes. Do the same on the home feed and on a reel.
+- [ ] Open a looping video and leave the phone untouched. **Dev builds use 1
+      minute** (production 5) — the console announces this at startup with
+      `[presence] dev build`. After the minute it prints `[presence] IDLE`; the
+      clip finishes its current pass and STOPS, and the screen may auto-lock.
+      Touch → `[presence] back` and it resumes. Check Explore, the home feed, a
+      post and a reel.
+      *First attempt, 2026-09-10 on Explore: "it still loops", and the log held NO
+      `[presence]` line at all — the clock never went idle, so the stop logic never
+      ran. Undetermined whether the wait was under 5 minutes or something reset
+      the clock; the dev logging above now reports any reset after a quiet stretch.*
 - [ ] A touch inside the **comments sheet over a reel** counts as presence. Touches
       inside RN `Modal`s are expected to bubble to the root observer, but that is
       unproven on device; if they don't, add `markInteraction` to CommentsSheet.
 - [ ] A long video is **not** cut off mid-play when the 5 minutes elapse — it
       finishes, then stops.
 - [ ] AirPlay "Still watching?" appears and Keep watching resumes the right item.
-      60 minutes is a long wait: temporarily lower `TV_IDLE_MS` in a dev build.
+      Dev builds ask after **2 minutes** untouched (production: 60), so this can be
+      checked without an hour's wait.
 - [ ] Watch uid `7bb324123566a2c228e9635d15915a6d` in Stream after release. It is a
       30-day rolling figure, so it will not fall at once — it should stop climbing
       faster than views × 11.8 once users are on 1.0.3.
