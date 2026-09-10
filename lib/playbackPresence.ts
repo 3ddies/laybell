@@ -13,12 +13,13 @@ import { createPresence } from './presenceCore';
 //     return would play one pass and stop.
 
 /**
- * Untouched for this long, looping video finishes its current pass and stops.
+ * Untouched for this long, the room counts as empty. Previews pause on the spot;
+ * a video somebody opened finishes what is playing and does not repeat — see
+ * lib/idleLoopCore.ts for why those two differ.
  *
  * Five minutes in production: comfortably longer than anyone watches the same
  * short clip repeat without so much as a scroll, and short enough that a phone
- * left on a loop costs one pass plus five minutes instead of all night. Never
- * cuts a first play short — only the NEXT repeat is withheld.
+ * left on a video costs minutes instead of all night.
  *
  * ONE MINUTE IN DEV BUILDS, so the behaviour can be checked on a phone without a
  * five-minute wait per attempt. The first on-device test came back "it still
@@ -79,7 +80,9 @@ if (__DEV__) {
   console.log(`[presence] dev build — looping video stops after ${LOOP_IDLE_MS / 1000}s untouched (5 min in production)`);
   presence.subscribe(() => {
     // eslint-disable-next-line no-console
-    console.log(`[presence] ${presence.isIdle() ? 'IDLE — looping video will stop after its current pass' : 'back — looping resumes'}`);
+    console.log(`[presence] ${presence.isIdle()
+      ? 'IDLE — previews pause now; opened videos finish what is playing, then stop'
+      : 'back — paused previews resume'}`);
   });
 }
 

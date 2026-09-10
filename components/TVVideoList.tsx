@@ -318,6 +318,8 @@ function TVAdCard({ ad, active, styles, colors, t, uid, onPress }: {
             active={active}
             loop
             muted
+            // An inline autoplaying ad tile — ambient, so it pauses on idle.
+            idleBehavior="pause"
             poster={ad.thumbnail_url ?? undefined}
             posterContentFit="cover"
             onProgress={(pos, dur) => { if (dur > 0) progress.setValue(Math.min(1, pos / dur)); }}

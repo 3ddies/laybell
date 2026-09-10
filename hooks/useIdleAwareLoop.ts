@@ -1,36 +1,46 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { VideoPlayer } from 'expo-video';
 import { useLoopIdle } from '../lib/playbackPresence';
+import {
+  cameBack, initialIdleLoopState, manualEnd, nativeLoop, playingChanged, reachedEnd, wentIdle,
+  type IdleCmd, type IdleMode,
+} from '../lib/idleLoopCore';
 
-// Loop while somebody is here; finish the pass and stop when nobody is.
+export type { IdleMode } from '../lib/idleLoopCore';
+
+// What a video does when nobody is here — see lib/presenceCore.ts for the
+// 8,075-minute post that made this necessary, and lib/idleLoopCore.ts for the
+// rules, which are pure and tested.
 //
 // The ONE writer of `player.loop` and `player.keepScreenOnWhilePlaying` for the
-// surface that calls it. Every looping video in the app goes through this —
-// AppVideo, FeedVideo, ReelVideo, GridVideo — because a loop that nobody watches
-// is not a UX detail on this project, it is a Cloudflare bill: see
-// lib/presenceCore.ts for the 8,075-minute post that made this necessary.
+// surface that calls it. Every looping or autoplaying video goes through here.
 //
-// HOW IT STOPS, and why it is gentle about it: when the room goes idle this sets
-// `loop = false` rather than pausing. Both platforms consult `loop` only at the
-// END of a pass — iOS in onPlayedToEnd (`if loop { seek(to: .zero); play() }`),
-// Android through REPEAT_MODE_ONE — so the clip in progress always finishes and
-// only the next repeat is withheld. A long video is never cut off mid-watch.
-// Keep-awake is released at the same moment, so even if something restarts the
-// player the phone can still lock, background, and let expo-video pause it.
+// `whenIdle` is the surface declaring what it is:
+//   'pause'       an ambient preview nobody asked to watch — paused the moment
+//                 the room goes idle, resumed from the same spot on return;
+//   'finishPass'  (default) a video somebody opened — the current pass finishes,
+//                 the next repeat is withheld, nobody is cut off mid-watch.
 //
-// HOW IT RESUMES: the first touch after an idle stop restarts a clip that ended
-// while nobody was here, from `restartSec` (a trimmed clip's start), provided
-// the surface still wants to play.
+// The default is 'finishPass' on purpose. A surface that forgets to say still
+// gets a bounded stop, and the mistake costs a few minutes of delivery rather
+// than interrupting somebody watching a film. Previews must opt in to 'pause'.
 //
-// Callers with a MANUAL loop (trimEnd seeking back to trimStart in timeUpdate)
-// read `idleRef` at the loop point and pause instead of seeking, then call
-// `markEnded()` so the resume path knows to restart them. Callers with a
-// self-heal ("resume if it stopped while it should be playing") must stand down
-// while `idleRef.current` is true — or the heal restarts the very stop this
-// hook exists to make.
+// Both platforms read native `loop` only at the END of a pass (iOS in
+// onPlayedToEnd, Android via REPEAT_MODE_ONE), which is what makes 'finishPass'
+// gentle. Keep-awake is released whenever idle, so the phone can lock, the app
+// background, and expo-video's own background pause take over.
+//
+// Callers with a MANUAL loop (trimEnd seeking back) read `idleRef` at the loop
+// point, pause instead of seeking, and call `markEnded()`. Callers with a
+// self-heal must stand down while `idleRef.current` is true.
 export function useIdleAwareLoop(
   player: VideoPlayer | null,
-  { loop, shouldPlay, restartSec }: { loop: boolean; shouldPlay: boolean; restartSec?: number | null },
+  { loop, shouldPlay, restartSec, whenIdle = 'finishPass' }: {
+    loop: boolean;
+    shouldPlay: boolean;
+    restartSec?: number | null;
+    whenIdle?: IdleMode;
+  },
 ) {
   const idle = useLoopIdle();
   const idleRef = useRef(idle);
@@ -41,41 +51,67 @@ export function useIdleAwareLoop(
   shouldPlayRef.current = shouldPlay;
   const restartRef = useRef<number | null>(restartSec ?? null);
   restartRef.current = restartSec ?? null;
-  // A looping pass that reached its end while nobody was here. Only these get
-  // restarted on return — a story or any other deliberately one-shot video that
-  // ends naturally must stay ended.
-  const endedRef = useRef(false);
+  const modeRef = useRef<IdleMode>(whenIdle);
+  modeRef.current = whenIdle;
+  const stateRef = useRef(initialIdleLoopState());
+
+  const run = useCallback((p: VideoPlayer, cmd: IdleCmd) => {
+    switch (cmd.kind) {
+      case 'pause': try { p.pause(); } catch { /* released */ } return;
+      case 'play': try { p.play(); } catch { /* released */ } return;
+      case 'restart':
+        try { p.currentTime = cmd.atSec; } catch { /* released */ }
+        try { p.play(); } catch { /* released */ }
+        return;
+      default: return;
+    }
+  }, []);
 
   useEffect(() => {
     if (!player) return;
-    try { player.loop = loop && !idle; } catch { /* released player */ }
-    try { player.keepScreenOnWhilePlaying = !idle; } catch { /* released player */ }
+    try { player.loop = nativeLoop(loop, idle); } catch { /* released */ }
+    try { player.keepScreenOnWhilePlaying = !idle; } catch { /* released */ }
   }, [player, loop, idle]);
 
   useEffect(() => {
-    endedRef.current = false;
+    stateRef.current = initialIdleLoopState();
     if (!player) return;
-    // iOS also emits playToEnd on every ordinary loop wrap, so this only counts
-    // as a real end when the room was idle (loop already false) and the surface
-    // is one that loops at all.
-    const sub = player.addListener('playToEnd', () => {
-      if (idleRef.current && loopRef.current) endedRef.current = true;
-    });
-    return () => sub.remove();
-  }, [player]);
+    const subs = [
+      player.addListener('playToEnd', () => {
+        stateRef.current = reachedEnd(stateRef.current, { idle: idleRef.current, loop: loopRef.current });
+      }),
+      player.addListener('playingChange', (e) => {
+        const [next, cmd] = playingChanged(stateRef.current, {
+          isPlaying: e.isPlaying, idle: idleRef.current, mode: modeRef.current,
+        });
+        stateRef.current = next;
+        run(player, cmd);
+      }),
+    ];
+    return () => subs.forEach((s) => s.remove());
+  }, [player, run]);
 
   const wasIdleRef = useRef(idle);
   useEffect(() => {
     const was = wasIdleRef.current;
     wasIdleRef.current = idle;
-    if (idle || !was || !player) return;          // only the idle → present edge
-    if (!endedRef.current || !shouldPlayRef.current) return;
-    endedRef.current = false;
-    try { player.currentTime = Math.max(0, restartRef.current ?? 0); } catch {}
-    try { player.play(); } catch {}
-  }, [idle, player]);
+    if (!player || idle === was) return;
+    if (idle) {
+      let playing = false;
+      try { playing = player.playing; } catch { /* released */ }
+      const [next, cmd] = wentIdle(stateRef.current, { mode: modeRef.current, playing });
+      stateRef.current = next;
+      run(player, cmd);
+    } else {
+      const [next, cmd] = cameBack(stateRef.current, {
+        shouldPlay: shouldPlayRef.current, restartSec: restartRef.current,
+      });
+      stateRef.current = next;
+      run(player, cmd);
+    }
+  }, [idle, player, run]);
 
-  const markEnded = useCallback(() => { endedRef.current = true; }, []);
+  const markEnded = useCallback(() => { stateRef.current = manualEnd(stateRef.current); }, []);
 
   return { idleRef, markEnded };
 }

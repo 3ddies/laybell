@@ -5,7 +5,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { useMediaSuspend } from '../contexts/MediaSuspendContext';
 import { useVideoStall } from '../hooks/useVideoStall';
 import VideoStallIndicator from './VideoStallIndicator';
-import { useIdleAwareLoop } from '../hooks/useIdleAwareLoop';
+import { useIdleAwareLoop, type IdleMode } from '../hooks/useIdleAwareLoop';
 
 // Shared <Video> replacement built on expo-video (expo-av is deprecated in SDK 54
 // and removed in 55). Keeps the familiar prop API the call sites already use so
@@ -65,6 +65,14 @@ export type AppVideoProps = {
    *  decorative/editor surfaces (croppers, trimmers, thumbnails) where the user
    *  isn't watching and a spinner would just be noise. */
   showStallIndicator?: boolean;
+  /**
+   * What this surface is when nobody is here — see lib/idleLoopCore.ts.
+   * 'finishPass' (default): a video somebody opened; it finishes what is playing
+   * and does not repeat. 'pause': an ambient preview; it pauses the moment the
+   * room goes idle. Previews MUST pass 'pause' — the default protects viewers,
+   * not the bill.
+   */
+  idleBehavior?: IdleMode;
 };
 
 /** Imperative handle for scrubbing/seeking from a parent (e.g. a progress bar). */
@@ -89,6 +97,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   onReady,
   ignoreSuspend = false,
   showStallIndicator = false,
+  idleBehavior = 'finishPass',
 }: AppVideoProps, ref) {
   const uri = typeof source === 'string' ? source : source.uri;
   // A full-screen takeover (e.g. the GIF maker) can globally pause background
@@ -158,7 +167,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   // Loop and keep-awake are OWNED by useIdleAwareLoop, not synced here. A looping
   // video holds the screen awake, so a phone left on one never locks, never
   // backgrounds, and streams the clip forever — see hooks/useIdleAwareLoop.
-  const { idleRef, markEnded } = useIdleAwareLoop(player, { loop, shouldPlay, restartSec: trimStartSec ?? null });
+  const { idleRef, markEnded } = useIdleAwareLoop(player, { loop, shouldPlay, restartSec: trimStartSec ?? null, whenIdle: idleBehavior });
 
   // Keep mutable player props in sync with React props.
   useEffect(() => { player.muted = muted; }, [muted, player]);

@@ -71,6 +71,9 @@ function SlideVideo({
       active={play}
       showStallIndicator
       loop
+      // A clip inside a gallery, playing on its own — a preview, so it pauses the
+      // moment nobody is here rather than streaming to an empty room.
+      idleBehavior="pause"
       muted={muted}
       poster={poster}
       posterContentFit="contain"

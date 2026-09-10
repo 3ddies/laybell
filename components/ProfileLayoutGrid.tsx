@@ -40,6 +40,9 @@ function LoopVideo({ uri, poster, style }: { uri: string; poster?: string | null
       poster={poster ?? undefined}
       muted
       loop
+      // An ambient hero preview, not something the visitor opened: pause it the
+      // moment nobody is here (see lib/idleLoopCore.ts).
+      idleBehavior="pause"
     />
   );
 }

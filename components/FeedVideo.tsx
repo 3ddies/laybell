@@ -65,11 +65,12 @@ const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, onProgress }: 
   const shouldPlay = play && !suspended;
   const shouldPlayRef = useRef(shouldPlay);
   shouldPlayRef.current = shouldPlay;
-  // Owns loop + keep-awake. When nobody has touched the phone for a while the
-  // centered video finishes its pass and stops, instead of looping all night
-  // with the screen held awake. idleRef also stands down the self-heal below —
-  // otherwise it would restart the very stop this exists to make.
-  const { idleRef } = useIdleAwareLoop(player, { loop: true, shouldPlay });
+  // Owns loop + keep-awake, and PAUSES the moment nobody is here. Feed autoplay is
+  // a preview nobody opened, and letting it "finish its pass" meant minutes more
+  // streaming for a multi-minute video — the on-device Explore test proved that.
+  // A touch resumes from the same spot. idleRef also stands down the self-heal
+  // below — otherwise it would restart the very pause this exists to make.
+  const { idleRef } = useIdleAwareLoop(player, { loop: true, shouldPlay, whenIdle: 'pause' });
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
   const mutedRef = useRef(muted);
