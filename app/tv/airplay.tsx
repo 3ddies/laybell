@@ -23,6 +23,7 @@ import {
 import { EMPTY_PROFILE, buildAffinityProfile } from '../../lib/feedScorer';
 import { postToCastItem, adToCastItem, type CastItem } from '../../lib/cast';
 import { selection } from '../../lib/haptics';
+import { markInteraction, msSinceInteraction, TV_IDLE_MS } from '../../lib/playbackPresence';
 import Scrubber from '../../components/Scrubber';
 
 // ─── Laybell TV over AirPlay (iOS) — a DEDICATED, fully isolated screen ───────
@@ -86,6 +87,11 @@ export default function AirPlayTvScreen() {
   const queueRef = useRef<CastItem[]>([]);
   const indexRef = useRef(0);
   const advancedRef = useRef(false); // guards playToEnd firing once per clip
+  // "Still watching?" — autoplay-next waits here after TV_IDLE_MS with no taps.
+  // pendingAdvanceRef holds the exact advance that was withheld, so Keep
+  // watching resumes precisely where the queue was about to go.
+  const [stillWatching, setStillWatching] = useState(false);
+  const pendingAdvanceRef = useRef<(() => void) | null>(null);
   const [current, setCurrent] = useState<CastItem | null>(null);
   const [nextItem, setNextItem] = useState<CastItem | null>(null);
   const [phase, setPhase] = useState<'loading' | 'empty' | 'error' | 'ready'>('loading');
@@ -277,6 +283,17 @@ export default function AirPlayTvScreen() {
         const from = indexRef.current;
         const advance = () => {
           if (indexRef.current !== from) return; // a manual skip got there first
+          // Nobody has touched the phone in an hour. Autoplay-next is the one
+          // playback path with no loop to stop — it wraps the queue, then
+          // fetches a fresh feed, forever — and the phone is the AirPlay
+          // source, its screen held awake by the playing video. Unguarded, an
+          // unattended session never ends. So it asks instead of advancing.
+          if (msSinceInteraction() >= TV_IDLE_MS) {
+            pendingAdvanceRef.current = advance;
+            try { player.pause(); } catch {}
+            setStillWatching(true);
+            return;
+          }
           const next = indexRef.current + 1;
           if (next < queueRef.current.length) {
             loadIndex(next);
@@ -336,13 +353,18 @@ export default function AirPlayTvScreen() {
     if (!it?.isAd) return false;
     return (pos * 1000) < adSkipAfterMs('tv', it.ad?.skipMode);
   };
+  // Every control marks presence EXPLICITLY. The root observer in _layout
+  // should already see these taps, but this is the one screen where a missed
+  // touch means interrupting somebody mid-film, so it does not rely on that.
   const togglePlay = () => {
+    markInteraction();
     selection();
     try { if ((player as any).playing) player.pause(); else player.play(); } catch {}
   };
-  const goNext = () => { if (adLockedNow()) return; selection(); loadIndex(indexRef.current + 1); };
-  const goPrev = () => { if (adLockedNow()) return; selection(); loadIndex(indexRef.current - 1); };
+  const goNext = () => { markInteraction(); if (adLockedNow()) return; selection(); loadIndex(indexRef.current + 1); };
+  const goPrev = () => { markInteraction(); if (adLockedNow()) return; selection(); loadIndex(indexRef.current - 1); };
   const doSeek = (ratio: number) => {
+    markInteraction();
     if (queueRef.current[indexRef.current]?.isAd) return; // no scrubbing sponsors
     try { player.currentTime = Math.max(0, ratio * dur); } catch {}
   };
@@ -356,6 +378,19 @@ export default function AirPlayTvScreen() {
     });
   };
   const exit = () => { selection(); router.back(); };
+  const keepWatching = () => {
+    markInteraction();
+    selection();
+    setStillWatching(false);
+    const go = pendingAdvanceRef.current;
+    pendingAdvanceRef.current = null;
+    if (go) go(); else { try { player.play(); } catch {} }
+  };
+  const doneWatching = () => {
+    setStillWatching(false);
+    pendingAdvanceRef.current = null;
+    exit();
+  };
 
   // ── Non-iOS guard (AirPlay is Apple-only) ─────────────────────────────────
   if (Platform.OS !== 'ios') {
@@ -531,6 +566,24 @@ export default function AirPlayTvScreen() {
           </Text>
         </>
       )}
+      {stillWatching && (
+        <View style={styles.stillWrap}>
+          <View style={styles.stillCard}>
+            <Ionicons name="tv" size={34} color={colors.primary} />
+            <Text style={styles.stillTitle}>{t('tv.stillWatching.title')}</Text>
+            <Text style={styles.stillBody}>{t('tv.stillWatching.body')}</Text>
+            <TouchableOpacity onPress={keepWatching} activeOpacity={0.9} style={styles.stillPrimary}>
+              <LinearGradient colors={GRADIENTS.primary} style={styles.retryBtn}>
+                <Ionicons name="play" size={16} color="#fff" />
+                <Text style={styles.retryText}>{t('tv.stillWatching.continue')}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={doneWatching} style={styles.ghostBtn}>
+              <Text style={styles.ghostBtnText}>{t('tv.stillWatching.stop')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -606,6 +659,11 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   connectText: { color: '#fff', fontSize: 15, fontWeight: '800' },
   volumeHint: { color: c.textTertiary, fontSize: 12, textAlign: 'center', marginTop: 8 },
 
+  stillWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000000CC', paddingHorizontal: SPACING.lg },
+  stillCard: { alignSelf: 'stretch', alignItems: 'center', gap: SPACING.md, backgroundColor: c.surface, borderRadius: RADIUS.lg, paddingVertical: SPACING.xl, paddingHorizontal: SPACING.lg },
+  stillTitle: { color: c.text, fontSize: 20, fontWeight: '800', textAlign: 'center' },
+  stillBody: { color: c.textSecondary, fontSize: 14.5, lineHeight: 20, textAlign: 'center' },
+  stillPrimary: { marginTop: SPACING.xs },
   retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: RADIUS.full, paddingHorizontal: 22, paddingVertical: 11 },
   retryText: { color: '#fff', fontSize: 14, fontWeight: '800' },
 });

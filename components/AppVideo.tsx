@@ -5,6 +5,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { useMediaSuspend } from '../contexts/MediaSuspendContext';
 import { useVideoStall } from '../hooks/useVideoStall';
 import VideoStallIndicator from './VideoStallIndicator';
+import { useIdleAwareLoop } from '../hooks/useIdleAwareLoop';
 
 // Shared <Video> replacement built on expo-video (expo-av is deprecated in SDK 54
 // and removed in 55). Keeps the familiar prop API the call sites already use so
@@ -154,9 +155,13 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
     seek: (sec: number) => { try { player.currentTime = Math.max(0, sec); } catch {} },
   }), [player]);
 
+  // Loop and keep-awake are OWNED by useIdleAwareLoop, not synced here. A looping
+  // video holds the screen awake, so a phone left on one never locks, never
+  // backgrounds, and streams the clip forever — see hooks/useIdleAwareLoop.
+  const { idleRef, markEnded } = useIdleAwareLoop(player, { loop, shouldPlay, restartSec: trimStartSec ?? null });
+
   // Keep mutable player props in sync with React props.
   useEffect(() => { player.muted = muted; }, [muted, player]);
-  useEffect(() => { player.loop = loop; }, [loop, player]);
   useEffect(() => { player.timeUpdateEventInterval = intervalSec; }, [intervalSec, player]);
   useEffect(() => {
     if (shouldPlay) { try { player.play(); } catch {} }
@@ -234,7 +239,11 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
         // that seek storm is itself a stutter. Re-arm once the playhead returns.
         if (currentTime >= te && !trimSeekingRef.current) {
           trimSeekingRef.current = true;
-          try { player.currentTime = trimStartRef.current ?? 0; } catch {}
+          // Nobody here: stop at the trim end instead of repeating it. This is a
+          // MANUAL loop, so native `loop = false` cannot stop it on its own.
+          // useIdleAwareLoop seeks back to trimStart when someone returns.
+          if (idleRef.current) { try { player.pause(); } catch {} markEnded(); }
+          else { try { player.currentTime = trimStartRef.current ?? 0; } catch {} }
         } else if (trimSeekingRef.current && currentTime < te - 0.3) {
           trimSeekingRef.current = false;
         }

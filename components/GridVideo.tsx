@@ -3,6 +3,7 @@ import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { VideoView, type VideoPlayer } from 'expo-video';
 import { explorePool } from '../lib/feedVideoPool';
 import VideoThumb from './VideoThumb';
+import { useIdleAwareLoop } from '../hooks/useIdleAwareLoop';
 
 // Pooled looping preview surface for grid tiles (Explore masonry + the
 // Laybell-TV banner). Same discipline as the Home feed's FeedVideo:
@@ -25,6 +26,10 @@ const GridVideo = memo(function GridVideo({ id, uri, thumbnailUrl, play, style, 
   const [ready, setReady] = useState(false);
   const playRef = useRef(play);
   playRef.current = play;
+  // Owns loop + keep-awake — see hooks/useIdleAwareLoop. The Laybell-TV banner
+  // rides this component and is "ALWAYS moving when seen", which is exactly the
+  // shape of an unattended loop. idleRef stands the self-heal down while idle.
+  const { idleRef } = useIdleAwareLoop(player, { loop: true, shouldPlay: play });
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
 
@@ -54,6 +59,8 @@ const GridVideo = memo(function GridVideo({ id, uri, thumbnailUrl, play, style, 
     const healPlayback = (p: VideoPlayer, tries = 0) => {
       clearHeal();
       if (cancelled || !playRef.current) return; // intentional pause → leave it
+      // Stopped because nobody is here (see useIdleAwareLoop) — leave it stopped.
+      if (idleRef.current) return;
       if (p.playing) return;                     // already recovered
       try { p.play(); } catch {}
       if (tries < 4) healTimer = setTimeout(() => healPlayback(p, tries + 1), 150);

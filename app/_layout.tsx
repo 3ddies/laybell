@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabase';
 import AuthHandoff, { SuspendMediaWhile } from '../components/AuthHandoff';
+import { markInteraction } from '../lib/playbackPresence';
 import { handleAuthLink } from '../lib/authLink';
 import Toast from '../components/Toast';
 import { initMonitoring, wrapRoot, reportError } from '../lib/monitoring';
@@ -479,7 +480,9 @@ function AppContent() {
             touch-transparent to the app underneath). */}
         {Platform.OS === 'ios' ? (
           <FullWindowOverlay>
-            <GestureHandlerRootView style={{ flex: 1 }} pointerEvents="box-none">
+            {/* Its own presence observer: this is a separate native window, so a
+                touch on the player chrome is not guaranteed to reach the app root's. */}
+            <GestureHandlerRootView style={{ flex: 1 }} pointerEvents="box-none" onTouchStart={markInteraction}>
               {overlays}
             </GestureHandlerRootView>
           </FullWindowOverlay>
@@ -760,7 +763,10 @@ function RootLayout() {
         clean slate. It sits BELOW ThemeProvider so the device theme never reloads,
         and the key is the user id (not the whole session) so a token refresh — same
         id — never triggers a remount. */}
-    <View style={{ flex: 1 }} key={session?.user?.id ?? 'signed-out'}>
+    {/* onTouchStart OBSERVES every touch without joining gesture negotiation —
+        it is not a responder — so it can never steal a swipe or a press. It is
+        how video knows somebody is still here: see lib/playbackPresence. */}
+    <View style={{ flex: 1 }} key={session?.user?.id ?? 'signed-out'} onTouchStart={markInteraction}>
     <MediaSuspendProvider>
     {/* Keeps the feed silent while the sign-in cover is up. It has to be INSIDE
         this provider (and so inside the keyed view), because that is where the

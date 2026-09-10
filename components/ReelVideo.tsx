@@ -5,6 +5,7 @@ import { reelPool } from '../lib/feedVideoPool';
 import { useMediaSuspend } from '../contexts/MediaSuspendContext';
 import { useVideoStall } from '../hooks/useVideoStall';
 import VideoStallIndicator from './VideoStallIndicator';
+import { useIdleAwareLoop } from '../hooks/useIdleAwareLoop';
 
 // Pooled video surface for reel pages (see lib/feedVideoPool). No player is
 // ever CREATED at swipe time — the pool assigns sources via replaceAsync
@@ -46,6 +47,10 @@ const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
   const shouldPlay = play && !suspended;
   const playRef = useRef(shouldPlay);
   playRef.current = shouldPlay;
+  // Owns loop + keep-awake — see hooks/useIdleAwareLoop. Stopping the loop also
+  // ends the reels autoplay chain: the pager advances only on a WRAP, and a clip
+  // that finishes without looping never wraps.
+  const { idleRef, markEnded } = useIdleAwareLoop(player, { loop, shouldPlay, restartSec: trimStartSec ?? null });
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
   const mutedRef = useRef(muted);
@@ -109,7 +114,11 @@ const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
       if (te != null) {
         if (currentTime >= te && !trimSeekingRef.current) {
           trimSeekingRef.current = true;
-          try { acq.player.currentTime = trimStartRef.current ?? 0; } catch {}
+          // Nobody here: stop at the trim end rather than seeking back. A manual
+          // loop, so native `loop = false` alone cannot stop it — and with no
+          // seek there is no wrap, so the pager's autoplay chain stops too.
+          if (idleRef.current) { try { acq.player.pause(); } catch {} markEnded(); }
+          else { try { acq.player.currentTime = trimStartRef.current ?? 0; } catch {} }
         } else if (trimSeekingRef.current && currentTime < te - 0.3) {
           trimSeekingRef.current = false;
         }

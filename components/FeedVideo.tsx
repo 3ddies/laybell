@@ -4,6 +4,7 @@ import { VideoView, type VideoPlayer } from 'expo-video';
 import { acquireFeedPlayer, releaseFeedPlayer } from '../lib/feedVideoPool';
 import { useFeedFocused, useFeedAppActive } from '../lib/feedVideo';
 import { useMediaSuspend } from '../contexts/MediaSuspendContext';
+import { useIdleAwareLoop } from '../hooks/useIdleAwareLoop';
 
 // Pooled video surface for Home-feed post cards (see lib/feedVideoPool — no
 // player is ever CREATED here, so mounting mid-scroll is cheap and safe).
@@ -64,6 +65,11 @@ const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, onProgress }: 
   const shouldPlay = play && !suspended;
   const shouldPlayRef = useRef(shouldPlay);
   shouldPlayRef.current = shouldPlay;
+  // Owns loop + keep-awake. When nobody has touched the phone for a while the
+  // centered video finishes its pass and stops, instead of looping all night
+  // with the screen held awake. idleRef also stands down the self-heal below —
+  // otherwise it would restart the very stop this exists to make.
+  const { idleRef } = useIdleAwareLoop(player, { loop: true, shouldPlay });
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
   const mutedRef = useRef(muted);
@@ -107,6 +113,9 @@ const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, onProgress }: 
     const healPlayback = (p: VideoPlayer, tries = 0) => {
       clearHeal();
       if (cancelled || !shouldPlayRef.current) return; // intentional pause → leave it
+      // Stopped because nobody is here (see useIdleAwareLoop). Healing it would
+      // restart the exact loop that was billing an empty room all night.
+      if (idleRef.current) return;
       if (p.playing) return;                           // already recovered
       try { p.play(); } catch {}
       if (tries < 4) healTimer = setTimeout(() => healPlayback(p, tries + 1), 150);

@@ -437,7 +437,12 @@ export default function PostDetailScreen() {
                 posterContentFit="cover"
                 contentFit="cover"
                 loop={post.trim_end == null}
-                active
+                // FOCUS, not a bare `active`. Hard-coded true, this video kept
+                // playing — looping, and holding the screen awake — while another
+                // screen was pushed on top of the viewer, where nobody can see it.
+                // One 11.8-minute post delivered 8,075 Cloudflare minutes in 30
+                // days against 44 views. The slideshow above already did this.
+                active={isFocused}
                 trimStartSec={post.trim_start}
                 trimEndSec={post.trim_end}
                 onProgress={(pos, dur) => trackVideoProgress(id as string, pos, dur)}
