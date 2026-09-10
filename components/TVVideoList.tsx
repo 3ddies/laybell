@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, ScrollView, Dimensions, RefreshControl, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
@@ -91,6 +92,10 @@ export default function TVVideoList({ posts, featured, films, currentUserId, ref
   // Tapping a sponsored card opens it fullscreen (dismissable) — the user chose
   // to watch, so it's optional (not forced) and the CTA lives inside the viewer.
   const [adViewer, setAdViewer] = useState<TVPost | null>(null);
+  // Inline ad tiles play only while this screen is on top and no ad is open full
+  // screen. Otherwise they keep streaming unseen under a pushed reel — and under
+  // the ad viewer the very same creative plays twice, once muted behind itself.
+  const isFocused = useIsFocused();
 
   // Which sponsored cards are on screen — only those autoplay their video (so a
   // few muted ads play at a time, never every mounted one). Frozen callback +
@@ -262,7 +267,7 @@ export default function TVVideoList({ posts, featured, films, currentUserId, ref
       renderItem={({ item: p }) => {
         // Woven sponsored card — autoplays its video while on screen; tapping opens
         // it fullscreen to watch (optional, dismissable), not the reel viewer.
-        if (p.__ad) return <TVAdCard ad={p} active={visibleAdIds.has(p.id)} styles={styles} colors={colors} t={t} uid={currentUserId ?? null} onPress={() => setAdViewer(p)} />;
+        if (p.__ad) return <TVAdCard ad={p} active={isFocused && !adViewer && visibleAdIds.has(p.id)} styles={styles} colors={colors} t={t} uid={currentUserId ?? null} onPress={() => setAdViewer(p)} />;
         const title = p.caption?.trim() || p.profiles?.display_name || (p.profiles?.username ? `@${p.profiles.username}` : t('tv.title'));
         return (
           <TouchableOpacity

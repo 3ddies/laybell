@@ -29,7 +29,7 @@ Video used to keep playing for as long as a phone was left on it — looping ove
 
 Laybell TV over AirPlay does the same for autoplay: after an hour without a tap, it asks whether you are still watching instead of playing on to an empty room.
 
-A video you open no longer keeps playing underneath another screen you open on top of it.
+Videos also no longer keep playing out of sight behind a screen you open on top of them — including the previews in Explore and the ads on Laybell TV.
 ```
 
 ---
@@ -57,6 +57,9 @@ billing. Shipping this soon is the mitigation.
   is playing** and do not repeat; a touch restarts one that ended. The screen stays
   on while it plays.
 
+And whether anyone is touching or not, **autoplay runs only on the screen that is on
+top** — nothing streams behind a screen opened over it.
+
 **Built and verified in code:**
 - [x] Presence clock, pure and fake-clock tested — 22/22, including a thousand
       touches re-arming the timer at most once and no timer running while idle.
@@ -75,6 +78,11 @@ billing. Shipping this soon is the mitigation.
       the screen almost at once — the phone's own timeout has already run out by
       then — and would have cut off live streams and long posts mid-watch. Paused
       and finished videos don't hold the screen anyway, so the phone still locks.
+- [x] **Covered screens stop their previews.** `ExploreGrid` (Explore tab, Saved,
+      Communities) and `TVVideoList` had no focus gate; both now play only while
+      their screen is focused, and TV ad tiles also pause while the ad viewer is
+      open. Every other autoplay surface already had one (feed, profile grids,
+      post, reel, story, live).
 - [x] Post viewer video gated on focus (it played under pushed screens).
 - [x] AirPlay TV "Still watching?" after 60 minutes untouched, ten locales.
 - [x] tsc clean in app code.
@@ -84,30 +92,42 @@ billing. Shipping this soon is the mitigation.
 logs the playhead — `[idle] preview paused at 106.5s of 181s` … `[idle] preview
 resumed at 106.5s of 181s` — and `⚠ preview STILL PLAYING while idle` appears if
 anything slips past. **Read device results off the Metro log**, not off whether a
-muted tile seemed to move.
+muted tile seemed to move. Fully restart the app first: a hot reload leaves stale
+presence clocks logging.
 
-**Verified on a device (iPhone, dev build):**
-- [x] **Explore previews pause and resume in place** — 2026-09-10, third attempt. Two
-      previews were playing: the 181s clip paused at 106.5s and resumed at 106.5s;
-      the 705s one (the leaking post's length) paused at 106.3s and resumed at
-      106.4s. Earlier, a preview restarted by a hot reload while idle was caught and
-      paused again at 417.7s. *Caveat: the phone was picked up ~9s after the freeze,
-      so a long unattended stretch is not yet exercised.*
-      *Attempt 1: "it still loops", no `[presence]` line — the wait was under the
-      5-minute production threshold; dev builds now use 1 minute.*
-      *Attempt 2: the clock went idle on time, but the rule was "finish the current
-      pass" for everything — and a multi-minute preview's current pass is the whole
-      video. It kept streaming with nobody watching. Previews now pause.*
+**Dev builds also hold the screen awake by themselves** — `expo/src/launch/withDevTools`
+calls `useKeepAwake` under `__DEV__` — so whether the phone auto-locks once a video
+stops can only be seen on a production (TestFlight) build.
+
+**Verified on a device (iPhone, dev build, 2026-09-10):**
+- [x] **Explore previews pause and resume in place.** Two previews were playing: the
+      181s clip paused at 106.5s and resumed at 106.5s; the 705s one (the leaking
+      post's length) paused at 106.3s and resumed at 106.4s.
+- [x] **…and stay paused over a long stretch.** Left untouched about 3 minutes: paused
+      at 174.7s / 174.5s, resumed at exactly 174.7s / 174.5s, and the tripwire (it
+      checks every 10s) never fired.
+- [x] **A video you open finishes its pass, then stops.** A 181s reel: at the idle
+      mark `finishing its pass at 58.8s`, then played on to `stopped at 180.9s` — no
+      repeat, no auto-advance while idle. Unlocking restarted it, which the pager
+      read as a wrap and moved to the next reel: what would have happened at the end
+      with someone there.
+- [x] **That same log exposed the covered-screen leak.** At the idle edge where the
+      reel stood at 58.8s, both Explore previews paused at 91.5s and 92.1s — about
+      33 seconds ahead of the reel they had opened. They had been playing behind it
+      the whole time. Fixed above; not yet re-tested.
+      *Explore attempt history: attempt 1, "it still loops" with no `[presence]`
+      line — under the 5-minute production threshold, so dev builds now use 1
+      minute. Attempt 2, the clock went idle on time, but the rule was "finish the
+      current pass" for everything, and a multi-minute preview's current pass is the
+      whole video. Previews now pause.*
 
 **Still to verify on a device:**
-- [ ] **Leave Explore for 10+ minutes.** No `⚠ STILL PLAYING` lines; the screen
-      locks by itself; unlocking resumes each preview at the frame it paused on.
-- [ ] **Open a post with a ~3-minute video and don't touch it.** At the idle mark
-      the screen stays ON and the log says `opened video finishing its pass`; at the
-      end, `ended while idle — stopped`, no restart, and the phone then locks. A
-      touch restarts it.
+- [ ] **The covered-screen fix.** Full restart → Explore → tap a video → don't touch.
+      At the idle mark the log should show only `opened video finishing its pass` —
+      **no `preview paused` lines** (there were two before the fix).
+- [ ] **On the TestFlight build:** a video you opened keeps the screen on to its end,
+      then the phone auto-locks; paused previews let it lock too.
 - [ ] Home feed autoplay pauses and resumes in place.
-- [ ] A reel finishes and does not auto-advance while idle.
 - [ ] A touch inside the **comments sheet over a reel** counts as presence. Touches
       inside RN `Modal`s are expected to bubble to the root observer, but that is
       unproven on device; if they don't, add `markInteraction` to CommentsSheet.

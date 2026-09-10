@@ -9,6 +9,7 @@ import { Image as ExpoImage } from 'expo-image';
 import GridVideo from './GridVideo';
 import { feedDragEnd, feedDragStart, settleFeedChrome, trackFeedScroll } from '../lib/feedChrome';
 import { useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
@@ -198,6 +199,12 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
   // Laybell-TV banner live-loop gate: plays whenever the banner is within a
   // screen of the viewport (pre-rolled, so it's ALWAYS moving when seen).
   const [bannerLive, setBannerLive] = useState(false);
+  // Previews play only while THIS screen is the one on top. Opening a video from
+  // the grid pushes the reel viewer over it, and nothing stopped these: the
+  // on-device test caught both previews — the 11.8-minute post among them —
+  // still streaming, muted and unseen, behind the reel it had opened. The same
+  // gate stops them when the tab itself is swiped away.
+  const isFocused = useIsFocused();
   const bannerPos = useRef({ y: 0, h: 0 });
   const scrollY = useRef(0);
   const viewportH = useRef(0);
@@ -481,7 +488,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       );
     }
     if (p.type === 'video') {
-      const playing = visibleIds.has(p.id);
+      const playing = isFocused && visibleIds.has(p.id);
       return (
         <TouchableOpacity
           key={cell.key}
@@ -655,7 +662,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           id={p.id}
           uri={p.media_url}
           thumbnailUrl={p.thumbnail_url}
-          play={bannerLive}
+          play={isFocused && bannerLive}
           style={styles.mediaImage}
           onProgress={(pos, dur) => trackVideoProgress(p.id, pos, dur)}
         />
