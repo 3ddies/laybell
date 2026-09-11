@@ -266,18 +266,24 @@ export default function VideoStickerEditor({
           see these touches. Report them directly: an editing session is presence,
           and the clip behind the captions must not stop repeating mid-edit. */}
       <View style={styles.root} onTouchStart={markInteraction}>
+        {/* CONTAIN, so the whole clip is visible while captions are placed. The
+            reel viewer fills the screen with a vertical clip instead, trimming
+            its edges, and the first device test found that crop read as
+            "pretty zoomed in" here. Captions are positioned against the SCREEN
+            in both places, not against the video, so each one still lands on
+            the same spot of the screen it was placed on. */}
         {canPlay ? (
           <AppVideo
             ref={videoRef}
             source={{ uri: playUri! }}
             style={StyleSheet.absoluteFill}
-            contentFit="cover"
+            contentFit="contain"
             active={visible && playing}
             loop
             muted={false}
             ignoreSuspend
             poster={posterUri}
-            posterContentFit="cover"
+            posterContentFit="contain"
             trimStartSec={windowStart > 0 ? windowStart : null}
             trimEndSec={canTime ? windowEnd : null}
             progressIntervalMs={100}
@@ -291,7 +297,7 @@ export default function VideoStickerEditor({
             }}
           />
         ) : posterUri ? (
-          <ExpoImage source={{ uri: posterUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
+          <ExpoImage source={{ uri: posterUri }} style={StyleSheet.absoluteFill} contentFit="contain" />
         ) : (
           <View style={[StyleSheet.absoluteFill, styles.videoGhost]}>
             <Ionicons name="videocam-outline" size={34} color="rgba(255,255,255,0.3)" />
