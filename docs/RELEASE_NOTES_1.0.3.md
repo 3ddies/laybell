@@ -223,15 +223,27 @@ Built on the caption system vertical videos already had (StickerLayer →
       objectionable-text gate (it never did); caption ids are time-stamped (a draft
       restored in a later session could reuse one).
 - [x] New strings in all ten locales; tsc clean; the dev server builds it.
+- [x] **Device fix 1 — camera-roll clips play** (`5652a90`). The first test was a black
+      screen: a camera-roll pick is a file:// URL into the Photos store that the player opens
+      but cannot read (`lib/upload.ts` ensureLocalFile documents it). The editor plays
+      ensureLocalFile's copy — the same file the upload makes, already there from the prewarm
+      (10 ms). ensureLocalFile now allows one copy per destination at a time; AppVideo gained
+      `retryLoadErrors` / `onLoadError`.
+- [x] **Device fix 2 — the whole clip shows** (`926459c`). "Pretty zoomed in": the editor
+      filled the screen the way reels do. It now fits the clip (contain); captions are
+      screen-relative everywhere, so they still land on the same spot.
 
-**Still to verify on a device:**
-- [ ] Open the caption editor on a vertical clip: it plays; the filmstrip fills;
-      scrubbing moves the frame; play/pause works.
-- [ ] Add a caption mid-clip: it starts at the playhead; dragging its bar's ends moves
-      the video to that frame; it disappears outside its window.
-- [ ] Add an emoji from the tray; move, pinch, drop on the trash.
-- [ ] Post it (private is fine), then check the feed, the reel viewer and the post
-      viewer: captions come and go on cue.
+**Verified on a device (iPhone, dev build, 2026-09-10):**
+- [x] The editor plays the picked clip, whole and uncropped, after the two fixes above.
+- [x] The controls work — in the owner's words, "the elements work pretty well", and the
+      fitted clip "looks better now".
+
+**Still to verify on a device — pick up here:**
+- [ ] Timing in detail: a caption added mid-clip starts at the playhead; dragging its bar's
+      ends moves the video to that frame; it disappears outside its window.
+- [ ] Emoji from the tray; move, pinch, drop on the trash.
+- [ ] Post it, then check the feed, the reel viewer and the post viewer: captions come and go
+      on cue. It is a real post — delete it afterwards if it was only a test.
 - [ ] A long clip trimmed to a window: timing still lines up after upload.
 
 **Not in part 1:** horizontal clips (their band captions are unchanged), stories,

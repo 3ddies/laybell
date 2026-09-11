@@ -18,7 +18,56 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ---
 
-## 0.0 ✅ THE CURRENT STATE — updated 2026-08-31 (end of session)
+## 0.0 ✅ THE CURRENT STATE — updated 2026-09-10 (end of session)
+
+**One-line status: 1.0.2 is live on the App Store; Android 1.0.2 is not submitted; 1.0.3 is in development on `dev`.**
+
+| Version | iOS | Android |
+|---|---|---|
+| 1.0.2 (build 9) | ✅ approved and auto-released 2026-09-06, tag `v1.0.2-build9` | ⏳ **not submitted** — needs the Play service-account key (`docs/PLAY_SERVICE_ACCOUNT.md`); `eas.json` sends it as a draft release |
+| 1.0.1 (build 7) | ✅ released 2026-09-01, tag `v1.0.1-build7` | submitted 2026-09-01; publishes on approval |
+
+### 🔧 1.0.3 — in development. Full status: `docs/RELEASE_NOTES_1.0.3.md`
+
+**Why this release is early:** unattended looping video billed Cloudflare 8,075 minutes on
+one post against 44 views. **1.0.1 and 1.0.2 keep leaking until 1.0.3 ships** — there is no OTA.
+
+Done, all pushed to `dev`:
+- **The unattended-video fix** — presence clocks; previews pause when nobody is touching the
+  phone; opened videos finish and stop; reels auto-scroll and Laybell TV get an hour; a screen
+  covered by another stops its video; keep-awake left on. Verified on device in the dev build.
+- **Explore previews are moving stills**, built from Cloudflare thumbnails, which are unbilled.
+  The owner saw them and kept them.
+- **Video editor, part 1** — timed text and emoji captions on vertical videos, drawn by Laybell
+  rather than burned into the file. `supabase/sql/post_timed_captions.sql` is **APPLIED** to
+  production. The editor itself is verified on device.
+
+**Pick up here, in order:**
+1. Finish the editor's device test: post a vertical video with a timed caption and an emoji,
+   check the feed, the reel viewer and the post viewer, then a long clip trimmed to a window.
+2. The remaining 1.0.3 device checks in the release notes — home feed pause/resume, a touch in
+   the comments sheet counting as presence, the AirPlay/Cast hour, auto-lock on TestFlight.
+3. The reliability batch, queued behind the editor: a slow poll for the realtime screens,
+   pruning dead push tokens, and Play's build warnings (16 KB alignment re-check, edge-to-edge,
+   large screens).
+4. Build and submit 1.0.3 to **both** stores — `app.json` to 1.0.3, review notes, and new
+   screenshots if the composer changed visibly.
+
+**Owner-only:**
+- Create the Play service-account key — it blocks every Android submission.
+- Add a Cloudflare budget alert (e.g. $10/month).
+- Fix the Play listing, which still says Laybell TV works by turning the phone sideways.
+- Waiting on Apple's Small Business Program, then reverse the §0.3 fee rates.
+
+**Before ANY build is submitted:** no demo or fabricated money may be live — those are
+withdrawable balances (history below). Server-side changes (`supabase/sql`,
+`supabase/functions`, `web/`) reach the live apps the moment they run; app code reaches users
+only through a build.
+
+---
+
+**⤵️ HISTORY BELOW — kept for the reasoning, not the status. Everything from here to §0.1 was
+written on or before 2026-09-01.**
 
 > ✅ **DEMO MONEY: ALL CLEAR as of 2026-08-31.** Both screenshot props are
 > reversed and verified; production holds no fabricated money.
@@ -56,7 +105,7 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 > money against value that never existed. The $58 version had to be chased down
 > on launch day.
 
-**One-line status: 🎉 1.0.1 IS RELEASED ON THE APP STORE (2026-09-01). Android is still in review.**
+**One-line status as of 2026-09-01 (historical): 🎉 1.0.1 IS RELEASED ON THE APP STORE. Android was still in review.**
 
 ## 🎉 1.0.1 — build `1.0.1 (7)`, commit `2831cec`, tagged `v1.0.1-build7`
 
