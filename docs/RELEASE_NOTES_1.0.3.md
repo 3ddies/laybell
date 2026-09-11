@@ -13,7 +13,9 @@ node scripts/check-release-notes.mjs docs/RELEASE_NOTES_1.0.3.md
 ## Google Play — "What's new" (≤500 chars)
 
 ```
-Video is kinder to your battery and data. Explore previews are now moving stills that use a fraction of the data. Other previews pause once your phone has been put down for a few minutes and carry on when you come back, and a video you opened plays to its end instead of looping with nobody watching. Reels and Laybell TV keep going hands-free for up to an hour.
+New: time your video captions. Add text and emoji to your vertical videos, then choose exactly when each one appears and leaves.
+
+Video is also kinder to your battery and data: Explore previews are now moving stills, previews pause when your phone is put down, and a video you opened plays to its end instead of looping with nobody watching.
 
 Plus fixes and polish throughout.
 ```
@@ -23,6 +25,10 @@ Plus fixes and polish throughout.
 ## App Store — "What's New in This Version" (≤4000 chars)
 
 ```
+CAPTIONS THAT HIT THEIR MOMENT
+
+Add text and emoji to your vertical videos and choose exactly when each one appears and leaves. Your clip plays right in the editor: scrub to the moment, drag the ends of a caption's bar, and watch it land just the way your followers will see it.
+
 VIDEO THAT KNOWS WHEN YOU HAVE STEPPED AWAY
 
 Video used to keep playing for as long as a phone was left on it — looping over and over, holding the screen awake, and using battery and data with nobody watching. Now, once your phone has sat untouched for a few minutes, the previews that play on their own in your feed and on profiles pause right where they are, and carry on from the same spot the moment you touch the screen. A video you opened yourself plays to its end and stops there instead of starting over, so nothing you are actually watching gets cut off partway.
@@ -179,11 +185,68 @@ stops can only be seen on a production (TestFlight) build.
 awake until the broadcast ends — as on other live apps. If that ever shows on the
 bill, reuse the "Still watching?" prompt for live.
 
+## Video editor, part 1 — timed captions and emoji (built 2026-09-10)
+
+**Owner decisions, 2026-09-10:** the editor comes before the reliability batch, and
+the overlays are **drawn by Laybell, not burned into the file** — a video saved to a
+phone or shared outside the app carries none of them.
+
+Built on the caption system vertical videos already had (StickerLayer →
+`posts.captions`, drawn by the feed and reels). What it lacked was WHEN.
+
+**Built and verified in code (commit `dd4678e`):**
+- [x] **Timing** — `lib/stickerTiming.ts`, pure, 32/32 tests including a
+      2,000-caption round trip. Seconds on the published video's clock; an open side
+      means "from the start" / "to the end"; within a quarter second of an edge snaps
+      to it; half a second minimum.
+- [x] **Editor** — `components/VideoStickerEditor.tsx` + `components/StickerTimeline.tsx`.
+      The clip plays behind the captions (it showed a still poster). The timeline
+      scrubs the posted window over a filmstrip; the selected caption's bar sets when
+      it shows, and the video follows the end being dragged. A caption added mid-clip
+      starts at the playhead. Emoji tray (the data model supported emoji; nothing
+      could add one). Only captions on screen at the playhead are shown, so the editor
+      plays back like the app. 20-caption cap. Clips the player cannot open (iOS
+      `ph://`) fall back to the poster with a working timeline.
+- [x] **Publish split** — captions covering the whole clip go to `posts.captions`,
+      which every version draws; timed ones go to **`posts.timed_captions`**. A
+      separate column because 1.0.1/1.0.2 draw `posts.captions` whole: a timed caption
+      stored there would sit on those apps for the entire video over every other one.
+      Older apps show the video without the timed captions instead. A physically cut
+      upload shifts the times back by the trim; the insert retries without the column
+      if PostgREST has not seen it.
+- [x] **`supabase/sql/post_timed_captions.sql` APPLIED to production 2026-09-10** —
+      column is jsonb, shape check present, 0 rows. Additive; live apps never touch it.
+- [x] **Playback** — `components/TimedStickers` + `lib/playbackClock` in the feed, the
+      reel viewer and the post viewer, which never showed captions at all. Re-renders
+      only when a caption enters or leaves.
+- [x] **Adjacent fixes** — a vertical clip's caption text now goes through the
+      objectionable-text gate (it never did); caption ids are time-stamped (a draft
+      restored in a later session could reuse one).
+- [x] New strings in all ten locales; tsc clean; the dev server builds it.
+
+**Still to verify on a device:**
+- [ ] Open the caption editor on a vertical clip: it plays; the filmstrip fills;
+      scrubbing moves the frame; play/pause works.
+- [ ] Add a caption mid-clip: it starts at the playhead; dragging its bar's ends moves
+      the video to that frame; it disappears outside its window.
+- [ ] Add an emoji from the tray; move, pinch, drop on the trash.
+- [ ] Post it (private is fine), then check the feed, the reel viewer and the post
+      viewer: captions come and go on cue.
+- [ ] A long clip trimmed to a window: timing still lines up after upload.
+
+**Not in part 1:** horizontal clips (their band captions are unchanged), stories,
+and anything that re-encodes — speed, voiceover, burned-in export. Those need a new
+native video library and the owner's explicit yes (`docs/VIDEO_EDITOR_PLAN.md`).
+
 ## Owner, not code
 - [ ] **Cloudflare budget alert** (Billing → Billable usage → Create budget alert),
       e.g. $10/month, so the next leak is an email instead of a surprise.
+- [ ] **Play listing** still says Laybell TV works by turning the phone sideways.
 
-## Carried over from 1.0.2
+## Carried over from 1.0.2 — the reliability batch, queued behind the editor
 - [ ] Android 1.0.2 still unsubmitted — needs the Play service-account key
       (`docs/PLAY_SERVICE_ACCOUNT.md`).
 - [ ] Realtime screens still depend on the publication alone — the slow poll is owed.
+- [ ] Prune dead push tokens (Expo `DeviceNotRegistered` receipts are never read).
+- [ ] Play build warnings: re-run the 16 KB ELF alignment check on the AAB,
+      edge-to-edge deprecations, large-screen resizability.
