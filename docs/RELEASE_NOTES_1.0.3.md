@@ -125,8 +125,8 @@ for 1,000 users who each see 50 different previews — and every loop and revisi
 that plays from the phone. It has to be MP4: expo-video "cannot" cache HLS on iOS, so
 looping the existing stream bills every pass. Costs of building it: a clip job per
 post plus a backfill, clip deletion alongside the post, teaching `stream-sweep` that
-clips are not orphans, and bringing a video player back into the grid. Owner's default
-(2026-09-10): keep the stills unless near-free loops are wanted.
+clips are not orphans, and bringing a video player back into the grid. **Owner's
+decision (2026-09-10): keep the stills.**
 
 **Dev builds narrate.** Previews go idle after **1 minute** and lean-back after
 **2 minutes** (production: 5 minutes, 1 hour), announced at startup by
@@ -159,11 +159,10 @@ stops can only be seen on a production (TestFlight) build.
       nothing at the 1-minute mark (the old rule stopped reels there), then
       `LEAN-BACK IDLE` at 2 minutes with the reel at 117.7s (`finishing its pass …
       (hour clock)`), and stopped at 180.9s.
+- [x] **Moving stills** — the owner saw them on device, asked whether previews could
+      loop as video for free, and chose to keep the stills.
 
 **Still to verify on a device:**
-- [ ] **Moving stills look right** — Explore tiles and the Laybell TV banner
-      cross-fade and zoom; a post without a thumbnail shows a real poster; tapping
-      opens the video.
 - [ ] **On the TestFlight build:** a video you opened keeps the screen on to its end,
       then the phone auto-locks.
 - [ ] Home feed autoplay pauses and resumes in place.
