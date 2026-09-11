@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, TextInput, ScrollView,
-  Dimensions, Platform, KeyboardAvoidingView, Pressable, Keyboard,
+  Dimensions, Platform, KeyboardAvoidingView, Pressable, Keyboard, ActivityIndicator,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +16,7 @@ import StickerLayer, {
 import { EDGE_SEC, MIN_SHOW_SEC, resolveWindow, timingForNew, visibleKey } from '../lib/stickerTiming';
 import { getPlaybackPosition, setPlaybackPosition, subscribePlayback } from '../lib/playbackClock';
 import { markInteraction } from '../lib/playbackPresence';
+import { ensureLocalFile, insideAppSandbox } from '../lib/upload';
 
 // Story-style caption editor for VERTICAL reels: the exact sticker mechanism
 // stories use — tap open video to ADD a caption, tap a caption to edit it,
@@ -31,6 +32,14 @@ import { markInteraction } from '../lib/playbackPresence';
 // sets when it appears and leaves (lib/stickerTiming). A caption shows only while
 // the playhead is inside its window, exactly as it will in the app. The overlays
 // stay drawn by Laybell, not burned into the file (owner decision, 2026-09-10).
+//
+// The clip plays from a COPY in the app's own storage. A camera-roll pick is a
+// file:// URL into the Photos store, and iOS gives the app only limited access
+// to it: AVFoundation opens the container but finds no readable track. The first
+// device test of this editor was exactly that — a black screen — and it is why
+// PendingUploads never plays a local file (lib/upload.ts ensureLocalFile has the
+// full story). The copy is the one the upload makes anyway, under the same stable
+// name, so a clip is copied once for both.
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 // Matches captionZone('screen', …) in TopCaption.ts — the reel UI reserve.
@@ -57,7 +66,7 @@ export default function VideoStickerEditor({
 }: {
   visible: boolean;
   posterUri: string | null;
-  /** The picked clip. Played behind the captions when the platform can play it. */
+  /** The picked clip, however the picker returned it — the editor makes a playable copy. */
   videoUri: string | null;
   /** The part of the clip that gets posted, in seconds on the source's clock. */
   windowStart: number;
@@ -88,9 +97,38 @@ export default function VideoStickerEditor({
   const videoRef = useRef<AppVideoHandle>(null);
   const resumeAfterScrub = useRef(false);
 
-  // iOS photo-library ids (ph://) cannot be handed to a player; those clips get
-  // the poster and a still timeline instead. Timing needs a known length.
-  const canPlay = !!videoUri && !videoUri.startsWith('ph://');
+  // The playable copy (see the header). Kept per source, so reopening the editor
+  // on the same clip plays at once.
+  const [clip, setClip] = useState<{ source: string; local: string } | null>(null);
+  const [clipFailed, setClipFailed] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  useEffect(() => {
+    if (!visible || !videoUri || clip?.source === videoUri) return;
+    let cancelled = false;
+    const began = Date.now();
+    setClipFailed(false);
+    setPreparing(true);
+    ensureLocalFile(videoUri)
+      .then((local) => {
+        if (cancelled) return;
+        if (insideAppSandbox(local)) {
+          setClip({ source: videoUri, local });
+          // eslint-disable-next-line no-console
+          if (__DEV__) console.log(`[caption-editor] playing a copy in app storage (${Date.now() - began} ms)`);
+        } else {
+          setClipFailed(true);
+          // eslint-disable-next-line no-console
+          if (__DEV__) console.log('[caption-editor] could not copy the clip into app storage — showing the poster');
+        }
+      })
+      .catch(() => { if (!cancelled) setClipFailed(true); })
+      .finally(() => { if (!cancelled) setPreparing(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, videoUri]);
+  const playUri = clip && clip.source === videoUri ? clip.local : null;
+  const canPlay = !!playUri && !clipFailed;
+  // Timing needs a known length; without one the editor still places captions.
   const canTime = windowEnd - windowStart >= MIN_SHOW_SEC * 2;
 
   useEffect(() => {
@@ -101,7 +139,8 @@ export default function VideoStickerEditor({
     setEmojiOpen(false);
     setText('');
     setPlaybackPosition(CLOCK_ID, windowStart);
-    setPlaying(canPlay);
+    // Starts as soon as the copy is ready — AppVideo autoplays when it mounts.
+    setPlaying(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
@@ -230,7 +269,7 @@ export default function VideoStickerEditor({
         {canPlay ? (
           <AppVideo
             ref={videoRef}
-            source={{ uri: videoUri! }}
+            source={{ uri: playUri! }}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             active={visible && playing}
@@ -243,12 +282,24 @@ export default function VideoStickerEditor({
             trimEndSec={canTime ? windowEnd : null}
             progressIntervalMs={100}
             onProgress={(ms) => setPlaybackPosition(CLOCK_ID, ms / 1000)}
+            // A local copy that fails will fail the same way on every retry.
+            retryLoadErrors={false}
+            onLoadError={(message) => {
+              // eslint-disable-next-line no-console
+              if (__DEV__) console.log(`[caption-editor] clip failed to load: ${message}`);
+              setClipFailed(true);
+            }}
           />
         ) : posterUri ? (
           <ExpoImage source={{ uri: posterUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
         ) : (
           <View style={[StyleSheet.absoluteFill, styles.videoGhost]}>
             <Ionicons name="videocam-outline" size={34} color="rgba(255,255,255,0.3)" />
+          </View>
+        )}
+        {preparing && !canPlay && !clipFailed && (
+          <View style={[StyleSheet.absoluteFill, styles.preparing]} pointerEvents="none">
+            <ActivityIndicator color="#fff" />
           </View>
         )}
 
@@ -340,7 +391,7 @@ export default function VideoStickerEditor({
         {canTime && !editingId && !dragActive && (
           <StickerTimeline
             clockId={CLOCK_ID}
-            uri={canPlay ? videoUri : null}
+            uri={canPlay ? playUri : null}
             posterUri={posterUri}
             windowStart={windowStart}
             windowEnd={windowEnd}
@@ -421,6 +472,7 @@ const EMOJI_CELL = Math.floor((SCREEN_W - 24 - 16) / 8);
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
   videoGhost: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#101010' },
+  preparing: { alignItems: 'center', justifyContent: 'center' },
   reserveGhost: { position: 'absolute', left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.18)' },
   reelGhost: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 240, opacity: 0.4 },
   ghostMeta: { position: 'absolute', left: 16, bottom: 58, gap: 9 },

@@ -115,12 +115,16 @@ function stableKey(s: string): string {
 }
 
 // Is this file inside OUR sandbox (cache/documents), as opposed to somewhere we
-// only have read-through access, like the camera roll?
-function insideAppSandbox(uri: string): boolean {
+// only have read-through access, like the camera roll? Exported for the caption
+// editor, which plays the clip and must know whether it got a playable copy.
+export function insideAppSandbox(uri: string): boolean {
   const cache = FileSystem.cacheDirectory ?? '';
   const docs = FileSystem.documentDirectory ?? '';
   return (!!cache && uri.startsWith(cache)) || (!!docs && uri.startsWith(docs));
 }
+
+// Copies in progress, keyed by destination (see ensureLocalFile).
+const localizing = new Map<string, Promise<string>>();
 
 export async function ensureLocalFile(uri: string): Promise<string> {
   if (!uri) return uri;
@@ -135,17 +139,29 @@ export async function ensureLocalFile(uri: string): Promise<string> {
   //
   // So the test is not "does it have a scheme", it is "is it OURS".
   if (uri.startsWith('file://') && insideAppSandbox(uri)) return uri;
-  try {
-    const dest = `${FileSystem.cacheDirectory}upload_${stableKey(uri)}.mp4`;
-    // Already localized by an earlier attempt → reuse it verbatim, so a retry
-    // never re-copies gigabytes.
-    const info = await FileSystem.getInfoAsync(dest);
-    if (info.exists && ((info as any).size ?? 0) > 0) return dest;
-    await FileSystem.copyAsync({ from: uri, to: dest });
-    return dest;
-  } catch {
-    return uri; // couldn't localize — let the caller surface the original error
-  }
+  const dest = `${FileSystem.cacheDirectory}upload_${stableKey(uri)}.mp4`;
+  // One copy per destination at a time. The caption editor localizes a clip to
+  // play it while the upload prewarm may be localizing the very same clip: two
+  // copyAsync calls into one path fail or interleave, and the size check below,
+  // run mid-copy, would hand back a half-written file.
+  const inflight = localizing.get(dest);
+  if (inflight) return inflight;
+  const job = (async () => {
+    try {
+      // Already localized by an earlier attempt → reuse it verbatim, so a retry
+      // never re-copies gigabytes.
+      const info = await FileSystem.getInfoAsync(dest);
+      if (info.exists && ((info as any).size ?? 0) > 0) return dest;
+      await FileSystem.copyAsync({ from: uri, to: dest });
+      return dest;
+    } catch {
+      return uri; // couldn't localize — let the caller surface the original error
+    } finally {
+      localizing.delete(dest);
+    }
+  })();
+  localizing.set(dest, job);
+  return job;
 }
 
 // Exported so the composer can warn about a huge upload BEFORE the details step

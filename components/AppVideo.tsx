@@ -79,6 +79,14 @@ export type AppVideoProps = {
    * LEAN_BACK_IDLE_MS in lib/playbackPresence.
    */
   leanBack?: boolean;
+  /**
+   * Retry a source that has never loaded. On by default: a just-posted Cloudflare
+   * clip 404s while it encodes, then plays. A LOCAL file that fails fails the same
+   * way every time — pass false and handle `onLoadError` instead.
+   */
+  retryLoadErrors?: boolean;
+  /** A source that has never loaded reported an error. */
+  onLoadError?: (message: string) => void;
 };
 
 /** Imperative handle for scrubbing/seeking from a parent (e.g. a progress bar). */
@@ -105,6 +113,8 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   showStallIndicator = false,
   idleBehavior = 'finishPass',
   leanBack = false,
+  retryLoadErrors = true,
+  onLoadError,
 }: AppVideoProps, ref) {
   const uri = typeof source === 'string' ? source : source.uri;
   // A full-screen takeover (e.g. the GIF maker) can globally pause background
@@ -135,6 +145,10 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   onEndRef.current = onEnd;
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
+  const onLoadErrorRef = useRef(onLoadError);
+  onLoadErrorRef.current = onLoadError;
+  const retryLoadErrorsRef = useRef(retryLoadErrors);
+  retryLoadErrorsRef.current = retryLoadErrors;
   // onReady fires once per source (first readyToPlay), not on every re-buffer.
   const firedReadyRef = useRef(false);
   const trimStartRef = useRef<number | null>(trimStartSec ?? null);
@@ -207,7 +221,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
     firedReadyRef.current = false;
     setShowPoster(!!poster);
     setSurfaceReady(false);
-    const statusSub = player.addListener('statusChange', ({ status }: any) => {
+    const statusSub = player.addListener('statusChange', ({ status, error }: any) => {
       if (status === 'readyToPlay') {
         retriesRef.current = 0;
         hasLoadedRef.current = true;
@@ -237,7 +251,8 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
         // reload flashes the poster and re-buffers, which reads as a freeze —
         // the error resets nothing, so it would reload endlessly. A loaded clip
         // recovers on its own, so leave it be.
-        if (!hasLoadedRef.current && retriesRef.current < MAX_LOAD_RETRIES) {
+        if (!hasLoadedRef.current) onLoadErrorRef.current?.(String(error?.message ?? 'unknown error'));
+        if (!hasLoadedRef.current && retryLoadErrorsRef.current && retriesRef.current < MAX_LOAD_RETRIES) {
           retriesRef.current += 1;
           const delay = Math.min(5000, 1500 + retriesRef.current * 400);
           setTimeout(() => { try { player.replace({ uri }); } catch {} }, delay);
