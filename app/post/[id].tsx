@@ -31,6 +31,9 @@ import { usePostActionSheets } from '../../hooks/usePostActionSheets';
 import FollowButton from '../../components/FollowButton';
 import { useDoubleTapLike } from '../../components/DoubleTapLike';
 import { trackVideoProgress } from '../../lib/viewTracker';
+import TimedStickers from '../../components/TimedStickers';
+import { hasPostStickers } from '../../lib/stickerTiming';
+import { setPlaybackPosition } from '../../lib/playbackClock';
 import { isAudioPost } from '../../lib/genres';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import { useExpandTransition } from '../../hooks/useExpandTransition';
@@ -49,6 +52,8 @@ type Post = {
   id: string; type: string; media_url: string; caption: string;
   created_at: string; user_id: string;
   aspect_ratio?: string | null;
+  captions?: unknown[] | null; // vertical-video story-style captions (jsonb array)
+  timed_captions?: unknown[] | null; // the ones timed to part of the clip (lib/stickerTiming)
   stream_count?: number;
   cover_url?: string | null;
   thumbnail_url?: string | null;
@@ -445,8 +450,27 @@ export default function PostDetailScreen() {
                 active={isFocused}
                 trimStartSec={post.trim_start}
                 trimEndSec={post.trim_end}
-                onProgress={(pos, dur) => trackVideoProgress(id as string, pos, dur)}
+                onProgress={(pos, dur) => {
+                  setPlaybackPosition(id as string, pos / 1000);
+                  trackVideoProgress(id as string, pos, dur);
+                }}
               />
+              {/* A vertical clip's captions, as in the feed and reels — this viewer
+                  used to drop them. Same frame as the feed card (full width, the
+                  clip's height capped at 4:5), so a caption lands where it does
+                  there. Horizontal clips carry band captions, which need the reel
+                  page's letterbox and have no place in this layout. */}
+              {aspectToNumber(post.aspect_ratio, 16 / 9) <= 1 && hasPostStickers(post.captions, post.timed_captions) ? (
+                <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
+                  <TimedStickers
+                    postId={id as string}
+                    captions={post.captions}
+                    timedCaptions={post.timed_captions}
+                    frameW={SCREEN_W}
+                    frameH={Math.min(SCREEN_W / aspectToNumber(post.aspect_ratio, 16 / 9), MAX_VIDEO_H)}
+                  />
+                </View>
+              ) : null}
               {!!post.song_id && (
                 <TouchableOpacity accessibilityRole="button" accessibilityLabel={songMuted ? t('a11y.unmute') : t('a11y.mute')} style={styles.songMuteBtn} onPress={toggleSongMuted}>
                   <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />

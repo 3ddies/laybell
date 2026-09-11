@@ -64,7 +64,9 @@ import TVAdOverlay from '../../components/TVAdOverlay';
 import RotateHint from '../../components/RotateHint';
 import Spinner from '../../components/Spinner';
 import { PositionedTopCaption, asTopCaption } from '../../components/TopCaption';
-import { PlacedStickers } from '../../components/StickerLayer';
+import TimedStickers from '../../components/TimedStickers';
+import { hasPostStickers } from '../../lib/stickerTiming';
+import { setPlaybackPosition } from '../../lib/playbackClock';
 import { openAdCta } from '../../contexts/AdCtaContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
@@ -267,7 +269,11 @@ const ReelPage = memo(function ReelPage({
   // map. `api` is a permanently stable ref object and item.id doesn't change for
   // a given page, so these can be created once.
   const onVideoProgress = useCallback(
-    (pos: number, dur: number) => api.onProgress(item.id, pos, dur),
+    (pos: number, dur: number) => {
+      // Timed captions follow this (components/TimedStickers).
+      setPlaybackPosition(item.id, pos / 1000);
+      api.onProgress(item.id, pos, dur);
+    },
     [api, item.id],
   );
   const setVideoRef = useCallback((r: any) => api.setVideoRef(item.id, r), [api, item.id]);
@@ -426,8 +432,8 @@ const ReelPage = memo(function ReelPage({
             <PositionedTopCaption data={asTopCaption(item.bottom_caption)!} zone="bottom" ratio={ratio} screenW={SCREEN_W} screenH={SCREEN_H} />
           ) : null}
         </>
-      ) : !zoomed && Array.isArray(item.captions) && item.captions.length ? (
-        <PlacedStickers stickers={item.captions} frameW={SCREEN_W} frameH={SCREEN_H} />
+      ) : !zoomed && hasPostStickers(item.captions, item.timed_captions) ? (
+        <TimedStickers postId={item.id} captions={item.captions} timedCaptions={item.timed_captions} frameW={SCREEN_W} frameH={SCREEN_H} />
       ) : !zoomed && asTopCaption(item.top_caption) ? (
         // Legacy: a vertical clip saved before multi-captions had a single one.
         <PositionedTopCaption data={asTopCaption(item.top_caption)!} zone="screen" ratio={ratio} screenW={SCREEN_W} screenH={SCREEN_H} />

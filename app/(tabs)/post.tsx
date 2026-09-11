@@ -37,6 +37,7 @@ import TopCaptionEditor from '../../components/TopCaptionEditor';
 import VideoStickerEditor from '../../components/VideoStickerEditor';
 import type { TopCaptionData } from '../../components/TopCaption';
 import type { Sticker } from '../../components/StickerLayer';
+import { splitForPublish } from '../../lib/stickerTiming';
 import FeaturesModal from '../../components/FeaturesModal';
 import { type Feature } from '../../lib/features';
 import { useAudioControls } from '../../contexts/AudioContext';
@@ -1177,7 +1178,9 @@ export default function PostScreen() {
     try {
       // Objectionable-text gate (Apple 1.2 / Play UGC) — before any upload work,
       // so a refusal never costs the user a long video upload first.
-      const screened = await checkFields(caption, topCaption?.text, bottomCaption?.text);
+      // Every piece of on-video text too. A vertical clip's captions were never
+      // screened, though they sit on the video as prominently as the caption.
+      const screened = await checkFields(caption, topCaption?.text, bottomCaption?.text, ...videoCaptions.map((s) => s.text));
       if (!screened.ok) {
         setLoading(false);
         setError(t('filter.blockedBody'));
@@ -1236,6 +1239,9 @@ export default function PostScreen() {
         // trim step still gets a sane full-length window from trimStart.
         const winEndV = trimEnd > trimStart ? trimEnd : Math.min(trimStart + videoWindowSec, videoDuration);
         const videoDurSecV = trimmedV ? Math.max(1, Math.round(winEndV - trimStart)) : Math.round(videoDuration);
+        // Captions are timed on the SOURCE's clock, inside the window that gets
+        // posted: [trimStart, winEndV] when trimmed, the whole clip otherwise.
+        const captionSplit = splitForPublish(videoCaptions, trimmedV ? trimStart : 0, trimmedV ? winEndV : videoDuration);
         const ps = peekPendingSpotlight();
         // Films on cellular: a multi-hundred-MB transfer on mobile data is a
         // bill and a failure risk the user should choose knowingly. One clear
@@ -1309,9 +1315,13 @@ export default function PostScreen() {
           allowGifs,
           // Landscape → letterbox band bubbles; vertical → free-placed sticker
           // captions (the story-style array). Only the matching kind is sent.
+          // Captions shown for the whole clip go to posts.captions, which every
+          // app version draws; ones timed to part of it go to timed_captions,
+          // which only 1.0.3+ reads (lib/stickerTiming.splitForPublish).
           topCaption: videoAspect > 1 ? topCaption : null,
           bottomCaption: videoAspect > 1 ? bottomCaption : null,
-          captions: videoAspect <= 1 && videoCaptions.length ? videoCaptions : null,
+          captions: videoAspect <= 1 && captionSplit.always.length ? captionSplit.always : null,
+          timedCaptions: videoAspect <= 1 && captionSplit.timed.length ? captionSplit.timed : null,
           // Covers the SOURCE, not the chosen window: if the physical cut falls
           // back, the file that goes up is untrimmed, and Cloudflare rejects
           // anything past this ceiling.
@@ -2210,6 +2220,11 @@ export default function PostScreen() {
         <VideoStickerEditor
           visible={showCaptionEditor && videoAspect <= 1}
           posterUri={thumbnailUri}
+          // Plays the picked clip so captions can be timed against it, inside the
+          // part that gets posted — the same window publish splits them against.
+          videoUri={postType === 'video' ? media?.uri ?? null : null}
+          windowStart={videoDuration > videoWindowSec ? trimStart : 0}
+          windowEnd={videoDuration > videoWindowSec ? (trimEnd > trimStart ? trimEnd : Math.min(trimStart + videoWindowSec, videoDuration)) : videoDuration}
           initial={videoCaptions}
           onSave={(caps) => { setVideoCaptions(caps); setShowCaptionEditor(false); }}
           onClose={() => setShowCaptionEditor(false)}

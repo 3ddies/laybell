@@ -5,7 +5,9 @@ import {
 import { fetchGirlSpaceCommunityIds } from '../../lib/communities';
 import { captionEchoesTitle, names, songCreditLine, songIsLinkOnly, songPlaysFor } from '../../lib/postSong';
 import FeedVideo from '../../components/FeedVideo';
-import { PlacedStickers } from '../../components/StickerLayer';
+import TimedStickers from '../../components/TimedStickers';
+import { hasPostStickers } from '../../lib/stickerTiming';
+import { setPlaybackPosition } from '../../lib/playbackClock';
 // FlashList v2: RECYCLES card views instead of mounting/destroying them while
 // scrolling — the structural fix for mount-burst micro-hitches (same philosophy
 // as the video player pool). Recycling means components receive a NEW item
@@ -220,6 +222,7 @@ type Post = {
   save_count?: number;
   aspect_ratio?: string | null;
   captions?: unknown[] | null; // vertical-video story-style captions (jsonb array)
+  timed_captions?: unknown[] | null; // the ones timed to part of the clip (lib/stickerTiming)
   stream_count?: number;
   cover_url?: string | null;
   thumbnail_url?: string | null;
@@ -601,6 +604,8 @@ const PostCard = memo(function PostCard({
                   // the server enforces the per-user/device caps.
                   onProgress={(pos, dur) => {
                     videoPlaybackRef.current = { postId: item.id, positionMs: pos, durationMs: dur };
+                    // Timed captions follow this (components/TimedStickers).
+                    setPlaybackPosition(item.id, pos / 1000);
                     trackVideoProgress(item.id, pos, dur);
                   }}
                 />
@@ -617,11 +622,14 @@ const PostCard = memo(function PostCard({
               )}
               {/* A vertical clip's story-style captions, so the feed shows them
                   too (not just the reel). Positioned over the card frame; the
-                  same normalized data the reel uses, clipped to the card. */}
-              {Array.isArray(item.captions) && item.captions.length ? (
+                  same normalized data the reel uses, clipped to the card. Timed
+                  captions come and go with the playhead (lib/stickerTiming). */}
+              {hasPostStickers(item.captions, item.timed_captions) ? (
                 <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
-                  <PlacedStickers
-                    stickers={item.captions as never}
+                  <TimedStickers
+                    postId={item.id}
+                    captions={item.captions}
+                    timedCaptions={item.timed_captions}
                     frameW={SCREEN_W}
                     frameH={Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H)}
                   />

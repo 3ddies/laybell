@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { notifySuccess } from '../lib/haptics';
 import { compressVideoIfPossible, ensureLocalFile, fileSizeBytes, getLastCompressError, prepareFilmMezzanine, releaseFilmMezzanine, STREAM_POST_MAX_BYTES } from '../lib/upload';
 import { trimVideoIfPossible } from '../lib/videoTrim';
+import { shiftTimes } from '../lib/stickerTiming';
 import { uploadVideoToStream, resolveStreamSubdomain, streamHlsUrl, streamPosterUrl, pollStreamReady, deleteStreamVideo, untrackStreamUpload } from '../lib/streamUpload';
 import { uploadLongVideoViaCopy, releaseStagedMaster } from '../lib/streamCopy';
 import { deleteDraft, patchDraft } from '../lib/drafts';
@@ -46,6 +47,9 @@ export type VideoJob = {
   // Story-style free-placed captions for a VERTICAL clip (posts.captions jsonb,
   // an array of sticker objects). Shown in the reel viewer AND the home feed.
   captions?: unknown[] | null;
+  // The captions timed to part of the clip (posts.timed_captions — see
+  // lib/stickerTiming), in seconds on the SOURCE's clock.
+  timedCaptions?: { start?: number; end?: number }[] | null;
   maxDurationSeconds: number;
   // Duration of the SOURCE file (seconds; 0 = picker didn't report one). Feeds
   // the adaptive bitrate that keeps long uploads under Cloudflare's POST cap —
@@ -415,6 +419,11 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         ...(job.topCaption?.text ? { top_caption: job.topCaption } : {}),
         ...(job.bottomCaption?.text ? { bottom_caption: job.bottomCaption } : {}),
         ...(job.captions?.length ? { captions: job.captions } : {}),
+        // Timed on the source's clock. A physically cut file starts AT the trim,
+        // so its captions move back by it; a virtual trim keeps the source clock.
+        ...(job.timedCaptions?.length
+          ? { timed_captions: trimmedFile && job.trim ? shiftTimes(job.timedCaptions, job.trim.start) : job.timedCaptions }
+          : {}),
         ...(job.trim && !trimmedFile ? { trim_start: job.trim.start, trim_end: job.trim.end } : {}),
         ...(job.filmTitle ? { film_title: job.filmTitle } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
@@ -436,6 +445,12 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
       }
       if (error && /film_title/i.test(error.message ?? '')) {
         delete row.film_title;
+        ({ data: newPost, error } = await supabase.from('posts').insert(row).select('id').single());
+      }
+      // Also covers the shape check (posts_timed_captions_shape): the post lands,
+      // just without the timed captions, instead of failing an upload that worked.
+      if (error && /timed_captions/i.test(error.message ?? '')) {
+        delete row.timed_captions;
         ({ data: newPost, error } = await supabase.from('posts').insert(row).select('id').single());
       }
       // One asset = one post, DB-enforced (posts_video_uid_unique). If a racing

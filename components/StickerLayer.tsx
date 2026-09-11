@@ -38,6 +38,11 @@ export type Sticker = {
   bg?: StickerBg;
   size?: number;   // base font size chosen with the editor's slider (wrap density)
   emoji?: boolean; // emoji sticker: rendered large, no shadow/background
+  // Video captions only: seconds on the video's clock between which it shows
+  // (lib/stickerTiming). Absent means from the start / to the end, so stories
+  // and every caption posted before 1.0.3 show for their whole length.
+  start?: number;
+  end?: number;
 } & CaptionStyle;
 
 export const STICKER_FONTS: { key: StickerFont; label: string }[] = [
