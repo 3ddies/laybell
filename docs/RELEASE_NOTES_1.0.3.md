@@ -53,12 +53,14 @@ streams in the foreground forever. Full write-up in the commits and in
 Every day before 1.0.3 is approved, any device left on a looping video keeps
 billing. Shipping this soon is the mitigation.
 
-**What Cloudflare actually bills** (Stream pricing + thumbnail docs, read
+**What Cloudflare actually bills** (Stream pricing, thumbnail and download docs, read
 2026-09-10): $1 per 1,000 minutes of video delivered; "client-side preloading and
 buffering is counted as billable delivery"; web/HLS delivery is "rounded to the
 segment length" — 4 seconds for uploaded video; content replayed from the client's
-cache is not billed. "Viewing animated thumbnails does not count toward billed
-minutes delivered", and thumbnail images are not on the billed list at all.
+cache is not billed; an MP4 download is billed "for the duration of the video each
+time the MP4 for the video is downloaded". "Viewing animated thumbnails does not
+count toward billed minutes delivered", and thumbnail images are not on the billed
+list at all.
 
 **How it behaves now:**
 - **Explore previews (tiles and the Laybell TV banner) are moving stills** — four
@@ -102,7 +104,9 @@ minutes delivered", and thumbnail images are not on the billed list at all.
       longer count as views (nothing reports watch time).
 - [x] **Rejected: Cloudflare animated GIFs.** Unbilled, but measured on real posts a
       3-second GIF at 360p was ~3 MB, 4 seconds at 480p 8–9 MB, first generation up
-      to 9 s, and 640p is refused outright (HTTP 400).
+      to 9 s, and 640p is refused outright (HTTP 400). Even the smallest loop worth
+      showing — 2 seconds at 240p, 8 fps, visibly blurry at tile size — came to
+      ~1 MB with a 3.3–3.7 s first load.
 - [x] **Lean-back hour** — `LEAN_BACK_IDLE_MS` (was `TV_IDLE_MS`) drives reels
       auto-scroll (ReelVideo + the landscape overlay), the AirPlay "Still watching?",
       and a new guard on Cast autoplay-next, which had no limit at all.
@@ -110,6 +114,19 @@ minutes delivered", and thumbnail images are not on the billed list at all.
       focus; TV ad tiles also pause while the ad viewer is open.
 - [x] Post viewer video gated on focus (it played under pushed screens).
 - [x] tsc clean in app code.
+
+**Not built — near-free real video loops, if stills ever feel too still.** Real video
+cannot loop for free, but it can come close: give each post a 5-second Cloudflare
+clip (`POST /stream/clip` with `clippedFromVideoUID`, `startTimeSeconds`,
+`endTimeSeconds`), enable its MP4 download, and loop that MP4 with expo-video's
+`useCaching` (1 GB LRU cache on the phone). Each phone pays ~5 seconds of delivery the
+first time it shows a given preview — about $1 per 12,000 first views, e.g. ~$4/month
+for 1,000 users who each see 50 different previews — and every loop and revisit after
+that plays from the phone. It has to be MP4: expo-video "cannot" cache HLS on iOS, so
+looping the existing stream bills every pass. Costs of building it: a clip job per
+post plus a backfill, clip deletion alongside the post, teaching `stream-sweep` that
+clips are not orphans, and bringing a video player back into the grid. Owner's default
+(2026-09-10): keep the stills unless near-free loops are wanted.
 
 **Dev builds narrate.** Previews go idle after **1 minute** and lean-back after
 **2 minutes** (production: 5 minutes, 1 hour), announced at startup by
@@ -138,14 +155,15 @@ stops can only be seen on a production (TestFlight) build.
       under the 5-minute threshold, so dev builds now use 1 minute. Attempt 2, the
       rule was "finish the current pass" for everything, and a multi-minute preview's
       pass is the whole video. Previews now pause.*
+- [x] **Reels hands-free ride the hour clock** — a 181s reel left untouched logged
+      nothing at the 1-minute mark (the old rule stopped reels there), then
+      `LEAN-BACK IDLE` at 2 minutes with the reel at 117.7s (`finishing its pass …
+      (hour clock)`), and stopped at 180.9s.
 
 **Still to verify on a device:**
 - [ ] **Moving stills look right** — Explore tiles and the Laybell TV banner
       cross-fade and zoom; a post without a thumbnail shows a real poster; tapping
       opens the video.
-- [ ] **Reels hands-free** — open a reel and don't touch: past the 1-minute mark it
-      keeps auto-scrolling; at the 2-minute mark the log says `LEAN-BACK IDLE`, and the
-      current reel finishes with `(hour clock)` and stops.
 - [ ] **On the TestFlight build:** a video you opened keeps the screen on to its end,
       then the phone auto-locks.
 - [ ] Home feed autoplay pauses and resumes in place.
