@@ -18,7 +18,7 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ---
 
-## 0.0 ✅ THE CURRENT STATE — updated 2026-09-10 (end of session)
+## 0.0 ✅ THE CURRENT STATE — updated 2026-09-11
 
 **One-line status: 1.0.2 is live on the App Store; Android 1.0.2 is not submitted; 1.0.3 is in development on `dev`.**
 
@@ -42,9 +42,65 @@ Done, all pushed to `dev`:
   rather than burned into the file. `supabase/sql/post_timed_captions.sql` is **APPLIED** to
   production. The editor itself is verified on device.
 
+Built 2026-09-11 — **committed and pushed to `dev`** (`621094a` the applied SQL, `98a69cf` the
+app code). The pure-logic tests behind it now live in `scripts/tests/` (run each from the repo
+root, e.g. `node scripts/tests/test-bandcaptions.mjs`):
+- **Video editor, parts 2–3** — a song's part and song/video volumes
+  (`supabase/sql/post_song_mix.sql` **APPLIED**), and one full-screen studio for text, music,
+  sound and cover between picking and the share page.
+- **Scheduled posts** — `supabase/sql/post_scheduling.sql` **APPLIED to production**: a
+  `publish_at` column, a restrictive author-exempt policy, and the every-minute cron
+  `publish-scheduled-posts`, which is **running now** and announces posts server-side. Verified
+  by a rolled-back end-to-end test (11/11) and its first cron runs. Live apps are unaffected:
+  nothing writes `publish_at` until 1.0.3 ships. The weekly health check now watches
+  `scheduled_posts_overdue_must_be_0`.
+- **Re-editing a live post** (everything but the file; videos reopen the studio) and the
+  **posting polish** (celebration card, bottom Share/Schedule button, discard question, drafts
+  keep every setting, mature on videos).
+
+- **Save to camera roll** — the app's FIRST native module (`modules/laybell-video-export`,
+  owner-approved 2026-09-11): the finished video (trim, song mix, captions) written with
+  AVFoundation / Media3 and added to Photos. The Swift compiles (iOS dev build `4765eb17`);
+  **the Kotlin has never been compiled** (no Android build yet). **Device test 1 (2026-09-11):
+  no video reached Photos and nothing was logged.** Fixed in JS, no rebuild: the copy now
+  starts at Share beside the upload (it waited for the row insert, and iOS stops exports in
+  the background) and restarts on return; caption images are keyed per image (a second
+  image in a row never drew, so the save hung silently) with a 15 s timeout; every step
+  logged as `[save-video]`. **Device test 2: saved.** Per the owner it now saves silently
+  (a toast only when a copy fails).
+- **Horizontal video captions** (built 2026-09-11, JS only): the studio's caption editor on
+  landscape clips, kept inside the upright reel's letterbox bands (`lib/bandCaptions.ts`,
+  72 tests). Stored in `timed_captions` only, with one bubble per band written for 1.0.1 /
+  1.0.2. **Device test 1 (2026-09-11): works and looks right.** Fixed since: a thin line
+  above/below the picture in the upright reel (the poster peeking out — JS), and the saved
+  copy now carries the captions — saved as a VERTICAL 9:16 video, captions in the bands
+  (the owner's call), which changed the exporter's native code (`videoFit`,
+  `canFitVideo()`) — iOS dev client `847a40c8` compiled it first try, but its captioned copies
+  came out black (iOS's Core Animation overlay drew nothing); captions now go on in a Core
+  Image second pass — **dev build `4aeda204`: works on device**. Android
+  still has no build at all.
+- **Archived posts hidden everywhere but the archive** (owner report, 2026-09-11 — they
+  played in the reels feed): `supabase/sql/post_archive_visibility.sql` **APPLIED to
+  production** (restrictive, author-exempt; rolled-back test 8/8), and the reels feed plus
+  11 more of the author's own lists filter theirs (a full audit; no server function or view
+  bypasses the policy).
+- **Record in the composer** (owner request, 2026-09-11, JS only): the photo grid's camera tile
+  opens the story camera itself (its capture screen moved whole into
+  `components/CaptureCamera.tsx`), and a recording goes straight to the video editor. Only one
+  camera view lives at a time, because on Android two unbind each other. **Works on device
+  (owner, 2026-09-11)**; the finer checks (a photo from the tile, slideshows, the story camera
+  afterwards) are in the release notes.
+
 **Pick up here, in order:**
-1. Finish the editor's device test: post a vertical video with a timed caption and an emoji,
-   check the feed, the reel viewer and the post viewer, then a long clip trimmed to a window.
+0. ✅ iOS development client `4aeda204-656c-4b43-b66b-85d88c0630a7` (the Core Image caption
+   pass) is installed and working. JS changes reach it through Metro; only a native change
+   needs a new build. (`847a40c8` saves captioned copies black; `4765eb17` lacks `videoFit`.)
+   Android is still unbuilt: its first build is the Kotlin's first compile.
+1. Finish the device checklists in the release notes for what was built 2026-09-11 (parts 2–3
+   of the editor, "Scheduled posts, re-editing and posting polish", horizontal captions,
+   archived posts, recording in the composer). Also
+   finish part 1's test: post a vertical video with a timed caption, check the feed, the reel
+   viewer and the post viewer, then a long clip trimmed to a window.
 2. The remaining 1.0.3 device checks in the release notes — home feed pause/resume, a touch in
    the comments sheet counting as presence, the AirPlay/Cast hour, auto-lock on TestFlight.
 3. The reliability batch, queued behind the editor: a slow poll for the realtime screens,
