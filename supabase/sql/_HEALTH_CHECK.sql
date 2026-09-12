@@ -43,6 +43,21 @@ select
   (select count(*) from public.posts
     where type = 'video' and coalesce(media_url, '') = '')                as videos_stuck_processing,
 
+  -- ── SCHEDULED POSTS (post_scheduling.sql). The publisher's OUTCOME, not its
+  --    cron row: a post still waiting ten minutes past its time is visible by the
+  --    policy but missing from every feed, and nobody it tags has been told.
+  (select count(*) from public.posts
+    where publish_at is not null
+      and publish_at <= now() - interval '10 minutes')                   as scheduled_posts_overdue_must_be_0,
+  (select count(*) from public.posts where publish_at > now())            as scheduled_posts_waiting,
+
+  -- ── ARCHIVED POSTS (post_archive_visibility.sql). The one policy that keeps
+  --    them off every surface in every app version; dropped, they show everywhere.
+  (select count(*) from pg_policies
+    where schemaname = 'public' and tablename = 'posts'
+      and policyname = 'Archived posts hidden from others'
+      and permissive = 'RESTRICTIVE')                                     as archived_posts_policy_must_be_1,
+
   -- ── MODERATION. Open reports block automatic deletion by design, so a
   --    growing number here is a queue nobody is working, not a bug.
   (select count(*) from public.post_reports where resolved_at is null)    as open_post_reports,
