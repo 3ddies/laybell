@@ -397,6 +397,7 @@ export default function MusicScreen() {
       .select('*, profiles!posts_user_id_fkey (username, display_name, avatar_url)')
       .eq('is_public', true)
       .is('archived_at', null) // archived songs are hidden everywhere but the Archive screen
+      .is('publish_at', null)
       .in('type', ['audio', 'podcast', 'audiobook'])
       .limit(40);
     query = authorIds.length > 0
@@ -781,6 +782,7 @@ export default function MusicScreen() {
       .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
       .eq('is_public', true)
       .is('archived_at', null) // hide archived songs from the music section
+      .is('publish_at', null)
       .order('stream_count', { ascending: false })
       .limit(30);
 
@@ -814,6 +816,7 @@ export default function MusicScreen() {
       .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url)')
       .eq('is_public', true)
       .is('archived_at', null) // hide archived songs from the Top 20
+      .is('publish_at', null)
       .eq('type', 'audio')
       .order('stream_count', { ascending: false })
       .limit(20);
@@ -841,6 +844,7 @@ export default function MusicScreen() {
         .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
         .eq('is_public', true)
         .is('archived_at', null) // never queue an archived song into the listen mix
+        .is('publish_at', null)
         .eq('type', 'audio')
         .order('stream_count', { ascending: false })
         .limit(120);
@@ -875,6 +879,7 @@ export default function MusicScreen() {
       .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
       .eq('is_public', true)
       .is('archived_at', null) // hide archived songs from For You
+      .is('publish_at', null)
       .eq('type', 'audio')
       .order('created_at', { ascending: false })
       .limit(80);
@@ -931,7 +936,7 @@ export default function MusicScreen() {
     const { data: pool } = await supabase
       .from('posts')
       .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
-      .eq('is_public', true).eq('type', 'audio').is('archived_at', null)
+      .eq('is_public', true).eq('type', 'audio').is('archived_at', null).is('publish_at', null)
       .gte('created_at', weekAgo)
       .order('stream_count', { ascending: false })
       .limit(30);
@@ -940,7 +945,7 @@ export default function MusicScreen() {
       const { data: fb } = await supabase
         .from('posts')
         .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
-        .eq('is_public', true).eq('type', 'audio').is('archived_at', null)
+        .eq('is_public', true).eq('type', 'audio').is('archived_at', null).is('publish_at', null)
         .order('stream_count', { ascending: false })
         .limit(30);
       return fb ?? [];

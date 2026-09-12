@@ -24,6 +24,8 @@ type Props = {
   uri: string;
   play: boolean;
   muted: boolean;
+  /** The video's own level, 0..1 — below full only on a post with a sound mix (lib/songMix). */
+  volume?: number;
   loop: boolean;
   contentFit: ContentFit;
   trimStartSec?: number | null;
@@ -32,7 +34,7 @@ type Props = {
 };
 
 const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
-  { id, uri, play, muted, loop, contentFit, trimStartSec, trimEndSec, onProgress }: Props,
+  { id, uri, play, muted, volume = 1, loop, contentFit, trimStartSec, trimEndSec, onProgress }: Props,
   ref,
 ) {
   const [player, setPlayer] = useState<VideoPlayer | null>(null);
@@ -57,6 +59,8 @@ const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
   onProgressRef.current = onProgress;
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
   const trimStartRef = useRef(trimStartSec ?? null);
   trimStartRef.current = trimStartSec ?? null;
   const trimEndRef = useRef(trimEndSec ?? null);
@@ -77,7 +81,7 @@ const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
     const acq = reelPool.acquire(
       id,
       uri,
-      { loop, muted: mutedRef.current, timeUpdateSec: 0.25 },
+      { loop, muted: mutedRef.current, volume: volumeRef.current, timeUpdateSec: 0.25 },
       // Stolen: fully detach, listeners included — a leftover timeUpdate
       // listener would run trim loop-back seeks against the THIEF's video.
       () => {
@@ -137,8 +141,8 @@ const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
 
   useEffect(() => {
     if (!player) return;
-    try { player.muted = muted; } catch {}
-  }, [muted, player]);
+    try { player.muted = muted; player.volume = volume; } catch {}
+  }, [muted, volume, player]);
 
   useEffect(() => {
     if (!player) return;

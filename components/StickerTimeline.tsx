@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useRef, useState, useSyncExternalStore } from 'react';
 import { View, Text, StyleSheet, PanResponder, Dimensions, Image, TouchableOpacity } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import * as VideoThumbnails from 'expo-video-thumbnails';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { getPlaybackPosition, subscribePlayback } from '../lib/playbackClock';
 import { MIN_SHOW_SEC } from '../lib/stickerTiming';
+import { useFilmstrip } from '../hooks/useFilmstrip';
 
 // The caption editor's timeline: play, scrub the posted window over a filmstrip,
 // and — for the selected caption — drag the ends of its bar to choose when it
@@ -70,11 +70,13 @@ type Props = {
   /** Committed when a range drag is released. */
   onRangeChange: (start: number, end: number) => void;
   bottomInset: number;
+  /** The line shown while no caption is selected; the timing hint by default. */
+  idleHint?: string;
 };
 
 export default function StickerTimeline({
   clockId, uri, posterUri, windowStart, windowEnd, canPlay, playing, onTogglePlay,
-  onScrub, onScrubEnd, selected, wholeVideo, onRangeChange, bottomInset,
+  onScrub, onScrubEnd, selected, wholeVideo, onRangeChange, bottomInset, idleHint,
 }: Props) {
   const { t } = useTranslation();
   const trackW = SCREEN_W - H_PAD * 2 - PLAY_W - GAP;
@@ -82,29 +84,9 @@ export default function StickerTimeline({
   const secToX = (s: number) => Math.min(trackW, Math.max(0, ((s - windowStart) / span) * trackW));
   const minW = Math.min(trackW, (MIN_SHOW_SEC / span) * trackW);
 
-  // Filmstrip across the POSTED window. Sequential on purpose, as in VideoTrimmer:
-  // eight concurrent native decodes of a long 4K clip spike memory. Each frame
-  // lands as it is made, so the strip fills left to right.
-  const [strip, setStrip] = useState<(string | null)[]>(() => new Array(STRIP_COUNT).fill(null));
-  useEffect(() => {
-    if (!uri || !(windowEnd > windowStart)) return;
-    let cancelled = false;
-    setStrip(new Array(STRIP_COUNT).fill(null));
-    (async () => {
-      for (let i = 0; i < STRIP_COUNT; i++) {
-        if (cancelled) return;
-        const sec = windowStart + ((i + 0.5) / STRIP_COUNT) * (windowEnd - windowStart);
-        try {
-          const r = await VideoThumbnails.getThumbnailAsync(uri, { time: Math.max(0, Math.floor(sec * 1000)), quality: 0.2 });
-          if (cancelled) return;
-          setStrip((prev) => { const next = [...prev]; next[i] = r.uri; return next; });
-        } catch {
-          // The poster stays in that cell — a missing frame never blanks the strip.
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [uri, windowStart, windowEnd]);
+  // Filmstrip across the POSTED window — decoded one frame at a time, filling left
+  // to right, and kept for the session (hooks/useFilmstrip).
+  const strip = useFilmstrip(uri, windowStart, windowEnd, STRIP_COUNT);
 
   // Latest values for the once-created responders.
   const live = useRef({ trackW, span, windowStart, minW, onScrub, onScrubEnd, onRangeChange, selected });
@@ -230,7 +212,7 @@ export default function StickerTimeline({
         <Text style={styles.hint} numberOfLines={1}>
           {selected
             ? `${wholeVideo ? t('topcap.wholeVideo') : `${fmt(selected.start - windowStart)}–${fmt(selected.end - windowStart)}`} · ${t('topcap.timingDrag')}`
-            : t('topcap.timingHint')}
+            : idleHint ?? t('topcap.timingHint')}
         </Text>
       </View>
     </View>

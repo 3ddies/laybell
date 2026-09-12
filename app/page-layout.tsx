@@ -46,7 +46,7 @@ export default function PageLayoutScreen() {
       // set the grid shows: the user's public, non-archived posts.
       const { data } = await supabase
         .from('posts').select('*')
-        .eq('user_id', user.id).eq('is_public', true)
+        .eq('user_id', user.id).eq('is_public', true).is('publish_at', null)
         .order('created_at', { ascending: false });
       const visible = (data ?? []).filter((p: any) => !p.archived_at);
       setPosts(visible);

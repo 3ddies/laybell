@@ -12,6 +12,7 @@ import { SPACING, type ThemePalette } from '../constants/theme';
 import { useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import FloatingComments from './FloatingComments';
+import { barsFor } from '../lib/waveformBars';
 
 // A full-bleed listening view, reached by tapping the artwork in Now Playing.
 //
@@ -33,23 +34,6 @@ import FloatingComments from './FloatingComments';
 const BARS = 68;
 const BAR_GAP = 2;
 
-// Deterministic 0..1 sequence from a string. Not cryptographic and does not need
-// to be — it needs to be STABLE, so the same song never redraws differently.
-function barsFor(seed: string): number[] {
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619); }
-  const out: number[] = [];
-  for (let i = 0; i < BARS; i++) {
-    h ^= h << 13; h ^= h >>> 17; h ^= h << 5; h |= 0;
-    const r = Math.abs(h % 1000) / 1000;
-    // Bias toward the middle of the range and add a slow swell across the track,
-    // so it reads as music rather than as noise: real waveforms have shape.
-    const swell = 0.55 + 0.45 * Math.sin((i / BARS) * Math.PI * 2.3);
-    out.push(0.22 + 0.78 * (0.35 * r + 0.65 * swell) * (0.6 + 0.4 * r));
-  }
-  return out;
-}
-
 const fmt = (ms: number) => {
   const s = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -64,7 +48,7 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
   const { positionMs, durationMs } = useAudioPosition();
 
   const ratio = durationMs > 0 ? Math.max(0, Math.min(1, positionMs / durationMs)) : 0;
-  const bars = useMemo(() => barsFor(currentTrack?.id ?? 'laybell'), [currentTrack?.id]);
+  const bars = useMemo(() => barsFor(currentTrack?.id ?? 'laybell', BARS), [currentTrack?.id]);
 
   // Native-driven so the pan and the fill never touch the JS thread while a song
   // is playing — the same reasoning as Scrubber, and it matters more here because

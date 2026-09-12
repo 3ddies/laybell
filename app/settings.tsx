@@ -476,6 +476,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/private-posts'),
     },
     {
+      icon: 'calendar-outline',
+      label: t('schedule.screenTitle'),
+      subtitle: t('schedule.settingsSub'),
+      onPress: () => router.push('/scheduled'),
+    },
+    {
       icon: 'eye-off-outline',
       label: t('account.hideProfile'),
       subtitle: t('account.hideProfileSub'),

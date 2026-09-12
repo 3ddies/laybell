@@ -26,6 +26,8 @@ type Props = {
   uri: string;
   play: boolean;   // actually play (vs assigned/paused)
   muted: boolean;
+  /** The video's own level, 0..1 — below full only on a post with a sound mix (lib/songMix). */
+  volume?: number;
   onProgress?: (currentTimeMs: number, durationMs: number) => void;
 };
 
@@ -51,7 +53,7 @@ type Props = {
 // worse, raise this before touching anything else.
 const NEIGHBOR_LOAD_DELAY_MS = 350;
 
-const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, onProgress }: Props) {
+const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, volume = 1, onProgress }: Props) {
   const [player, setPlayer] = useState<VideoPlayer | null>(null);
   // sourceReady: THIS post's source has finished loading into the pooled player,
   // so the VideoView can safely mount — it will paint THIS post's frame, never
@@ -75,6 +77,8 @@ const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, onProgress }: 
   onProgressRef.current = onProgress;
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
   // Set inside the acquire effect; lets the play effect force an immediate
   // acquire when this card becomes the playing one before its neighbor-delay
   // timer has fired.
@@ -145,7 +149,7 @@ const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, onProgress }: 
       const acq = acquireFeedPlayer(
         id,
         uri,
-        { loop: true, muted: mutedRef.current, timeUpdateSec: 0.25 },
+        { loop: true, muted: mutedRef.current, volume: volumeRef.current, timeUpdateSec: 0.25 },
         // Stolen (pool exhausted): fully detach — listeners INCLUDED, or this
         // card's watch-time tracking and play() kicks would keep firing on the
         // player now loading the THIEF's video — and clear `acquired` so a
@@ -210,8 +214,8 @@ const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, onProgress }: 
 
   useEffect(() => {
     if (!player) return;
-    try { player.muted = muted; } catch {}
-  }, [muted, player]);
+    try { player.muted = muted; player.volume = volume; } catch {}
+  }, [muted, volume, player]);
 
   useEffect(() => {
     if (shouldPlay && !player) { acquireNowRef.current?.(); return; }

@@ -32,6 +32,7 @@ export default function PrivatePostsScreen() {
       .select('*')
       .eq('user_id', user.id)
       .eq('is_public', false)
+      .is('publish_at', null)
       .order('created_at', { ascending: false });
     // Hide archived posts (archived_at set); absent pre-migration → no-op.
     if (data) setPosts(data.filter((p: any) => !p.archived_at));

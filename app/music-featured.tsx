@@ -51,7 +51,7 @@ export default function MusicFeaturedScreen() {
       const [postsRes, profRes, albumList] = await Promise.all([
         supabase.from('posts')
           .select('id, caption, cover_url, stream_count, created_at, archived_at')
-          .eq('user_id', user.id).eq('type', 'audio').eq('is_public', true)
+          .eq('user_id', user.id).eq('type', 'audio').eq('is_public', true).is('publish_at', null)
           .order('created_at', { ascending: false }),
         supabase.from('profiles').select('music_featured').eq('id', user.id).maybeSingle(),
         fetchAlbums(user.id).catch(() => [] as Album[]),

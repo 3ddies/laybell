@@ -1,3 +1,4 @@
+import { patchPostList, subscribePostEdited } from '../../lib/postEdits';
 import {
   View, Text, StyleSheet, TextInput,
   FlatList, TouchableOpacity, Image, Keyboard, ScrollView,
@@ -92,6 +93,8 @@ export default function ExploreScreen() {
   useSearchSwipeLock(searchFocused || searchQuery.length > 0);
   const [selectedGenre, setSelectedGenre] = useState('All');
   const [posts, setPosts] = useState<Post[]>([]);
+  // An edit saved on app/edit-post shows here at once (lib/postEdits).
+  useEffect(() => subscribePostEdited((id, patch) => setPosts((prev) => patchPostList(prev, id, patch))), []);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -272,6 +275,7 @@ export default function ExploreScreen() {
       .select('id, type, media_url, caption, cover_url, stream_count, genre, created_at, user_id, profiles!posts_user_id_fkey(id, username, display_name, badge_tier), likes(count), comments(count)')
       .eq('is_public', true)
       .is('archived_at', null) // archived songs are hidden from browse/stream (visiblePosts can't catch it — archived_at isn't in this select)
+      .is('publish_at', null)
       .eq('type', 'audio')
       .order('stream_count', { ascending: false })
       .limit(160);
@@ -334,7 +338,7 @@ export default function ExploreScreen() {
     const { data } = await supabase
       .from('posts')
       .select('*, profiles!posts_user_id_fkey (username, display_name, badge_tier, badge_show, profile_theme), likes(count), comments(count)')
-      .eq('is_public', true)
+      .eq('is_public', true).is('publish_at', null)
       .order('created_at', { ascending: false })
       .limit(30);
     if (data) {
@@ -358,7 +362,7 @@ export default function ExploreScreen() {
     let q = supabase
       .from('posts')
       .select('*, profiles!posts_user_id_fkey (username, display_name, badge_tier, badge_show, profile_theme), likes(count), comments(count)')
-      .eq('is_public', true)
+      .eq('is_public', true).is('publish_at', null)
       .order('created_at', { ascending: false })
       .limit(30);
 
@@ -447,6 +451,7 @@ export default function ExploreScreen() {
       // budget is spent on rows that can actually appear. (music.tsx already
       // did this.)
       .is('archived_at', null)
+      .is('publish_at', null)
       .limit(40)
       .abortSignal(ac.signal);
 

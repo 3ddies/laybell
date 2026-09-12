@@ -44,11 +44,28 @@ export type Draft = {
   // Optional: drafts saved before draggable trim edges existed have no end,
   // so the composer falls back to a full window from trimStart.
   trimEnd?: number;
-  // Horizontal-video band captions (letterbox bubbles); absent on older drafts.
+  // A horizontal video's one bubble per letterbox band, from before band captions:
+  // read only — they reopen in the studio as band captions (lib/bandCaptions).
   topCaption?: { text: string; bg: string; color: string; y: number; scale: number } | null;
   bottomCaption?: { text: string; bg: string; color: string; y: number; scale: number } | null;
-  // Vertical-video story-style captions (array of sticker objects).
+  // The video's captions (sticker objects): over a vertical clip, or a horizontal
+  // clip's band captions (lib/bandCaptions).
   videoCaptions?: any[];
+  // The attached song's part and levels (lib/songMix), tied to the song they were
+  // set for — pick a different song and its sound starts fresh. Absent on
+  // older drafts.
+  songMix?: { songId: string; startSec: number; songVolume: number; videoVolume: number } | null;
+  // When the post is scheduled to go live (epoch ms); absent or null posts right away.
+  publishAt?: number | null;
+  // The rest of the details form, so a resumed draft posts as it was left. All
+  // absent on drafts saved before 1.0.3, which fall back to the composer's defaults.
+  mature?: boolean;
+  allowSound?: boolean;
+  musicVideo?: boolean;
+  coverSec?: number | null;
+  albumId?: string | null;
+  communities?: any[];
+  saveToCameraRoll?: boolean;
   // Films (Premium+ landscape >9 min): the movie-shelf title.
   filmTitle?: string;
 

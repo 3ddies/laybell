@@ -851,7 +851,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const { data } = await supabase
       .from('posts')
       .select(`*, profiles!posts_user_id_fkey (username, display_name)`)
-      .eq('type', 'audio').eq('is_public', true)
+      .eq('type', 'audio').eq('is_public', true).is('publish_at', null)
       .order('created_at', { ascending: false })
       .limit(120);
     const now = Date.now();

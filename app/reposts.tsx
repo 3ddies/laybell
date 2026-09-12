@@ -46,6 +46,8 @@ export default function RepostsScreen() {
       .from('reposts')
       .select('user_id, created_at, posts!inner(id, type, media_url, caption, thumbnail_url, cover_url, user_id)')
       .eq('posts.user_id', user.id)
+      // Not a post you've archived: it shows nowhere but your archive.
+      .is('posts.archived_at', null)
       .order('created_at', { ascending: false })
       .limit(100);
 

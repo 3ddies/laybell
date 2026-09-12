@@ -204,6 +204,7 @@ export async function fetchCommunityPosts(id: string): Promise<any[]> {
       .contains('community_ids', [id]) // a post can be in several communities
       .eq('is_public', true)
       .is('archived_at', null)
+      .is('publish_at', null)
       .order('created_at', { ascending: false })
       .limit(60);
     return (data as any[]) ?? [];

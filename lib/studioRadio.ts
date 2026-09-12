@@ -77,6 +77,7 @@ export async function searchRadioSongs(term: string, limit = 30): Promise<RadioT
     .select(SELECT)
     .eq('is_public', true)
     .is('archived_at', null)
+    .is('publish_at', null)
     .in('type', SONG_TYPES)
     .not('media_url', 'is', null)
     .limit(limit);
@@ -96,6 +97,7 @@ export async function myRadioSongs(userId: string, limit = 40): Promise<RadioTra
     .select(SELECT)
     .eq('user_id', userId)
     .is('archived_at', null)
+    .is('publish_at', null)
     .in('type', SONG_TYPES)
     .not('media_url', 'is', null)
     .order('created_at', { ascending: false })
@@ -167,6 +169,7 @@ async function tracksByIds(ids: string[]): Promise<RadioTrack[]> {
     .from('posts').select(SELECT)
     .in('id', wanted)
     .is('archived_at', null)
+    .is('publish_at', null)
     .in('type', SONG_TYPES)
     .not('media_url', 'is', null);
   const byId = new Map<string, RadioTrack>();

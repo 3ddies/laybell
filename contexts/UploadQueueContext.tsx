@@ -17,6 +17,8 @@ import { activateCampaign } from '../lib/spotlight';
 // The feed shows an optimistic card that plays the LOCAL file with an upload/
 // processing badge; when Cloudflare finishes, the card hands off to the real post.
 //
+import { scheduleLiveReminder } from '../lib/scheduleNotify';
+
 // The whole video publish (upload → Stream → insert row → mentions/badges/
 // notifications/spotlight) lives here so it survives navigating away from the
 // composer. Not persisted across a full app-kill (v1) — force-quitting mid-upload
@@ -39,17 +41,25 @@ export type VideoJob = {
   taggedIds: string[];
   communityIds: string[];
   allowGifs: boolean;
-  // TikTok-style bubbles for the black letterbox bands above/below a LANDSCAPE
-  // clip in portrait viewing (posts.top_caption / bottom_caption jsonb — see
-  // post_top_caption.sql).
+  // Marks the post mature (supabase/sql/mature_content.sql).
+  mature?: boolean;
+  // One bubble per letterbox band of a LANDSCAPE clip watched upright
+  // (posts.top_caption / bottom_caption jsonb — see post_top_caption.sql): what
+  // apps before 1.0.3 draw. 1.0.3's own band captions ride in timedCaptions
+  // (lib/bandCaptions).
   topCaption?: { text: string; bg: string; color: string; y: number; scale: number } | null;
   bottomCaption?: { text: string; bg: string; color: string; y: number; scale: number } | null;
   // Story-style free-placed captions for a VERTICAL clip (posts.captions jsonb,
   // an array of sticker objects). Shown in the reel viewer AND the home feed.
   captions?: unknown[] | null;
   // The captions timed to part of the clip (posts.timed_captions — see
-  // lib/stickerTiming), in seconds on the SOURCE's clock.
+  // lib/stickerTiming), in seconds on the SOURCE's clock — and every band caption
+  // of a horizontal clip, timed or not (lib/bandCaptions).
   timedCaptions?: { start?: number; end?: number }[] | null;
+  // The song's part and levels, as post columns already inside their range check
+  // (lib/songMix mixColumns). Only when the creator set them in the video studio;
+  // without them the song plays the way song posts always have.
+  songMix?: { song_start_sec: number; song_volume: number; video_volume: number } | null;
   maxDurationSeconds: number;
   // Duration of the SOURCE file (seconds; 0 = picker didn't report one). Feeds
   // the adaptive bitrate that keeps long uploads under Cloudflare's POST cap —
@@ -69,6 +79,9 @@ export type VideoJob = {
   // from the bytes the server already holds.
   resumeDraftId?: string | null;
   spotlight?: { campaignId: string; days: number } | null;
+  // Scheduled (ISO time): the row is inserted hidden until then, and the server
+  // sends its notifications when it goes live (supabase/sql/post_scheduling.sql).
+  publishAt?: string | null;
 };
 
 // What the feed renders for an in-flight upload.
@@ -409,6 +422,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
       const row: Record<string, any> = {
         user_id: job.userId,
         type: 'video',
+        ...(job.publishAt ? { publish_at: job.publishAt } : {}),
         media_url: hls,
         caption: job.caption,
         is_public: job.hasCommunity ? true : job.isPublic,
@@ -429,9 +443,13 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         video_uid: uid, video_status: 'processing', video_hls_url: hls,
         ...(job.song ? { song_id: job.song.id, song_title: job.song.title, song_artist: job.song.artist, song_artist_id: job.song.artistId, song_link_only: !!job.song.linkOnly } : {}),
+        // A music video's song never plays, so there is no mix to keep for it.
+        ...(job.song && !job.song.linkOnly && job.songMix ? job.songMix : {}),
         ...(job.taggedIds.length ? { tagged_user_ids: job.taggedIds } : {}),
         ...(job.communityIds.length ? { community_ids: job.communityIds } : {}),
         allow_gifs: job.allowGifs,
+        // Only when set, like the composer: a database without the column never sees it.
+        ...(job.mature ? { mature: true } : {}),
       };
       let { data: newPost, error } = await supabase.from('posts').insert(row).select('id').single();
       // A column the deployed schema — or PostgREST's CACHED view of it, which
@@ -453,6 +471,14 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         delete row.timed_captions;
         ({ data: newPost, error } = await supabase.from('posts').insert(row).select('id').single());
       }
+      // Same for the sound mix (post_song_mix.sql) and its range check: the post
+      // lands, and its song plays the way song posts always have.
+      if (error && /song_start_sec|song_volume|video_volume|posts_song_mix_range/i.test(error.message ?? '')) {
+        delete row.song_start_sec;
+        delete row.song_volume;
+        delete row.video_volume;
+        ({ data: newPost, error } = await supabase.from('posts').insert(row).select('id').single());
+      }
       // One asset = one post, DB-enforced (posts_video_uid_unique). If a racing
       // duplicate (double-Share, retry overlap) loses that race, ADOPT the row
       // that won instead of failing a card whose upload genuinely succeeded.
@@ -472,16 +498,22 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
       if (job.resumeDraftId) patchDraft(job.resumeDraftId, { postedId: postId, postedUid: uid }).catch(() => {});
       update(tempId, { phase: 'processing', postId, progress: 1 });
 
-      // Side effects — mirror the composer's inline publish path.
-      if (job.isPublic) bumpBadge('posts_created');
-      processMentions({ text: job.caption, actorId: job.userId, postId });
-      if (job.song?.artistId && job.song.artistId !== job.userId) {
-        createNotification({ userId: job.song.artistId, actorId: job.userId, type: 'song_used', postId });
+      // Side effects — mirror the composer's inline publish path. A scheduled post's
+      // are the server's to send when it goes live; this phone only sets its own
+      // "your post is live" reminder. (The composer never schedules a spotlight.)
+      if (job.publishAt) {
+        scheduleLiveReminder(postId, new Date(job.publishAt).getTime());
+      } else {
+        if (job.isPublic) bumpBadge('posts_created');
+        processMentions({ text: job.caption, actorId: job.userId, postId });
+        if (job.song?.artistId && job.song.artistId !== job.userId) {
+          createNotification({ userId: job.song.artistId, actorId: job.userId, type: 'song_used', postId });
+        }
+        for (const t of job.taggedIds) {
+          if (t !== job.userId) createNotification({ userId: t, actorId: job.userId, type: 'tag', postId });
+        }
+        if (job.spotlight) { try { await activateCampaign(job.spotlight.campaignId, postId, job.spotlight.days); } catch {} }
       }
-      for (const t of job.taggedIds) {
-        if (t !== job.userId) createNotification({ userId: t, actorId: job.userId, type: 'tag', postId });
-      }
-      if (job.spotlight) { try { await activateCampaign(job.spotlight.campaignId, postId, job.spotlight.days); } catch {} }
 
       // Pull the real row into the feed (kept hidden behind the optimistic card by
       // the feed's dedupe), then wait for encoding. We KEEP the card pinned at the
@@ -548,7 +580,8 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
       // Done — hand off from the optimistic card to the REAL post: pin its id at the
       // top of Home (rendered as a normal PostCard, fully interactive) and drop the
       // card. It falls into natural rank on the next manual refresh.
-      setPinnedIds((ids) => [postId, ...ids.filter((id) => id !== postId)]);
+      // Not a scheduled one: it isn't live, so it has no place at the top of Home yet.
+      if (!job.publishAt) setPinnedIds((ids) => [postId, ...ids.filter((id) => id !== postId)]);
       // Bump AGAIN on completion, not just after the insert. The pin alone puts
       // the id at the top, but the feed still has to hold the finished row —
       // this makes it refetch at the moment encoding lands, so the post appears

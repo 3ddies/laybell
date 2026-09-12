@@ -530,12 +530,14 @@ export async function fetchMyCampaigns(): Promise<SpotlightCampaign[]> {
       .from('ad_campaigns')
       .select(`
         *,
-        posts!ad_campaigns_post_id_fkey (id, type, media_url, thumbnail_url, cover_url, caption, likes(count))
+        posts!ad_campaigns_post_id_fkey (id, type, media_url, thumbnail_url, cover_url, caption, archived_at, likes(count))
       `)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
     if (error || !data) return [];
-    return data as SpotlightCampaign[];
+    // A promoted post its author has since archived reads as unavailable, like a
+    // deleted one: archived posts show nowhere but the archive.
+    return (data as any[]).map((c) => (c.posts?.archived_at ? { ...c, posts: null } : c)) as SpotlightCampaign[];
   } catch {
     return [];
   }

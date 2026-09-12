@@ -249,15 +249,15 @@ export default function PublicProfileScreen() {
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', id),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', id),
       // Exclude archived posts so the count matches the grid (which filters them too).
-      supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', id).is('archived_at', null),
-      supabase.from('posts').select('*').eq('user_id', id).order('created_at', { ascending: false }),
+      supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', id).is('archived_at', null).is('publish_at', null),
+      supabase.from('posts').select('*').eq('user_id', id).is('publish_at', null).order('created_at', { ascending: false }),
       currentUser
         ? supabase.from('follows').select('*').eq('follower_id', currentUser.id).eq('following_id', id).maybeSingle()
         : Promise.resolve({ data: null }),
       currentUser
         ? supabase.from('follows').select('*').eq('follower_id', id).eq('following_id', currentUser.id).maybeSingle()
         : Promise.resolve({ data: null }),
-      supabase.from('reposts').select('created_at, posts(id, type, media_url, caption, is_public, thumbnail_url, cover_url, profiles!posts_user_id_fkey(display_name))').eq('user_id', id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('reposts').select('created_at, posts(id, type, media_url, caption, is_public, archived_at, thumbnail_url, cover_url, profiles!posts_user_id_fkey(display_name))').eq('user_id', id).order('created_at', { ascending: false }).limit(100),
       supabase.from('playlists').select('*').eq('user_id', id).eq('is_public', true).order('play_count', { ascending: false }),
     ]);
 
@@ -280,8 +280,10 @@ export default function PublicProfileScreen() {
     // run — and a shelf that is not there yet must not take the profile with it.
     fetchAlbums(String(id)).then(setAlbums).catch(() => setAlbums([]));
     // Reposts are public — only surface the reposted posts that are themselves
-    // public (so a private post can't leak through someone else's repost).
-    setReposts((repostsRes.data ?? []).map((r: any) => r.posts).filter((p: any) => p && p.is_public));
+    // public (so a private post can't leak through someone else's repost), and
+    // never an archived one: the database hides everyone else's, and this hides a
+    // post of yours they reposted before you archived it.
+    setReposts((repostsRes.data ?? []).map((r: any) => r.posts).filter((p: any) => p && p.is_public && !p.archived_at));
     // Public playlists showcase: only those holding an active badge slot,
     // faced with their first track's cover. Degrades to empty pre-migration.
     try {

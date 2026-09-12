@@ -1,9 +1,11 @@
+import { patchPostList, subscribePostEdited } from '../../lib/postEdits';
 import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost, arrangeFeed,
   EMPTY_PROFILE, type UserAffinityProfile, type ScoreOpts,
 } from '../../lib/feedScorer';
 import { fetchGirlSpaceCommunityIds } from '../../lib/communities';
 import { captionEchoesTitle, names, songCreditLine, songIsLinkOnly, songPlaysFor } from '../../lib/postSong';
+import { ambientMixFor, videoSoundFor, type AmbientMix } from '../../lib/songMix';
 import FeedVideo from '../../components/FeedVideo';
 import TimedStickers from '../../components/TimedStickers';
 import { hasPostStickers } from '../../lib/stickerTiming';
@@ -237,6 +239,11 @@ type Post = {
   song_id?: string | null;
   // True when the song is a CREDIT only (music video) — see lib/postSong.
   song_link_only?: boolean | null;
+  // Which part of the song plays, and how loud it and the video are. Null on a
+  // post published without the sound editor (lib/songMix).
+  song_start_sec?: number | null;
+  song_volume?: number | null;
+  video_volume?: number | null;
   song_title?: string | null;
   song_artist?: string | null;
   song_artist_id?: string | null;
@@ -598,7 +605,10 @@ const PostCard = memo(function PostCard({
                   id={item.id}
                   uri={item.media_url}
                   play={shouldPlayVideo}
-                  muted={songPlaysFor(item) ? true : videoMuted}
+                  // Under its song a video is silent — unless its post's sound mix
+                  // keeps some of its own sound (lib/songMix).
+                  muted={songPlaysFor(item) ? videoSoundFor(item, songMuted).muted : videoMuted}
+                  volume={songPlaysFor(item) ? videoSoundFor(item, songMuted).volume : 1}
                   // Feed watching counts toward views (muted autoplay included) —
                   // the tracker accumulates genuine watch time across surfaces and
                   // the server enforces the per-user/device caps.
@@ -793,6 +803,11 @@ export default function HomeScreen() {
   const { share: openShare } = useShare();
   const linkGuard = useLinkGuard();
   const [posts, setPosts] = useState<Post[]>([]);
+  // An edit saved on app/edit-post shows here at once (lib/postEdits).
+  useEffect(() => subscribePostEdited((id, patch) => {
+    setPosts((prev) => patchPostList(prev, id, patch));
+    setPinnedPosts((prev) => patchPostList(prev, id, patch));
+  }), []);
   // Which songs render as the square poster card: one in every three, counted
   // across the songs in the feed rather than across all posts, so the rhythm is
   // "every third song you meet" regardless of how much sits between them.
@@ -991,7 +1006,9 @@ export default function HomeScreen() {
       const { data } = await supabase
         .from('posts')
         .select(`*, profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme)`)
-        .in('id', pinnedIds);
+        .in('id', pinnedIds)
+        // A pin never brings back a post you've since archived.
+        .is('archived_at', null);
       if (!cancelled && data) setPinnedPosts(attachEngagementCountsAll(data as any[]) as Post[]);
     })();
     return () => { cancelled = true; };
@@ -1045,7 +1062,7 @@ export default function HomeScreen() {
   // shell mid-scroll. These refs + syncAmbientSong() drive PostMusicContext
   // straight from the viewability handler — with this, a plain scroll causes
   // ZERO React state changes anywhere in the feed.
-  const visibleMusicRef = useRef<{ id: string; songId: string } | null>(null);
+  const visibleMusicRef = useRef<{ id: string; songId: string; mix: AmbientMix } | null>(null);
   // Slideshow posts whose current video slide has its audio on — their attached
   // song pauses so it doesn't overlap the video. (Separate from the global mute.)
   const slideAudioIdsRef = useRef<Set<string>>(new Set());
@@ -1392,7 +1409,7 @@ export default function HomeScreen() {
   const syncSongToActiveVideo = useRef((activeItem: any) => {
     if (!activeItem) return;   // no video playing → the rest-time picker owns it
     const want = songPlaysFor(activeItem)
-      ? { id: activeItem.id as string, songId: activeItem.song_id as string }
+      ? { id: activeItem.id as string, songId: activeItem.song_id as string, mix: ambientMixFor(activeItem) }
       : null;                  // playing video has no song → nothing else may sound
     const cur = visibleMusicRef.current;
     if (cur?.id === want?.id && cur?.songId === want?.songId) return;  // already right
@@ -1414,7 +1431,7 @@ export default function HomeScreen() {
       if (activeVideo && it.id !== activeVideo) return false;
       return true;
     });
-    visibleMusicRef.current = firstMusic ? { id: firstMusic.item.id, songId: firstMusic.item.song_id } : null;
+    visibleMusicRef.current = firstMusic ? { id: firstMusic.item.id, songId: firstMusic.item.song_id, mix: ambientMixFor(firstMusic.item) } : null;
     syncAmbientSongRef.current();
   }).current;
   const pendingMusicViewables = useRef<any[] | null>(null);
@@ -1827,7 +1844,7 @@ export default function HomeScreen() {
       // that fast-path could never fire — every transition paid a full native
       // teardown + create.)
       if (ambientPlayingRef.current !== want.id) {
-        musicCtl.current.playSong(want.id, want.songId);
+        musicCtl.current.playSong(want.id, want.songId, null, want.mix);
         ambientPlayingRef.current = want.id;
       }
     } else if (ambientPlayingRef.current) {
@@ -1872,6 +1889,8 @@ export default function HomeScreen() {
         *,
         profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme)
       `)
+      // Your own scheduled posts wait on the Scheduled screen, not in feeds.
+      .is('publish_at', null)
       .order('created_at', { ascending: false })
       // Wide candidate POOL (not the shown count) — arrangeFeed weighted-samples a
       // different arrangement from it each refresh, so pulling to refresh yields a
@@ -2193,7 +2212,7 @@ export default function HomeScreen() {
     const { data } = await supabase
       .from('posts')
       .select(`*, profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme)`)
-      .eq('type', 'audio').eq('is_public', true)
+      .eq('type', 'audio').eq('is_public', true).is('publish_at', null)
       .order('created_at', { ascending: false })
       .limit(120);
     const now = Date.now();

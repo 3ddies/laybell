@@ -75,20 +75,29 @@ export function resolveWindow(s: StickerTiming, winStart: number, winEnd: number
 export function splitForPublish<T extends StickerTiming>(
   stickers: T[], winStart: number, winEnd: number,
 ): { always: T[]; timed: T[] } {
-  const lo = Math.min(winStart, winEnd);
-  const hi = Math.max(winStart, winEnd);
   const always: T[] = [];
   const timed: T[] = [];
-  for (const s of stickers) {
+  for (const out of timingForPublish(stickers, winStart, winEnd)) (isTimed(out) ? timed : always).push(out);
+  return { always, timed };
+}
+
+/**
+ * Every caption with its timing as publish stores it — splitForPublish's rule —
+ * kept in the editor's order, for captions that are stored together whether timed
+ * or not (a horizontal clip's band captions, lib/bandCaptions).
+ */
+export function timingForPublish<T extends StickerTiming>(stickers: T[], winStart: number, winEnd: number): T[] {
+  const lo = Math.min(winStart, winEnd);
+  const hi = Math.max(winStart, winEnd);
+  return stickers.map((s) => {
     const { start, end } = resolveWindow(s, lo, hi);
     const out = { ...s };
     delete out.start;
     delete out.end;
     if (start > lo) out.start = round2(start);
     if (end < hi) out.end = round2(end);
-    (isTimed(out) ? timed : always).push(out);
-  }
-  return { always, timed };
+    return out;
+  });
 }
 
 /**

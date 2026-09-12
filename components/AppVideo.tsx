@@ -39,6 +39,8 @@ export type AppVideoProps = {
   active?: boolean;
   loop?: boolean;
   muted?: boolean;
+  /** The video's own level, 0..1 — expo-video keeps it separate from `muted`. Default 1. */
+  volume?: number;
   /** Show the OS video controls. Default false. */
   nativeControls?: boolean;
   /** Image shown over the video until the first frame is ready. */
@@ -99,6 +101,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   active = true,
   loop = false,
   muted = false,
+  volume = 1,
   nativeControls = false,
   poster,
   posterContentFit,
@@ -173,6 +176,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   const player = useVideoPlayer({ uri }, (p) => {
     p.loop = loop;
     p.muted = muted;
+    p.volume = volume;
     p.timeUpdateEventInterval = intervalSec;
     // Bounded forward buffer (same cap as the pools): unbounded raw-MP4
     // buffering is how one player starves another's stream mid-watch.
@@ -192,6 +196,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
 
   // Keep mutable player props in sync with React props.
   useEffect(() => { player.muted = muted; }, [muted, player]);
+  useEffect(() => { player.volume = volume; }, [volume, player]);
   useEffect(() => { player.timeUpdateEventInterval = intervalSec; }, [intervalSec, player]);
   useEffect(() => {
     if (shouldPlay) { try { player.play(); } catch {} }

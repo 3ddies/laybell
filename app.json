@@ -103,7 +103,7 @@
         "expo-media-library",
         {
           "photosPermission": "Allow Laybell to access your photos so you can choose one to post.",
-          "savePhotosPermission": "Allow Laybell to save captured stories to your photo library.",
+          "savePhotosPermission": "Allow Laybell to save your videos and stories to your photo library.",
           "isAccessMediaLocationEnabled": false
         }
       ],

@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { PlacedStickers, type Sticker } from './StickerLayer';
+import PlacedBandStickers from './BandStickers';
 import { isTimed, postStickers, visibleKey } from '../lib/stickerTiming';
+import { isBandSticker } from '../lib/bandCaptions';
 import { getPlaybackPosition, subscribePlayback } from '../lib/playbackClock';
 
 const NO_SUBSCRIPTION = () => () => {};
@@ -12,14 +14,24 @@ const NO_SUBSCRIPTION = () => () => {};
 //
 // Takes the two columns separately (posts.captions, posts.timed_captions) so the
 // merge is memoized against the row's own arrays rather than rebuilt per render.
-export default function TimedStickers({ postId, captions, timedCaptions, frameW, frameH }: {
+//
+// Draws one kind: a vertical clip's captions placed over the frame, or — given
+// `bandRatio` — a horizontal clip's in its letterbox bands (lib/bandCaptions). A
+// band caption never lands on a frame, such as a feed card, that has no bands.
+export default function TimedStickers({ postId, captions, timedCaptions, frameW, frameH, bandRatio }: {
   postId: string;
   captions: unknown;
   timedCaptions: unknown;
   frameW: number;
   frameH: number;
+  /** A horizontal clip's width over height: draw its band captions, on a screen-sized frame. */
+  bandRatio?: number;
 }) {
-  const stickers = useMemo(() => postStickers<Sticker>(captions, timedCaptions), [captions, timedCaptions]);
+  const band = bandRatio != null;
+  const stickers = useMemo(
+    () => postStickers<Sticker>(captions, timedCaptions).filter((s) => isBandSticker(s) === band),
+    [captions, timedCaptions, band],
+  );
   const anyTimed = useMemo(() => stickers.some(isTimed), [stickers]);
   const subscribe = useCallback((onChange: () => void) => subscribePlayback(postId, onChange), [postId]);
   const key = useSyncExternalStore(
@@ -30,5 +42,7 @@ export default function TimedStickers({ postId, captions, timedCaptions, frameW,
     () => (anyTimed ? stickers.filter((_, i) => key.includes(`|${i}|`)) : stickers),
     [anyTimed, stickers, key],
   );
-  return <PlacedStickers stickers={visible} frameW={frameW} frameH={frameH} />;
+  return band
+    ? <PlacedBandStickers stickers={visible} ratio={bandRatio!} screenW={frameW} screenH={frameH} />
+    : <PlacedStickers stickers={visible} frameW={frameW} frameH={frameH} />;
 }

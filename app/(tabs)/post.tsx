@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, ActivityIndicator, Alert, Image, Dimensions, Animated, Modal, Switch, Pressable, Easing,
-  Keyboard, Platform,
+  Keyboard, Platform, LayoutAnimation,
 } from 'react-native';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -32,12 +32,20 @@ import { createNotification } from '../../lib/createNotification';
 import { notifySuccess } from '../../lib/haptics';
 import MentionSuggestions from '../../components/MentionSuggestions';
 import TagPeopleModal, { type TaggedPerson } from '../../components/TagPeopleModal';
-import ThumbnailPickerModal from '../../components/ThumbnailPickerModal';
-import TopCaptionEditor from '../../components/TopCaptionEditor';
-import VideoStickerEditor from '../../components/VideoStickerEditor';
-import type { TopCaptionData } from '../../components/TopCaption';
+import VideoStudio, { type StudioResult } from '../../components/VideoStudio';
+import CaptureCamera, { type CapturedMedia } from '../../components/CaptureCamera';
+import SchedulePicker from '../../components/SchedulePicker';
+import PostedCelebration, { type Celebration } from '../../components/PostedCelebration';
+import PullDownMenu, { type MenuAnchor, type MenuOption } from '../../components/PullDownMenu';
+import { canSaveFinishedVideo, queueFinishedVideoSave, reportSaveSkipped, requestSavePermission } from '../../lib/videoExport';
+import { FullWindowOverlay } from 'react-native-screens';
+import { openShareGlobal } from '../../contexts/ShareContext';
+import { formatSchedule, scheduleProblem } from '../../lib/schedule';
+import { scheduleLiveReminder } from '../../lib/scheduleNotify';
+import { mixColumns, type SongMix } from '../../lib/songMix';
 import type { Sticker } from '../../components/StickerLayer';
-import { splitForPublish } from '../../lib/stickerTiming';
+import { splitForPublish, timingForPublish } from '../../lib/stickerTiming';
+import { bandStickersFromLegacy, isBandSticker, legacyBandCaption } from '../../lib/bandCaptions';
 import FeaturesModal from '../../components/FeaturesModal';
 import { type Feature } from '../../lib/features';
 import { useAudioControls } from '../../contexts/AudioContext';
@@ -71,7 +79,7 @@ import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 
 type PostType = 'image' | 'video' | 'audio' | 'slideshow';
-type Step = 'pick' | 'edit' | 'arrange' | 'details';
+type Step = 'pick' | 'edit' | 'arrange' | 'studio' | 'details';
 
 // One picked item in a slideshow (before upload).
 type PickedSlide = {
@@ -141,6 +149,12 @@ const PREVIEW_MAX_H = Math.round(SCREEN_H * 0.46);
 // Details-step square preview: scales with the screen but capped so the right
 // column (genre/music dropdowns) always keeps a usable width on big phones.
 const DETAILS_PREVIEW = Math.min(Math.round(SCREEN_W * 0.44), 190);
+// iOS system colours for the details step's two menu buttons: who sees the post,
+// and when it goes up.
+const IOS_BLUE = '#007AFF';
+const IOS_GREEN = '#34C759';
+const IOS_ORANGE = '#FF9500';
+const IOS_INDIGO = '#5856D6';
 
 // Duration limits (seconds). Duration is the ONLY rule for videos — there are
 // deliberately NO file-size caps (an iPhone HD clip can be hundreds of MB and
@@ -210,7 +224,7 @@ export default function PostScreen() {
   // near-black; light keeps its raised off-white and its normal text colours.
   const uploadInk = mode === 'light' ? colors.text : '#101010';
   const uploadInkSoft = mode === 'light' ? colors.textSecondary : '#5A5A5A';
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const [step, setStep] = useState<Step>('pick');
   const [postType, setPostType] = useState<PostType>('image');
@@ -222,19 +236,15 @@ export default function PostScreen() {
   // image/video selection
   const [media, setMedia] = useState<{ uri: string; width: number; height: number; posterUri?: string } | null>(null);
   const [pickedId, setPickedId] = useState<string | null>(null); // grid asset id of the single selection
+  // A video's cover: a frame grabbed at pick time, until the studio's Cover panel
+  // replaces it with any frame of the clip or a camera-roll photo. Post-time only —
+  // it uploads through the existing path.
   const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
-  // Cover picker (video posts, details step): choose any frame or a camera-roll
-  // image as the post thumbnail. Post-time only — it just replaces thumbnailUri,
-  // which uploads through the existing path.
-  const [showThumbPicker, setShowThumbPicker] = useState(false);
-  // Video captions. HORIZONTAL clips: TikTok-style bubbles parked in the black
-  // letterbox bands above/below the clip (one editor, top band default + bottom
-  // as a tappable second zone). VERTICAL clips: the STORY sticker system —
-  // tap anywhere to add as many captions as you like (stored as `videoCaptions`).
-  const [topCaption, setTopCaption] = useState<TopCaptionData | null>(null);
-  const [bottomCaption, setBottomCaption] = useState<TopCaptionData | null>(null);
+  // Video captions, placed in the studio with the story sticker system — as many
+  // as you like. VERTICAL clips: anywhere over the picture. HORIZONTAL clips: in
+  // the black letterbox bands above and below it, kept as band captions
+  // (lib/bandCaptions).
   const [videoCaptions, setVideoCaptions] = useState<Sticker[]>([]);
-  const [showCaptionEditor, setShowCaptionEditor] = useState(false);
   const [videoAspect, setVideoAspect] = useState(0.8); // native aspect for video display
   const [videoDuration, setVideoDuration] = useState(0); // seconds (source)
   const [trimStart, setTrimStart] = useState(0); // seconds — start of the chosen window
@@ -309,6 +319,19 @@ export default function PostScreen() {
   // in-section picker key off the same derived flag so they can never disagree.
   const musicVideoOn = musicVideo && postType === 'video';
   const [showSongPicker, setShowSongPicker] = useState(false);
+  // The song's part and levels, set in the video studio (lib/songMix). Tied to the
+  // song they were set for, so picking a different song quietly starts fresh — a
+  // part chosen in one track means nothing in another.
+  const [songMix, setSongMix] = useState<(SongMix & { songId: string }) | null>(null);
+  // Where the cover's frame was taken from (seconds on the source's clock), so the
+  // studio's cover picker opens on it; null for a photo or the automatic frame.
+  const [coverSec, setCoverSec] = useState<number | null>(null);
+  // A panel for the studio to open on — the details page's cover square asks for
+  // the cover picker.
+  const [studioPanel, setStudioPanel] = useState<'cover' | null>(null);
+  // What publishes: a video, with a song that PLAYS (a music video's is a credit),
+  // and a mix set for that song.
+  const activeMix = postType === 'video' && song && !musicVideoOn && songMix?.songId === song.id ? songMix : null;
   const [tagged, setTagged] = useState<TaggedPerson[]>([]); // accounts tagged on this post (≤10)
   const [features, setFeatures] = useState<Feature[]>([]); // song collaborators (audio, ≤6)
   const [showFeaturesModal, setShowFeaturesModal] = useState(false);
@@ -383,15 +406,15 @@ export default function PostScreen() {
   const { enqueueVideo, prewarmVideo, discardPrewarm, scrollHomeTop } = useUploadActions();
   const myPostLimit = publicPostLimit(rawTier(profile));
 
-  // Speculatively start the video upload the moment the user reaches the details
-  // step — most people who get here do post, so by the time they hit Share the
-  // clip is usually already uploaded and publishing feels instant. If they instead
-  // switch clips or leave without posting, the prewarmed (unpublished) Stream asset
-  // is discarded so it doesn't linger as paid storage. A claimed prewarm (being
-  // published) is never discarded.
+  // Speculatively start the video upload the moment the user reaches the studio or
+  // the details step — most people who get here do post, so by the time they hit
+  // Share the clip is usually already uploaded and publishing feels instant. If
+  // they instead switch clips or leave without posting, the prewarmed (unpublished)
+  // Stream asset is discarded so it doesn't linger as paid storage. A claimed
+  // prewarm (being published) is never discarded.
   const prewarmedUriRef = useRef<string | null>(null);
   useEffect(() => {
-    if (step === 'details' && postType === 'video' && media?.uri) {
+    if ((step === 'studio' || step === 'details') && postType === 'video' && media?.uri) {
       if (prewarmedUriRef.current && prewarmedUriRef.current !== media.uri) discardPrewarm(prewarmedUriRef.current);
       // Clips that need TRIMMING are deliberately not prewarmed. The prewarm is
       // keyed on the source uri and uploads it as-is, but the user can still go
@@ -448,10 +471,36 @@ export default function PostScreen() {
   // it. A ref — it must not trigger re-renders or reset on step changes.
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [draftsOpen, setDraftsOpen] = useState(false);
+  // When the post goes live (epoch ms), or null to post right away — lib/schedule.
+  const [scheduleAt, setScheduleAt] = useState<number | null>(null);
+  const [showSchedule, setShowSchedule] = useState(false);
+  // How many of this account's posts are waiting to go live: the pick step's bar.
+  const [scheduledCount, setScheduledCount] = useState(0);
+  const scheduleWhen = (at: number) => formatSchedule(at, Date.now(), lang, {
+    today: t('schedule.today'),
+    tomorrow: t('schedule.tomorrow'),
+    dayTime: (day: string, time: string) => t('schedule.dayTime', { day, time }),
+  });
   const [savedToast, setSavedToast] = useState(false); // "Saved to Drafts" confirmation
+  // The post just shared, celebrated on the pick step (components/PostedCelebration).
+  const [celebration, setCelebration] = useState<Celebration | null>(null);
+  // Closing the composer with something picked or written asks first.
+  const [confirmExit, setConfirmExit] = useState(false);
+  // Where the caption's cursor is, so an @ typed mid-caption suggests people too.
+  const [captionCursor, setCaptionCursor] = useState(0);
+  // The details step's two menu buttons — who sees the post, when it goes up —
+  // measured when tapped so their menu opens from them (components/PullDownMenu).
+  const visTileRef = useRef<View>(null);
+  const timeTileRef = useRef<View>(null);
+  const [tileMenu, setTileMenu] = useState<{ kind: 'visibility' | 'time'; anchor: MenuAnchor } | null>(null);
+  // The details step's Advanced settings fold.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // Save to camera roll: once a video post is up, its finished copy — trimmed, with
+  // its text and song — goes to the camera roll (lib/videoExport). On by default.
+  const [saveToCameraRoll, setSaveToCameraRoll] = useState(true);
   // Polished "Posted!" confirmation shown after a successful share (replaces the
   // default OS alert). Holds the title/body so the spotlight variant can differ.
-  const [postedToast, setPostedToast] = useState<{ title: string; message: string; spotlight: boolean; uploading?: boolean } | null>(null);
+  const [postedToast, setPostedToast] = useState<{ title: string; message: string; spotlight: boolean; uploading?: boolean; scheduled?: boolean } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Draft | null>(null); // draft pending delete-confirm
   const [importingFile, setImportingFile] = useState(false); // Files-app probe in flight
   // The mode dropdown (Single / Slideshow / Post from Files). Rendered in a
@@ -465,11 +514,31 @@ export default function PostScreen() {
   // iOS can't present the document picker while the menu Modal is still
   // dismissing — the pending action fires from the Modal's onDismiss instead.
   const pendingMenuAction = useRef<(() => void) | null>(null);
+  // The in-app camera (components/CaptureCamera, the story camera's own), opened
+  // from the grid's camera tile — see onCameraCapture.
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraBusy, setCameraBusy] = useState(false); // a recording being probed
+  // The same iOS rule for the camera's Modal: an alert can't show while it's still
+  // sliding away, so whatever a capture leads to runs from its onDismiss.
+  const pendingCameraAction = useRef<(() => void) | null>(null);
   // Film upload heads-up: holds the estimate plus the promise resolver for the
   // Share flow, which awaits the user's answer before any work begins.
   const [filmNotice, setFilmNotice] = useState<{ minutes: number; resolve: (go: boolean) => void } | null>(null);
   const editingDraftId = useRef<string | null>(null);
   useFocusEffect(useCallback(() => { loadDrafts().then(setDrafts); }, []));
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { count, error: countError } = await supabase.from('posts')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .gt('publish_at', new Date().toISOString());
+      if (!cancelled && !countError) setScheduledCount(count ?? 0);
+    })().catch(() => {});
+    return () => { cancelled = true; };
+  }, []));
 
   // Boot-time upload recovery handoff: the _layout prompt parked a draft id for
   // us — load it straight into the composer so "Resume" is one tap from Share.
@@ -499,7 +568,9 @@ export default function PostScreen() {
   // migrates to a compact top-right card on this tab (see app/_layout.tsx).
   // Entering the DETAILS step is the cutoff: the song exits there so the user
   // finishes their post in full focus.
-  useEffect(() => { if (step === 'details') stop(); }, [step, stop]);
+  // The video studio counts too: its song preview runs through the ambient song
+  // player, which stays silent while the main one plays.
+  useEffect(() => { if (step === 'studio' || step === 'details') stop(); }, [step, stop]);
 
   // Swiping to an adjacent tab is on only while browsing the Posts picker with
   // NOTHING selected yet — selecting any media (single or a slide) turns it off.
@@ -529,6 +600,9 @@ export default function PostScreen() {
   // Pause rather than unload — coming back should show the same clip ready to
   // resume, just not still going.
   const isFocused = useIsFocused();
+  // Leaving the composer (a notification tap, say) takes the camera with it — its
+  // Modal would otherwise stay up over whichever screen opened.
+  useEffect(() => { if (!isFocused) setCameraOpen(false); }, [isFocused]);
   useEffect(() => {
     if (isFocused && step === 'pick') return;
     const p = previewSoundRef.current;
@@ -626,14 +700,14 @@ export default function PostScreen() {
     unloadPreview();
     setIsRecording(false); setRecSecs(0);
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
-    setVideoDuration(0); setTrimStart(0); setTrimEnd(0); setTopCaption(null); setBottomCaption(null); setVideoCaptions([]);
+    setVideoDuration(0); setTrimStart(0); setTrimEnd(0); setVideoCaptions([]);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
-    setCaption(''); setFilmTitle(''); setGenre(''); setSong(null); setMusicVideo(false); setTagged([]); setCommunities([]); setError(''); setStep('pick');
+    setCaption(''); setFilmTitle(''); setGenre(''); setSong(null); setSongMix(null); setCoverSec(null); setScheduleAt(null); setMusicVideo(false); setTagged([]); setCommunities([]); setError(''); setStep('pick');
     // features was MISSING here, which meant collaborators credited on one song
     // silently rode onto the next one posted in the same sitting — and every
     // one of them would have been notified they were on a track they are not.
     setFeatures([]); setAlbumId(null); setNewAlbumName('');
-    setAllowDownloads(true); setAllowGifs(true); setMature(false);
+    setAllowDownloads(true); setAllowGifs(true); setMature(false); setSaveToCameraRoll(true);
     // Abandoning the compose drops any parked spotlight handoff so it can't
     // silently attach to an unrelated later post — the paid campaign itself
     // stays safe as `pending` on the Spotlight screen. (No-op on the share
@@ -667,12 +741,14 @@ export default function PostScreen() {
       id, createdAt: now, updatedAt: now,
       postType, format, caption, genre, isPublic,
       media, crop: cropRef.current as any, thumbnailUri,
-      videoAspect, videoDuration, trimStart, trimEnd, topCaption, bottomCaption, videoCaptions,
+      videoAspect, videoDuration, trimStart, trimEnd, videoCaptions,
       filmTitle,
       slides,
       audioFile, audioDuration, coverUri, audioKind,
-      song, tagged, features,
+      song, songMix, tagged, features,
       allowDownloads, allowGifs,
+      publishAt: scheduleAt,
+      mature, allowSound, musicVideo, coverSec, albumId, communities, saveToCameraRoll,
     };
     const next = await saveDraft(draft);
     setDrafts(next);
@@ -695,9 +771,11 @@ export default function PostScreen() {
     setVideoDuration(d.videoDuration);
     setTrimStart(d.trimStart);
     setTrimEnd(d.trimEnd ?? 0);
-    setTopCaption(d.topCaption ?? null);
-    setBottomCaption(d.bottomCaption ?? null);
-    setVideoCaptions(d.videoCaptions ?? []);
+    // A horizontal clip's captions from before band captions were one bubble per
+    // band; they reopen in the studio as band captions.
+    setVideoCaptions(d.videoAspect > 1 && !(d.videoCaptions ?? []).some(isBandSticker)
+      ? bandStickersFromLegacy(d.topCaption, d.bottomCaption)
+      : d.videoCaptions ?? []);
     setFilmTitle(d.filmTitle ?? '');
     setSlides(d.slides ?? []);
     setPickedId(null);
@@ -706,10 +784,22 @@ export default function PostScreen() {
     setCoverUri(d.coverUri);
     setAudioKind(d.audioKind);
     setSong(d.song);
+    setSongMix(d.songMix ?? null);
+    // A schedule that lapsed while the draft sat is dropped, not honoured early.
+    setScheduleAt(d.publishAt && d.publishAt > Date.now() ? d.publishAt : null);
     setTagged(d.tagged ?? []);
     setFeatures(d.features ?? []);
     setAllowDownloads(d.allowDownloads ?? true);
     setAllowGifs(d.allowGifs ?? true);
+    // The rest of the details form, on drafts saved since 1.0.3; older ones fall
+    // back to the composer's defaults.
+    setMature(d.mature ?? false);
+    setAllowSound(d.allowSound ?? DEFAULT_SOUND_OPT_IN);
+    setMusicVideo(d.musicVideo ?? false);
+    setCoverSec(d.coverSec ?? null);
+    setAlbumId(d.albumId ?? null);
+    setCommunities(d.communities ?? []);
+    setSaveToCameraRoll(d.saveToCameraRoll ?? true);
     setError('');
     setDraftsOpen(false);
     setStep('details');
@@ -739,7 +829,7 @@ export default function PostScreen() {
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
     setVideoDuration(0); setTrimStart(0); setTrimEnd(0);
     setAudioFile(null); setAudioDuration(null);
-    setSong(null); setTagged([]);
+    setSong(null); setSongMix(null); setCoverSec(null); setTagged([]);
     forgetResumedDraft(); // the resumed draft's media is gone — stop tracking it
   }
 
@@ -758,7 +848,8 @@ export default function PostScreen() {
   // the user answered two popups about the same upload. The themed
   // ConfirmDialog at Share is the single, accurate warning now.)
 
-  async function onPickMedia(m: PickedMedia) {
+  // Resolves false when a gate below refused the pick (having already said why).
+  async function onPickMedia(m: PickedMedia): Promise<boolean> {
     // Tapping a thumbnail (even far down the grid) snaps back to the top so the
     // collapsing preview re-expands and shows the media that was just picked.
     photoGridRef.current?.scrollToTop();
@@ -778,7 +869,7 @@ export default function PostScreen() {
           { text: t('film.getPlus'), onPress: () => router.push('/premium' as any) },
           { text: t('film.notNow'), style: 'cancel' },
         ]);
-        return;
+        return false;
       }
       const srcMax = landscape && isPremiumPlus ? FILM_SOURCE_MAX_SEC : VIDEO_SOURCE_MAX_SEC;
       if (srcSec > srcMax) {
@@ -786,14 +877,14 @@ export default function PostScreen() {
           t('post.videoSourceTooLongTitle'),
           t('post.videoSourceTooLongBody', { max: fmtMins(srcMax) }),
         );
-        return;
+        return false;
       }
     }
     if (m.type !== postType) setFormat(defaultFormatFor(m.type as any)); // image↔video
     setPostType(m.type);
     setPickedId(m.id);
     setMedia({ uri: m.uri, width: m.width, height: m.height, posterUri: m.posterUri });
-    setThumbnailUri(null);
+    setThumbnailUri(null); setCoverSec(null);
     // Freshly picked media starts at the centered cover crop — drop any crop
     // carried over from a previous selection (the cropper now seeds from
     // cropRef via initialCrop, so a stale value would mis-position the new pick).
@@ -802,7 +893,7 @@ export default function PostScreen() {
       setVideoAspect(clampVideoAspect((m.width || 1) / (m.height || 1)));
       setVideoDuration(m.duration ?? 0);
       setTrimStart(0); setTrimEnd(0);
-      setTopCaption(null); setBottomCaption(null); setVideoCaptions([]); // captions belong to the clip they were placed on
+      setVideoCaptions([]); // captions belong to the clip they were placed on
       try {
         // Grab an early frame, but never past the clip's end — a time beyond
         // the duration fails to decode and would leave the cover blank.
@@ -812,6 +903,7 @@ export default function PostScreen() {
         setThumbnailUri(uri);
       } catch {}
     }
+    return true;
   }
 
 
@@ -849,6 +941,52 @@ export default function PostScreen() {
     } finally {
       setImportingFile(false);
     }
+  }
+
+  // ── The in-app camera ───────────────────────────────────────────────────────
+  // The grid's camera tile opens components/CaptureCamera — the story camera itself
+  // (owner, 2026-09-11). A photo lands exactly as a grid pick does; a recording goes
+  // straight on to the video editor (through the trimmer first if it runs past the
+  // window, as Next would decide), or becomes the next slide in a slideshow.
+  function closeCamera(then?: () => void) {
+    setCameraOpen(false);
+    if (!then) return;
+    if (Platform.OS === 'ios') pendingCameraAction.current = then;
+    else then();
+  }
+  async function onCameraCapture(c: CapturedMedia) {
+    if (c.type === 'image') {
+      // Keyed by its uri, as the system camera's captures were.
+      const m: PickedMedia = { id: c.uri, uri: c.uri, posterUri: c.uri, width: c.width ?? 1, height: c.height ?? 1, type: 'image' };
+      closeCamera(() => { if (slideshowMode) addSlideFromGrid(m); else onPickMedia(m); });
+      return;
+    }
+    if (cameraBusy) return;
+    setCameraBusy(true);
+    try {
+      // The camera reports neither a trustworthy length nor the oriented size.
+      const meta = await probeVideo(c.uri);
+      const m: PickedMedia = {
+        id: c.uri, uri: c.uri, posterUri: meta.posterUri,
+        width: meta.width, height: meta.height, duration: meta.durationSec, type: 'video',
+      };
+      if (slideshowMode) { closeCamera(() => { addSlideFromGrid(m); }); return; }
+      if (!(await onPickMedia(m))) return; // its gate's alert shows over the camera
+      // goNext's routing, from this clip's own numbers: the state onPickMedia just
+      // set hasn't reached this closure.
+      const windowSec = meta.width > meta.height ? (isPremiumPlus ? FILM_MAX_SEC : VIDEO_MAX_SEC_H) : VIDEO_MAX_SEC;
+      setStep(meta.durationSec > windowSec ? 'edit' : 'studio');
+      closeCamera();
+    } catch {
+      Alert.alert(t('storyCamera.videoFailTitle'), t('post.tryAgain'));
+    } finally {
+      setCameraBusy(false);
+    }
+  }
+
+  function openTileMenu(kind: 'visibility' | 'time') {
+    const ref = kind === 'visibility' ? visTileRef : timeTileRef;
+    ref.current?.measureInWindow((x, y, width, height) => setTileMenu({ kind, anchor: { x, y, width, height } }));
   }
 
   function openModeMenu() {
@@ -1108,6 +1246,9 @@ export default function PostScreen() {
       setStep('arrange');
       return;
     }
+    // A video goes through the studio — captions, music, sound and cover on one
+    // screen — the way a slideshow goes through Arrange.
+    if (postType === 'video') { setStep('studio'); return; }
     setStep('details');
   }
 
@@ -1149,6 +1290,14 @@ export default function PostScreen() {
       );
       return;
     }
+    // A time that passed while the post was being written is flagged, not
+    // published early. And a paid spotlight goes live the moment it attaches —
+    // its campaign clock would run while a scheduled post sat hidden.
+    if (scheduleAt != null) {
+      if (scheduleProblem(scheduleAt, Date.now())) { setError(t('schedule.lapsed')); setShowSchedule(true); return; }
+      if (pendingSpot) { setError(t('schedule.noSpotlight')); return; }
+    }
+    const publishAt = scheduleAt != null ? new Date(scheduleAt).toISOString() : null;
     // Re-check the slideshow video budget at the Share button (slides can be
     // added/removed after the add-time gate) — BEFORE any upload work starts.
     if (postType === 'slideshow' && slideshowVideoSecs(slides) > SLIDESHOW_VIDEO_BUDGET_SEC) {
@@ -1180,7 +1329,7 @@ export default function PostScreen() {
       // so a refusal never costs the user a long video upload first.
       // Every piece of on-video text too. A vertical clip's captions were never
       // screened, though they sit on the video as prominently as the caption.
-      const screened = await checkFields(caption, topCaption?.text, bottomCaption?.text, ...videoCaptions.map((s) => s.text));
+      const screened = await checkFields(caption, ...videoCaptions.map((s) => s.text));
       if (!screened.ok) {
         setLoading(false);
         setError(t('filter.blockedBody'));
@@ -1241,7 +1390,12 @@ export default function PostScreen() {
         const videoDurSecV = trimmedV ? Math.max(1, Math.round(winEndV - trimStart)) : Math.round(videoDuration);
         // Captions are timed on the SOURCE's clock, inside the window that gets
         // posted: [trimStart, winEndV] when trimmed, the whole clip otherwise.
-        const captionSplit = splitForPublish(videoCaptions, trimmedV ? trimStart : 0, trimmedV ? winEndV : videoDuration);
+        const captionSplit = splitForPublish(videoCaptions.filter((s) => !isBandSticker(s)), trimmedV ? trimStart : 0, trimmedV ? winEndV : videoDuration);
+        // A horizontal clip's band captions are stored together, timed or not
+        // (lib/bandCaptions).
+        const bandCaptions = videoAspect > 1
+          ? timingForPublish(videoCaptions.filter(isBandSticker), trimmedV ? trimStart : 0, trimmedV ? winEndV : videoDuration)
+          : [];
         const ps = peekPendingSpotlight();
         // Films on cellular: a multi-hundred-MB transfer on mobile data is a
         // bill and a failure risk the user should choose knowingly. One clear
@@ -1287,16 +1441,26 @@ export default function PostScreen() {
           id: resumeDraftId, createdAt: draftNow, updatedAt: draftNow,
           postType, format, caption, genre, isPublic,
           media, crop: cropRef.current as any, thumbnailUri,
-          videoAspect, videoDuration, trimStart, trimEnd, topCaption, bottomCaption, videoCaptions,
+          videoAspect, videoDuration, trimStart, trimEnd, videoCaptions,
           filmTitle,
           slides: [],
           audioFile: null, audioDuration: null, coverUri: null, audioKind,
-          song, tagged, features,
+          song, songMix, tagged, features,
           allowDownloads, allowGifs,
+          publishAt: scheduleAt,
+          mature, allowSound, musicVideo, coverSec, albumId, communities, saveToCameraRoll,
           // Marks this as an in-flight upload for boot-time recovery — cleared
           // only when the post truly exists (see lib/uploadRecovery).
           pendingUpload: true,
         }).then(setDrafts).catch(() => {});
+        // Save to camera roll: "Add to Photos" is asked for here, beside the switch
+        // that wants it. No permission, no copy — said so, and the post goes up either
+        // way. Films are too long to re-encode on a phone, so they never offer it.
+        const wantsCopy = !isFilm && saveToCameraRoll && canSaveFinishedVideo();
+        // eslint-disable-next-line no-console
+        if (__DEV__) console.log(`[save-video] share: switch ${saveToCameraRoll ? 'on' : 'off'}, film ${isFilm}, exporter ${canSaveFinishedVideo() ? 'yes' : 'NO'}`);
+        const saveCopy = wantsCopy && await requestSavePermission();
+        if (wantsCopy && !saveCopy) reportSaveSkipped('permission');
         enqueueVideo({
           userId: user.id,
           localUri: media!.uri,
@@ -1310,18 +1474,26 @@ export default function PostScreen() {
           durationSeconds: videoDurSecV > 0 ? videoDurSecV : null,
           trim: trimmedV ? { start: trimStart, end: winEndV } : null,
           song: song ? { id: song.id, title: song.title, artist: song.artist, artistId: song.artistId ?? null, linkOnly: musicVideoOn } : null,
+          // Only when the studio set one; clamped into the database's range.
+          songMix: activeMix ? mixColumns(activeMix) : null,
           taggedIds: tagged.map((tp) => tp.id),
           communityIds: communities.map((c) => c.id),
           allowGifs,
-          // Landscape → letterbox band bubbles; vertical → free-placed sticker
-          // captions (the story-style array). Only the matching kind is sent.
-          // Captions shown for the whole clip go to posts.captions, which every
-          // app version draws; ones timed to part of it go to timed_captions,
-          // which only 1.0.3+ reads (lib/stickerTiming.splitForPublish).
-          topCaption: videoAspect > 1 ? topCaption : null,
-          bottomCaption: videoAspect > 1 ? bottomCaption : null,
+          // Mature content — the switch is on the details form for every post type,
+          // and until 1.0.3 it never reached a video.
+          mature,
+          // Vertical → captions placed over the clip: the ones shown for the whole
+          // clip go to posts.captions, which every app version draws; ones timed to
+          // part of it go to timed_captions, which only 1.0.3+ reads
+          // (lib/stickerTiming.splitForPublish). Horizontal → band captions, all in
+          // timed_captions, plus the one bubble per band that apps before 1.0.3
+          // draw (lib/bandCaptions). Only the matching kind is sent.
+          topCaption: videoAspect > 1 ? legacyBandCaption(bandCaptions, 'top') : null,
+          bottomCaption: videoAspect > 1 ? legacyBandCaption(bandCaptions, 'bottom') : null,
           captions: videoAspect <= 1 && captionSplit.always.length ? captionSplit.always : null,
-          timedCaptions: videoAspect <= 1 && captionSplit.timed.length ? captionSplit.timed : null,
+          timedCaptions: videoAspect > 1
+            ? (bandCaptions.length ? bandCaptions : null)
+            : (captionSplit.timed.length ? captionSplit.timed : null),
           // Covers the SOURCE, not the chosen window: if the physical cut falls
           // back, the file that goes up is untrimmed, and Cloudflare rejects
           // anything past this ceiling.
@@ -1336,7 +1508,29 @@ export default function PostScreen() {
           // completion (upload + encode + row), never before.
           resumeDraftId,
           spotlight: ps ? { campaignId: ps.campaignId, days: ps.days } : null,
+          // Scheduled: the row goes in hidden until then, and the server announces it.
+          publishAt,
         });
+        if (saveCopy) {
+          // The finished copy starts now, beside the upload: the person is still in
+          // the app, and iOS stops an export once it leaves (lib/videoExport). Times
+          // are on the SOURCE clock, as the captions are.
+          queueFinishedVideoSave({
+            localUri: media!.uri,
+            windowStart: trimmedV ? trimStart : 0,
+            windowEnd: trimmedV ? winEndV : videoDuration,
+            vertical: videoAspect <= 1,
+            captions: videoAspect <= 1 && captionSplit.always.length ? captionSplit.always : null,
+            // A horizontal clip's band captions: it's saved upright, with them in the bands.
+            timedCaptions: videoAspect > 1
+              ? (bandCaptions.length ? bandCaptions : null)
+              : (captionSplit.timed.length ? captionSplit.timed : null),
+            songId: song?.id ?? null,
+            songPlays: !!song && !musicVideoOn,
+            songMix: activeMix ? mixColumns(activeMix) : null,
+          }).catch(() => {});
+        }
+        if (publishAt) setScheduledCount((n) => n + 1);
         if (ps) { clearPendingSpotlight(); setPendingSpotBanner(null); }
         if (isPublic) setPublicCount((c) => (c == null ? c : c + 1));
         // NO celebration here. At this point the file has not uploaded,
@@ -1347,14 +1541,16 @@ export default function PostScreen() {
         // the user holding a success message and an empty feed. The celebratory
         // buzz now fires from UploadQueueContext at real completion, where the
         // post genuinely exists.
-        setPostedToast({
-          title: spotLabel ? t('post.postedSpotlightTitle') : t('post.uploadingTitle'),
-          message: spotLabel
-            ? t('post.postedSpotlightBody', { duration: spotlightDurationPhrase(spotLabel) })
-            : t('post.uploadingBody'),
-          spotlight: !!spotLabel,
-          uploading: true,
-        });
+        setPostedToast(scheduleAt != null
+          ? { title: t('schedule.doneTitle'), message: t('schedule.uploadingBody', { when: scheduleWhen(scheduleAt) }), spotlight: false, uploading: true, scheduled: true }
+          : {
+              title: spotLabel ? t('post.postedSpotlightTitle') : t('post.uploadingTitle'),
+              message: spotLabel
+                ? t('post.postedSpotlightBody', { duration: spotlightDurationPhrase(spotLabel) })
+                : t('post.uploadingBody'),
+              spotlight: !!spotLabel,
+              uploading: true,
+            });
         resetAll();
         setLoading(false);
         return;
@@ -1462,6 +1658,8 @@ export default function PostScreen() {
 
       const { data: newPost, error: postError } = await supabase.from('posts').insert({
         user_id: user.id,
+        // Scheduled: in the table now, hidden until then (post_scheduling.sql).
+        ...(publishAt ? { publish_at: publishAt } : {}),
         type: postType === 'audio' ? audioKind : postType,
         media_url: mediaUrl,
         caption: caption.trim(),
@@ -1510,17 +1708,25 @@ export default function PostScreen() {
       if (postError) throw postError;
       notifySuccess(); // celebratory buzz on a published post
       if (isPublic) {
-        bumpBadge('posts_created'); // recomputes the Posts badge from the live grid
+        // A scheduled post counts once it is live, when the badge next evaluates.
+        if (!publishAt) bumpBadge('posts_created'); // recomputes the Posts badge from the live grid
         setPublicCount((c) => (c == null ? c : c + 1)); // slot hint stays honest
+      }
+      if (publishAt && newPost?.id && scheduleAt != null) {
+        scheduleLiveReminder(newPost.id, scheduleAt);
+        setScheduledCount((n) => n + 1);
       }
 
       // Notify @mentions in the caption, and the original artist if their song was used.
       if (newPost?.id) {
-        processMentions({ text: caption.trim(), actorId: user.id, postId: newPost.id });
-        if (song && postType !== 'audio' && song.artistId && song.artistId !== user.id) {
+        // A scheduled post's notifications are the server's to send when it goes
+        // live (publish_scheduled_posts) — sent now, they would open a post nobody
+        // can see yet.
+        if (!publishAt) processMentions({ text: caption.trim(), actorId: user.id, postId: newPost.id });
+        if (!publishAt && song && postType !== 'audio' && song.artistId && song.artistId !== user.id) {
           createNotification({ userId: song.artistId, actorId: user.id, type: 'song_used', postId: newPost.id });
         }
-        if (postType !== 'audio') {
+        if (!publishAt && postType !== 'audio') {
           for (const t of tagged) {
             if (t.id !== user.id) createNotification({ userId: t.id, actorId: user.id, type: 'tag', postId: newPost.id });
           }
@@ -1532,7 +1738,7 @@ export default function PostScreen() {
         // to notify and no profile to open. Reaching those people needs a
         // "you've been credited, claim your profile" invite, which is a
         // different and larger piece of work.
-        if (postType === 'audio') {
+        if (!publishAt && postType === 'audio') {
           for (const f of features) {
             if (f.id && f.id !== user.id) createNotification({ userId: f.id, actorId: user.id, type: 'tag', postId: newPost.id });
           }
@@ -1572,13 +1778,30 @@ export default function PostScreen() {
 
       // Polished in-app confirmation (replaces the default OS alert). Lands on
       // the pick step after resetAll, where the Toast is rendered.
-      setPostedToast({
-        title: spotLabel ? t('post.postedSpotlightTitle') : t('post.postedTitle'),
-        message: spotLabel
-          ? t('post.postedSpotlightBody', { duration: spotlightDurationPhrase(spotLabel) })
-          : t('post.postedBody'),
-        spotlight: !!spotLabel,
-      });
+      const posted = publishAt && scheduleAt != null
+        ? { title: t('schedule.doneTitle'), message: t('schedule.doneBody', { when: scheduleWhen(scheduleAt) }), spotlight: false, scheduled: true }
+        : {
+            title: spotLabel ? t('post.postedSpotlightTitle') : t('post.postedTitle'),
+            message: spotLabel
+              ? t('post.postedSpotlightBody', { duration: spotlightDurationPhrase(spotLabel) })
+              : t('post.postedBody'),
+            spotlight: !!spotLabel,
+            scheduled: false,
+          };
+      // The post exists, so it gets its moment — with the way to see it and to
+      // share it (components/PostedCelebration). The toast is only the fallback.
+      if (newPost?.id) {
+        setCelebration({
+          ...posted,
+          postId: newPost.id,
+          thumb: (postType === 'audio' ? coverUrl : postType === 'slideshow' ? (thumbnailUrl ?? mediaUrl) : mediaUrl) ?? null,
+          caption: caption.trim(),
+          type: postType === 'audio' ? audioKind : postType,
+          mediaUrl: mediaUrl ?? null,
+        });
+      } else {
+        setPostedToast(posted);
+      }
       resetAll();
     } catch (err: any) {
       setError(friendlyShareError(err, t));
@@ -1651,7 +1874,7 @@ export default function PostScreen() {
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('post.trim')}</Text>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.forward')} style={styles.headerAction} onPress={() => setStep('details')}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.forward')} style={styles.headerAction} onPress={() => setStep('studio')}>
             <Ionicons name="arrow-forward" size={24} color={colors.text} />
           </TouchableOpacity>
         </View>
@@ -1672,6 +1895,45 @@ export default function PostScreen() {
     );
   }
 
+  // ─── Studio step (videos) ──────────────────────────────────────────────────
+  // Captions, music, the sound mix and the cover, on one full-screen editor
+  // between picking (or trimming) and the details — see components/VideoStudio.
+  if (step === 'studio' && media && postType === 'video') {
+    const trimmedV = videoDuration > videoWindowSec;
+    // The part that gets posted — the same window publish times the captions in.
+    const winStart = trimmedV ? trimStart : 0;
+    const winEnd = trimmedV ? (trimEnd > trimStart ? trimEnd : Math.min(trimStart + videoWindowSec, videoDuration)) : videoDuration;
+    const keep = (r: StudioResult) => {
+      setStudioPanel(null);
+      setVideoCaptions(r.captions);
+      if (r.mix && song && !musicVideoOn) setSongMix({ ...r.mix, songId: song.id });
+    };
+    return (
+      <View style={styles.container}>
+        <VideoStudio
+          videoUri={media.uri}
+          posterUri={thumbnailUri ?? media.posterUri ?? null}
+          aspect={videoAspect}
+          windowStart={winStart}
+          windowEnd={winEnd}
+          initialCaptions={videoCaptions}
+          song={song}
+          onSong={setSong}
+          musicVideo={musicVideo}
+          onMusicVideo={setMusicVideo}
+          songMix={activeMix}
+          coverUri={thumbnailUri}
+          onCover={setThumbnailUri}
+          coverSec={coverSec}
+          onCoverSec={setCoverSec}
+          initialPanel={studioPanel}
+          onBack={(r) => { keep(r); setStep(trimmedV ? 'edit' : 'pick'); }}
+          onNext={(r) => { keep(r); setStep('details'); }}
+        />
+      </View>
+    );
+  }
+
   // ─── Details step ──────────────────────────────────────────────────────────
   if (step === 'details') {
     // Prefer the durable ph:// poster over the evictable cache thumbnail for
@@ -1684,23 +1946,86 @@ export default function PostScreen() {
     // The display label for the chosen genre (state stores the lowercase value).
     const selGenre = GENRES.find((g) => g.toLowerCase() === genre);
     const selectedGenreLabel = selGenre ? genreLabel(selGenre) : '';
+    // Communities: in the right column for a video — whose music lives in the
+    // studio, one Back away — and full width under the caption for everything else.
+    const communityField = (compact: boolean) => (
+      <View style={styles.field}>
+        <Text style={styles.fieldLabel}>{t('communities.postLabel')}</Text>
+        <TouchableOpacity style={styles.dropdown} onPress={() => setShowCommunityPicker(true)} activeOpacity={0.8}>
+          <Ionicons name="people" size={15} color={hasCommunity ? colors.primary : colors.textTertiary} />
+          <Text style={[styles.dropdownText, !hasCommunity && styles.dropdownPlaceholder]} numberOfLines={1}>
+            {communities.length === 0 ? (compact ? t('communities.addShort') : t('communities.addToCommunity'))
+              : communities.length === 1 ? communities[0].name
+              : t('communities.communityCount', { count: communities.length })}
+          </Text>
+          {hasCommunity ? (
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} onPress={() => setCommunities([])} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+            </TouchableOpacity>
+          ) : (
+            <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+          )}
+        </TouchableOpacity>
+      </View>
+    );
+    // The two menu buttons' choices.
+    const visibilityOptions: MenuOption[] = [
+      { key: 'public', label: t('post.public'), sub: t('post.publicSub'), icon: 'globe-outline', selected: isPublic, onPress: () => setIsPublic(true) },
+      { key: 'friends', label: t('post.friendsOnly'), sub: t('post.friendsOnlySub'), icon: 'people-outline', selected: !isPublic, onPress: () => setIsPublic(false) },
+    ];
+    const timeOptions: MenuOption[] = [
+      { key: 'now', label: t('schedule.postNow'), icon: 'paper-plane-outline', selected: scheduleAt == null, onPress: () => setScheduleAt(null) },
+      {
+        key: 'later',
+        label: scheduleAt != null ? t('schedule.changeTime') : t('schedule.menuLater'),
+        sub: scheduleAt != null ? scheduleWhen(scheduleAt) : undefined,
+        icon: 'calendar-outline',
+        selected: scheduleAt != null,
+        // Opens the day-and-time sheet once the menu has gone.
+        presents: true,
+        onPress: () => setShowSchedule(true),
+      },
+    ];
     return (
       <View style={styles.container}>
         <View style={styles.header}>
           {/* Back goes to whichever step actually preceded this one. A slideshow
               came through Arrange, and dropping the user past it to the picker
               would look like their crops and ordering had been thrown away. */}
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => setStep(slideshowMode && slides.length > 0 ? 'arrange' : 'pick')}>
-            <Ionicons name="chevron-back" size={26} color={colors.text} />
-          </TouchableOpacity>
+          {/* The same width as the Share pill's side, so the title stays centred — but
+              the arrow itself keeps its usual button at the left edge. */}
+          <View style={styles.headerSideStart}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => setStep(slideshowMode && slides.length > 0 ? 'arrange' : postType === 'video' && media ? 'studio' : 'pick')}>
+              <Ionicons name="chevron-back" size={26} color={colors.text} />
+            </TouchableOpacity>
+          </View>
           <Text style={styles.headerTitle}>{t('post.newPost')}</Text>
-          <TouchableOpacity style={styles.headerAction} onPress={handleShare} disabled={loading}>
-            {loading
-              ? uploadPct != null
-                ? <Text style={styles.headerActionText}>{Math.round(uploadPct * 100)}%</Text>
-                : <ActivityIndicator color={colors.primary} size="small" />
-              : <Text style={styles.headerActionText}>{t('post.share')}</Text>}
-          </TouchableOpacity>
+          {/* The terminal action as a pill that sizes to its word — the old slot was
+              a fixed 64 pt, which broke "Schedule" over two lines. Black on light and
+              white on dark, like the Share button at the bottom (owner, 2026-09-11).
+              Both header sides are the same width, so the title stays centred. */}
+          <View style={styles.headerSideWide}>
+            <TouchableOpacity
+              style={[styles.sharePill, loading && styles.sharePillBusy]}
+              onPress={handleShare}
+              disabled={loading}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+            >
+              {loading ? (
+                uploadPct != null
+                  ? <Text style={styles.sharePillText}>{Math.round(uploadPct * 100)}%</Text>
+                  : <ActivityIndicator color={colors.background} size="small" />
+              ) : (
+                <>
+                  <Ionicons name={scheduleAt != null ? 'calendar' : 'paper-plane'} size={14} color={colors.background} />
+                  <Text style={styles.sharePillText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                    {scheduleAt != null ? t('schedule.shareBtn') : t('post.share')}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Real upload progress for big files (3-min videos can be 100s of MB) */}
@@ -1737,14 +2062,14 @@ export default function PostScreen() {
           {postType !== 'audio' && (
             <View style={styles.twoCol}>
               {/* Bigger post preview, with a Tag-people shortcut overlaid on it.
-                  For VIDEO posts the square itself opens the cover picker (any
+                  For VIDEO posts the square opens the studio's cover picker (any
                   frame from the clip, or a camera-roll image). */}
               <View style={styles.previewCol}>
                 <TouchableOpacity
                   style={styles.previewBig}
                   activeOpacity={postType === 'video' && media?.uri ? 0.85 : 1}
                   disabled={!(postType === 'video' && media?.uri)}
-                  onPress={() => setShowThumbPicker(true)}
+                  onPress={() => { setStudioPanel('cover'); setStep('studio'); }}
                 >
                   {thumbUri ? (
                     // ExpoImage renders ph:// reliably and degrades to empty (not a
@@ -1775,7 +2100,7 @@ export default function PostScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Right column: Genre + Music as compact dropdowns */}
+              {/* Right column: Genre, then Music — or, on a video, Communities. */}
               <View style={styles.rightCol}>
                 {showGenre && (
                   <View style={styles.field}>
@@ -1791,124 +2116,31 @@ export default function PostScreen() {
                     {hasCommunity && <Text style={styles.genreLockHint}>{t('post.genreFromCommunity')}</Text>}
                   </View>
                 )}
-                <View style={styles.field}>
-                  <Text style={styles.fieldLabel}>{t('post.musicLabel')}</Text>
-                  {/* Locked while music-video mode owns the song, mirroring how
-                      GENRE locks under a community: the control stays visible
-                      and says why, rather than vanishing and leaving the user
-                      wondering where "Add music" went. */}
-                  <TouchableOpacity
-                    style={[styles.dropdown, musicVideoOn && styles.dropdownLocked]}
-                    onPress={() => setShowSongPicker(true)}
-                    disabled={musicVideoOn}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="musical-notes" size={15} color={song && !musicVideoOn ? colors.primary : colors.textTertiary} />
-                    <Text style={[styles.dropdownText, (!song || musicVideoOn) && styles.dropdownPlaceholder]} numberOfLines={1}>
-                      {!musicVideoOn && song ? song.title : t('post.addMusic')}
-                    </Text>
-                    {musicVideoOn ? (
-                      <Ionicons name="lock-closed" size={16} color={colors.textTertiary} />
-                    ) : song ? (
-                      <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} onPress={() => setSong(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                        <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
-                      </TouchableOpacity>
-                    ) : (
-                      <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
-                    )}
-                  </TouchableOpacity>
-                  {musicVideoOn && <Text style={styles.genreLockHint}>{t('post.musicLockedMv')}</Text>}
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* Music-video mode. Full width, OUTSIDE the two-column block: in the
-              right-hand column beside the preview it only had half the screen,
-              and a label plus a sentence of explanation wrapped into a tall
-              ribbon. It sits directly under that block so it still reads as
-              part of the music controls.
-
-              VIDEO ONLY: on an image or slideshow the attached song IS the
-              soundtrack, so there is nothing for it to duplicate.
-
-              Flipping it clears any picked song on purpose — the two modes draw
-              from different catalogues (anyone's public audio vs. only yours),
-              so a song chosen under one rule must not survive into the other.
-              Without that, a user could pick a stranger's track, flip the
-              switch, and publish it as their own music video. */}
-          {postType === 'video' && (
-            <View style={styles.section}>
-              <View style={[styles.switchRow, musicVideo && styles.switchRowOpen]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.switchLabel}>{t('post.musicVideoLabel')}</Text>
-                  <Text style={styles.switchSub}>{t('post.musicVideoSub')}</Text>
-                </View>
-                <Switch
-                  value={musicVideo}
-                  onValueChange={(v) => { setMusicVideo(v); setSong(null); }}
-                  trackColor={{ false: colors.borderStrong, true: colors.primary }}
-                  thumbColor="#fff"
-                />
-              </View>
-              {/* The song lives HERE while the switch is on, not in the MUSIC
-                  dropdown below — one control, in the section that explains what
-                  it does, instead of a setting whose effect is somewhere else on
-                  the screen. Attached to the switch card (no top corners, no top
-                  border) so the two read as one block rather than two unrelated
-                  rows that happen to be adjacent. */}
-              {musicVideo && (
-                <TouchableOpacity style={styles.mvPick} onPress={() => setShowSongPicker(true)} activeOpacity={0.8}>
-                  <Ionicons name="musical-notes" size={15} color={song ? colors.primary : colors.textTertiary} />
-                  <Text style={[styles.dropdownText, !song && styles.dropdownPlaceholder]} numberOfLines={1}>
-                    {song ? song.title : t('post.addMusic')}
-                  </Text>
-                  {song ? (
-                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} onPress={() => setSong(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
-                    </TouchableOpacity>
-                  ) : (
-                    <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
-                  )}
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-
-          {/* Video captions — TikTok-style. Horizontal clips park bubbles in the
-              black letterbox bands; vertical clips place as many as you like
-              anywhere on screen (the story sticker system), clear of the reel UI. */}
-          {postType === 'video' && !!media?.uri && (() => {
-            const horiz = videoAspect > 1;
-            const hasCaption = horiz ? (!!topCaption || !!bottomCaption) : videoCaptions.length > 0;
-            const summary = horiz
-              ? (topCaption ?? bottomCaption)?.text.replace(/\n/g, ' ')
-              : videoCaptions.map((s) => s.text.replace(/\n/g, ' ')).filter(Boolean).join(' · ');
-            return (
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>{horiz ? t('post.bandCaptions') : t('post.videoCaption')}</Text>
-              <TouchableOpacity style={styles.dropdown} onPress={() => setShowCaptionEditor(true)} activeOpacity={0.8}>
-                <Ionicons name="chatbox-ellipses" size={15} color={hasCaption ? colors.primary : colors.textTertiary} />
-                <Text style={[styles.dropdownText, !hasCaption && styles.dropdownPlaceholder]} numberOfLines={1}>
-                  {hasCaption ? summary : horiz ? t('post.topCaptionAdd') : t('post.screenCaptionAdd')}
-                </Text>
-                {hasCaption ? (
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')}
-                    onPress={() => { setTopCaption(null); setBottomCaption(null); setVideoCaptions([]); }}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
-                  </TouchableOpacity>
+                {postType === 'video' ? (
+                  // No Video field: its music, sound, text and cover are all in the
+                  // studio, one Back away. Its communities sit here instead.
+                  communityField(true)
                 ) : (
-                  <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                  <View style={styles.field}>
+                    <Text style={styles.fieldLabel}>{t('post.musicLabel')}</Text>
+                    <TouchableOpacity style={styles.dropdown} onPress={() => setShowSongPicker(true)} activeOpacity={0.8}>
+                      <Ionicons name="musical-notes" size={15} color={song ? colors.primary : colors.textTertiary} />
+                      <Text style={[styles.dropdownText, !song && styles.dropdownPlaceholder]} numberOfLines={1}>
+                        {song ? song.title : t('post.addMusic')}
+                      </Text>
+                      {song ? (
+                        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} onPress={() => setSong(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                          <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+                        </TouchableOpacity>
+                      ) : (
+                        <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 )}
-              </TouchableOpacity>
-              <Text style={styles.genreLockHint}>
-                {horiz ? t('post.bandCaptionsHint') : t('post.screenCaptionHint')}
-              </Text>
+              </View>
             </View>
-            );
-          })()}
+          )}
 
           {/* Audio category */}
           {postType === 'audio' && (
@@ -2042,6 +2274,7 @@ export default function PostScreen() {
               placeholderTextColor={colors.textTertiary}
               value={caption}
               onChangeText={setCaption}
+              onSelectionChange={(e) => setCaptionCursor(e.nativeEvent.selection.end)}
               multiline={postType !== 'audio'}
               // Cap the title where the song-card marquee can still reveal it
               // in full (see MEASURE_W in SongCardTitle) — longer would scroll
@@ -2049,53 +2282,82 @@ export default function PostScreen() {
               maxLength={postType === 'audio' ? 80 : 500}
               editable={!swiping}
             />
+            <Text style={[styles.captionCount, caption.length >= (postType === 'audio' ? 80 : 500) * 0.9 && { color: colors.error }]}>
+              {caption.length}/{postType === 'audio' ? 80 : 500}
+            </Text>
+            {/* At the cursor, not the end: an @ typed mid-caption suggests too. */}
             <MentionSuggestions
-              query={getActiveMentionQuery(caption, caption.length)}
-              onPick={(u) => setCaption(applyMention(caption, caption.length, u).text)}
+              query={getActiveMentionQuery(caption, captionCursor)}
+              onPick={(u) => { const r = applyMention(caption, captionCursor, u); setCaption(r.text); setCaptionCursor(r.cursor); }}
             />
           </View>
 
-          {/* Communities — multi-select the communities you want this post in */}
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>{t('communities.postLabel')}</Text>
-            <TouchableOpacity style={styles.dropdown} onPress={() => setShowCommunityPicker(true)} activeOpacity={0.8}>
-              <Ionicons name="people" size={15} color={hasCommunity ? colors.primary : colors.textTertiary} />
-              <Text style={[styles.dropdownText, !hasCommunity && styles.dropdownPlaceholder]} numberOfLines={1}>
-                {communities.length === 0 ? t('communities.addToCommunity')
-                  : communities.length === 1 ? communities[0].name
-                  : t('communities.communityCount', { count: communities.length })}
-              </Text>
-              {hasCommunity ? (
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} onPress={() => setCommunities([])} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
-                </TouchableOpacity>
-              ) : (
-                <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
-              )}
-            </TouchableOpacity>
-          </View>
+          {/* Communities, full width — a video has them beside its genre instead. */}
+          {postType !== 'video' && communityField(false)}
 
-          {/* Public / Private — one button that flips visibility. Posting to a
-              community FORCES Public, so the toggle locks to Public (with a
-              lock icon) while a community is attached. Remove the community to
-              regain the friends-only option. */}
-          <TouchableOpacity
-            style={[styles.visBtn, hasCommunity && styles.visBtnLocked]}
-            onPress={() => { if (hasCommunity) return; setIsPublic((v) => !v); }}
-            disabled={hasCommunity}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel={t('post.public')}
-          >
-            <Ionicons name={hasCommunity || isPublic ? 'globe-outline' : 'people-outline'} size={20} color={colors.text} />
-            <View style={styles.visText}>
-              <Text style={styles.visLabel}>{hasCommunity || isPublic ? t('post.public') : t('post.friendsOnly')}</Text>
-              <Text style={styles.visSub} numberOfLines={1}>
-                {hasCommunity ? t('post.communityPublicLock') : isPublic ? t('post.publicSub') : t('post.friendsOnlySub')}
-              </Text>
+          {/* Who sees it and when it goes up, side by side: two iOS-style menu
+              buttons (components/PullDownMenu). A community post is always public
+              and a spotlighted one goes up right away, so each locks then. */}
+          <View style={styles.tileRow}>
+            <View ref={visTileRef} collapsable={false} style={styles.tileWrap}>
+              <TouchableOpacity
+                style={[
+                  styles.tile,
+                  { backgroundColor: hasCommunity || isPublic ? IOS_BLUE : IOS_GREEN, shadowColor: hasCommunity || isPublic ? IOS_BLUE : IOS_GREEN },
+                  hasCommunity && styles.tileLocked,
+                ]}
+                onPress={() => openTileMenu('visibility')}
+                disabled={hasCommunity}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`${t('editPost.visibility')}: ${hasCommunity || isPublic ? t('post.public') : t('post.friendsOnly')}`}
+              >
+                <View style={styles.tileIcon}>
+                  <Ionicons name={hasCommunity || isPublic ? 'globe' : 'people'} size={21} color="#fff" />
+                </View>
+                <View style={styles.tileText}>
+                  <View style={styles.tileTitleRow}>
+                    <Text style={styles.tileTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                      {hasCommunity || isPublic ? t('post.public') : t('post.friendsOnly')}
+                    </Text>
+                    <Ionicons name={hasCommunity ? 'lock-closed' : 'chevron-expand'} size={12} color="rgba(255,255,255,0.9)" />
+                  </View>
+                  <Text style={styles.tileSub} numberOfLines={2}>
+                    {hasCommunity ? t('post.visCommunityShort') : isPublic ? t('post.visPublicShort') : t('post.visFriendsShort')}
+                  </Text>
+                </View>
+              </TouchableOpacity>
             </View>
-            <Ionicons name={hasCommunity ? 'lock-closed' : 'swap-horizontal'} size={18} color={colors.textTertiary} />
-          </TouchableOpacity>
+            <View ref={timeTileRef} collapsable={false} style={styles.tileWrap}>
+              <TouchableOpacity
+                style={[
+                  styles.tile,
+                  { backgroundColor: scheduleAt != null ? IOS_INDIGO : IOS_ORANGE, shadowColor: scheduleAt != null ? IOS_INDIGO : IOS_ORANGE },
+                  !!pendingSpot && styles.tileLocked,
+                ]}
+                onPress={() => openTileMenu('time')}
+                disabled={!!pendingSpot}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`${t('schedule.row')}: ${scheduleAt != null ? scheduleWhen(scheduleAt) : t('schedule.postNow')}`}
+              >
+                <View style={styles.tileIcon}>
+                  <Ionicons name={scheduleAt != null ? 'calendar' : 'paper-plane'} size={20} color="#fff" />
+                </View>
+                <View style={styles.tileText}>
+                  <View style={styles.tileTitleRow}>
+                    <Text style={styles.tileTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                      {scheduleAt != null ? t('schedule.doneTitle') : t('schedule.postNow')}
+                    </Text>
+                    <Ionicons name={pendingSpot ? 'lock-closed' : 'chevron-expand'} size={12} color="rgba(255,255,255,0.9)" />
+                  </View>
+                  <Text style={styles.tileSub} numberOfLines={2}>
+                    {pendingSpot ? t('schedule.tileSpotlightSub') : scheduleAt != null ? scheduleWhen(scheduleAt) : t('schedule.tileNowSub')}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
 
           {/* Badge-tier public slots */}
           {isPublic && publicCount != null && (
@@ -2108,75 +2370,99 @@ export default function PostScreen() {
             </Text>
           )}
 
-          {/* Per-post creator controls (both default ON — flip OFF to opt out).
-              Just a title + switch, with a "Learn more" link that opens a themed
-              explanation popup (cleaner than a bordered card with body copy). */}
+          {/* Audio only, and kept in view rather than folded into Advanced: this is
+              the per-track sync consent — the entire legal basis for anyone attaching
+              this song to their video. It has to be visible and its own choice, not
+              folded into the general upload grant. See lib/sounds.ts and
+              supabase/sql/sound_optin.sql. */}
           {postType === 'audio' && (
-            <View style={styles.optRow}>
-              <Text style={styles.optLabel}>{t('offline.downloadableLabel')}</Text>
-              <Switch
-                style={styles.optSwitch}
-                value={allowDownloads}
-                onValueChange={setAllowDownloads}
-                trackColor={{ true: colors.text, false: colors.surfaceLight }}
-                thumbColor={allowDownloads ? colors.background : "#fff"}
-              />
-              <TouchableOpacity onPress={() => setInfo({ icon: 'cloud-download-outline', title: t('offline.downloadableLabel'), body: t('offline.downloadableHelp') })} hitSlop={8}>
-                <Text style={styles.learnMore}>{t('post.learnMore')}</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          {/* Audio only. This is the per-track sync consent — the entire legal
-              basis for anyone attaching this song to their video. It has to be
-              visible and its own choice, not folded into the general upload
-              grant. See lib/sounds.ts and supabase/sql/sound_optin.sql. */}
-          {postType === 'audio' && (
-            <View style={styles.optRow}>
-              <Text style={styles.optLabel}>{t('post.allowSoundLabel')}</Text>
-              <Switch
-                style={styles.optSwitch}
+            <View style={styles.settingsCard}>
+              <SettingSwitch
+                label={t('post.allowSoundLabel')}
                 value={allowSound}
-                onValueChange={setAllowSound}
-                trackColor={{ true: colors.text, false: colors.surfaceLight }}
-                thumbColor={allowSound ? colors.background : "#fff"}
+                onChange={setAllowSound}
+                onInfo={() => setInfo({ icon: 'musical-notes-outline', title: t('post.allowSoundLabel'), body: t('post.allowSoundHelp') })}
+                infoLabel={t('post.learnMore')}
+                last
+                styles={styles}
+                colors={colors}
               />
-              <TouchableOpacity onPress={() => setInfo({ icon: 'musical-notes-outline', title: t('post.allowSoundLabel'), body: t('post.allowSoundHelp') })} hitSlop={8}>
-                <Text style={styles.learnMore}>{t('post.learnMore')}</Text>
-              </TouchableOpacity>
             </View>
           )}
-          {/* Mature content. Shown for every post type, because "adult themes"
-              is not only a visual question — a track can carry them too. Off by
-              default; the gate in mature_content.sql does nothing until this is
-              switched on. */}
-          <View style={styles.optRow}>
-            <Text style={styles.optLabel}>{t('post.matureLabel')}</Text>
-            <Switch
-              style={styles.optSwitch}
-              value={mature}
-              onValueChange={setMature}
-              trackColor={{ true: colors.text, false: colors.surfaceLight }}
-              thumbColor={mature ? colors.background : "#fff"}
-            />
-            <TouchableOpacity onPress={() => setInfo({ icon: 'alert-circle-outline', title: t('post.matureLabel'), body: t('post.matureHelp') })} hitSlop={8}>
-              <Text style={styles.learnMore}>{t('post.learnMore')}</Text>
+
+          {/* The per-post switches most posts never change — mature content, GIFs in
+              the comments, a track's downloads — folded under a quiet header. While
+              it is closed, a dot says one of them is not at its default. Mature
+              content is offered for every post type, because adult themes are not
+              only a visual question; the gate in mature_content.sql does nothing
+              until it is switched on. */}
+          <View style={styles.advanced}>
+            <TouchableOpacity
+              style={styles.advancedHeader}
+              onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.create(220, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
+                setAdvancedOpen((open) => !open);
+              }}
+              activeOpacity={0.6}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: advancedOpen }}
+            >
+              <Ionicons name="options-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.advancedTitle}>{t('post.advancedSettings')}</Text>
+              {!advancedOpen && (mature || (postType === 'video' && !allowGifs) || (postType === 'audio' && !allowDownloads) || (postType === 'video' && !isFilm && canSaveFinishedVideo() && !saveToCameraRoll)) && (
+                <View style={styles.advancedDot} />
+              )}
+              <Ionicons name={advancedOpen ? 'chevron-up' : 'chevron-down'} size={15} color={colors.textSecondary} />
             </TouchableOpacity>
+            {advancedOpen && (
+              <View style={styles.settingsCard}>
+                {postType === 'audio' && (
+                  <SettingSwitch
+                    label={t('offline.downloadableLabel')}
+                    value={allowDownloads}
+                    onChange={setAllowDownloads}
+                    onInfo={() => setInfo({ icon: 'cloud-download-outline', title: t('offline.downloadableLabel'), body: t('offline.downloadableHelp') })}
+                    infoLabel={t('post.learnMore')}
+                    styles={styles}
+                    colors={colors}
+                  />
+                )}
+                {postType === 'video' && !isFilm && canSaveFinishedVideo() && (
+                  <SettingSwitch
+                    label={t('post.saveVideoLabel')}
+                    value={saveToCameraRoll}
+                    onChange={setSaveToCameraRoll}
+                    onInfo={() => setInfo({ icon: 'download-outline', title: t('post.saveVideoLabel'), body: t('post.saveVideoHelp') })}
+                    infoLabel={t('post.learnMore')}
+                    styles={styles}
+                    colors={colors}
+                  />
+                )}
+                <SettingSwitch
+                  label={t('post.matureLabel')}
+                  value={mature}
+                  onChange={setMature}
+                  onInfo={() => setInfo({ icon: 'alert-circle-outline', title: t('post.matureLabel'), body: t('post.matureHelp') })}
+                  infoLabel={t('post.learnMore')}
+                  last={postType !== 'video'}
+                  styles={styles}
+                  colors={colors}
+                />
+                {postType === 'video' && (
+                  <SettingSwitch
+                    label={t('post.allowGifsLabel')}
+                    value={allowGifs}
+                    onChange={setAllowGifs}
+                    onInfo={() => setInfo({ icon: 'film-outline', title: t('post.allowGifsLabel'), body: t('post.allowGifsHelp') })}
+                    infoLabel={t('post.learnMore')}
+                    last
+                    styles={styles}
+                    colors={colors}
+                  />
+                )}
+              </View>
+            )}
           </View>
-          {postType === 'video' && (
-            <View style={styles.optRow}>
-              <Text style={styles.optLabel}>{t('post.allowGifsLabel')}</Text>
-              <Switch
-                style={styles.optSwitch}
-                value={allowGifs}
-                onValueChange={setAllowGifs}
-                trackColor={{ true: colors.text, false: colors.surfaceLight }}
-                thumbColor={allowGifs ? colors.background : "#fff"}
-              />
-              <TouchableOpacity onPress={() => setInfo({ icon: 'film-outline', title: t('post.allowGifsLabel'), body: t('post.allowGifsHelp') })} hitSlop={8}>
-                <Text style={styles.learnMore}>{t('post.learnMore')}</Text>
-              </TouchableOpacity>
-            </View>
-          )}
 
           {!!error && (
             <View style={styles.errorRow}>
@@ -2184,6 +2470,27 @@ export default function PostScreen() {
               <Text style={styles.errorText}>{error}</Text>
             </View>
           )}
+
+          {/* The post's main action where the thumb already is when the form is
+              done — the header's Share is easy to lose after a long scroll. */}
+          <TouchableOpacity
+            style={[styles.shareCta, loading && styles.draftSaveBtnDisabled]}
+            onPress={handleShare}
+            disabled={loading}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+          >
+            {loading ? (
+              <ActivityIndicator color={colors.background} size="small" />
+            ) : (
+              <>
+                <Ionicons name={scheduleAt != null ? 'calendar' : 'paper-plane'} size={18} color={colors.background} />
+                <Text style={styles.shareCtaText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                  {scheduleAt != null ? t('schedule.ctaFor', { when: scheduleWhen(scheduleAt) }) : t('post.share')}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
 
           {/* Save as draft — keeps everything (media stays on-device, nothing
               uploaded) to finish and publish later. Disabled mid-upload. */}
@@ -2199,35 +2506,18 @@ export default function PostScreen() {
         </ScrollView>
         <SongPickerModal visible={showSongPicker} onClose={() => setShowSongPicker(false)} onSelect={setSong} ownOnly={musicVideoOn} />
         <TagPeopleModal visible={showTagModal} initial={tagged} onClose={() => setShowTagModal(false)} onDone={setTagged} />
-        <ThumbnailPickerModal
-          visible={showThumbPicker}
-          videoUri={postType === 'video' ? media?.uri ?? null : null}
-          durationSec={videoDuration ?? 0}
-          currentUri={thumbnailUri}
-          onPick={(uri) => { setThumbnailUri(uri); setShowThumbPicker(false); }}
-          onClose={() => setShowThumbPicker(false)}
+        <SchedulePicker
+          visible={showSchedule}
+          value={scheduleAt}
+          onClose={() => setShowSchedule(false)}
+          onSet={(at) => { setScheduleAt(at); setShowSchedule(false); setError(''); }}
+          onClear={() => { setScheduleAt(null); setShowSchedule(false); }}
         />
-        {/* Horizontal → letterbox band editor; vertical → story sticker editor. */}
-        <TopCaptionEditor
-          visible={showCaptionEditor && videoAspect > 1}
-          aspect={videoAspect}
-          posterUri={thumbnailUri}
-          initialTop={topCaption}
-          initialBottom={bottomCaption}
-          onSave={(top, bottom) => { setTopCaption(top); setBottomCaption(bottom); setShowCaptionEditor(false); }}
-          onClose={() => setShowCaptionEditor(false)}
-        />
-        <VideoStickerEditor
-          visible={showCaptionEditor && videoAspect <= 1}
-          posterUri={thumbnailUri}
-          // Plays the picked clip so captions can be timed against it, inside the
-          // part that gets posted — the same window publish splits them against.
-          videoUri={postType === 'video' ? media?.uri ?? null : null}
-          windowStart={videoDuration > videoWindowSec ? trimStart : 0}
-          windowEnd={videoDuration > videoWindowSec ? (trimEnd > trimStart ? trimEnd : Math.min(trimStart + videoWindowSec, videoDuration)) : videoDuration}
-          initial={videoCaptions}
-          onSave={(caps) => { setVideoCaptions(caps); setShowCaptionEditor(false); }}
-          onClose={() => setShowCaptionEditor(false)}
+        <PullDownMenu
+          visible={!!tileMenu}
+          anchor={tileMenu?.anchor ?? null}
+          options={tileMenu?.kind === 'time' ? timeOptions : visibilityOptions}
+          onClose={() => setTileMenu(null)}
         />
         <FeaturesModal visible={showFeaturesModal} initial={features} onClose={() => setShowFeaturesModal(false)} onDone={setFeatures} />
         <CommunityPickerModal
@@ -2372,7 +2662,7 @@ export default function PostScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBtn} onPress={exitToExplore} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
+        <TouchableOpacity style={styles.headerBtn} onPress={() => { if (hasMedia || caption.trim()) setConfirmExit(true); else exitToExplore(); }} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
           <Ionicons name="close" size={26} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('post.newPost')}</Text>
@@ -2387,6 +2677,16 @@ export default function PostScreen() {
           <Ionicons name="document-text-outline" size={16} color={colors.primary} />
           <Text style={styles.draftsBarText}>
             {t('post.drafts')} <Text style={styles.draftsBarCount}>({drafts.length})</Text>
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} style={{ marginLeft: 'auto' }} />
+        </TouchableOpacity>
+      )}
+      {/* Scheduled posts waiting to go live, managed on their own screen. */}
+      {scheduledCount > 0 && (
+        <TouchableOpacity style={styles.draftsBar} onPress={() => router.push('/scheduled')} activeOpacity={0.7}>
+          <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+          <Text style={styles.draftsBarText}>
+            {t('schedule.screenTitle')} <Text style={styles.draftsBarCount}>({scheduledCount})</Text>
           </Text>
           <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} style={{ marginLeft: 'auto' }} />
         </TouchableOpacity>
@@ -2692,6 +2992,7 @@ export default function PostScreen() {
                 numbered={slideshowMode}
                 onPick={slideshowMode ? addSlideFromGrid : onPickMedia}
                 onRemove={slideshowMode ? removeSlideById : clearMedia}
+                onCamera={() => setCameraOpen(true)}
                 onScroll={onGridScroll}
                 // Hold the tab swipe off only while actively scrolling the grid;
                 // restore it (to swipeOn) once the scroll settles.
@@ -2711,6 +3012,37 @@ export default function PostScreen() {
           <Text style={[styles.typeStripText, postType === 'audio' && styles.typeStripTextActive]}>{t('post.tabMusic')}</Text>
         </TouchableOpacity>
       </View>
+
+      {/* The in-app camera, from the grid's camera tile. A slideshow's recording is
+          capped at what its video budget has left. */}
+      <Modal
+        visible={cameraOpen}
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={() => { if (!cameraBusy) closeCamera(); }}
+        onDismiss={() => {
+          const a = pendingCameraAction.current;
+          pendingCameraAction.current = null;
+          a?.();
+        }}
+      >
+        <CaptureCamera
+          active
+          focused
+          maxVideoSec={slideshowMode
+            ? Math.max(1, Math.floor(SLIDESHOW_VIDEO_BUDGET_SEC - slideshowVideoSecs(slides)))
+            : VIDEO_MAX_SEC}
+          onCapture={onCameraCapture}
+          onClose={() => closeCamera()}
+          onLibrary={() => closeCamera()}
+          closeLabel={t('common.back')}
+        />
+        {cameraBusy && (
+          <View style={[StyleSheet.absoluteFill, styles.cameraBusy]}>
+            <ActivityIndicator size="large" color="#fff" />
+          </View>
+        )}
+      </Modal>
 
       {/* Saved drafts — resume or delete. Local to this device. */}
       <Modal visible={draftsOpen} animationType="slide" onRequestClose={() => setDraftsOpen(false)}>
@@ -2794,6 +3126,55 @@ export default function PostScreen() {
         onCancel={() => { filmNotice?.resolve(false); setFilmNotice(null); }}
       />
 
+      {/* Leaving with a post in progress: throw it away, keep it as a draft, or stay. */}
+      {Platform.OS === 'ios' ? (
+        <FullWindowOverlay>
+          <ConfirmDialog
+            visible={confirmExit}
+            icon="trash-outline"
+            destructive
+            title={t('compose.discardTitle')}
+            message={t('compose.discardBody')}
+            confirmLabel={t('compose.discard')}
+            secondaryLabel={t('post.saveDraft')}
+            onSecondary={() => { setConfirmExit(false); handleSaveDraft(); }}
+            onConfirm={() => { setConfirmExit(false); exitToExplore(); }}
+            onCancel={() => setConfirmExit(false)}
+          />
+        </FullWindowOverlay>
+      ) : (
+        <ConfirmDialog
+          visible={confirmExit}
+          icon="trash-outline"
+          destructive
+          title={t('compose.discardTitle')}
+          message={t('compose.discardBody')}
+          confirmLabel={t('compose.discard')}
+          secondaryLabel={t('post.saveDraft')}
+          onSecondary={() => { setConfirmExit(false); handleSaveDraft(); }}
+          onConfirm={() => { setConfirmExit(false); exitToExplore(); }}
+          onCancel={() => setConfirmExit(false)}
+        />
+      )}
+
+      {/* The post just shared: see it, share it, or carry on. */}
+      <PostedCelebration
+        celebration={celebration}
+        onClose={() => setCelebration(null)}
+        onView={(c) => {
+          setCelebration(null);
+          router.push(c.scheduled ? '/scheduled' : `/post/${c.postId}`);
+        }}
+        onShare={(c) => {
+          setCelebration(null);
+          // After the card's exit, so the share sheet is not presented over a closing modal.
+          setTimeout(() => openShareGlobal({
+            postId: c.postId, caption: c.caption, username: profile?.username ?? null,
+            cover: c.thumb, type: c.type, mediaUrl: c.mediaUrl,
+          }), 260);
+        }}
+      />
+
       {/* Draft-saved confirmation — lands here after handleSaveDraft resets to pick. */}
       <Toast
         visible={savedToast}
@@ -2817,8 +3198,46 @@ export default function PostScreen() {
         bottomOffset={SPACING.xxl + SPACING.md}
         // Tap the confirmation to jump to the Home feed (scrolled to the top) and
         // watch the just-posted video, which is pinned there.
-        onPress={() => { setPostedToast(null); scrollHomeTop(); navigation.navigate('index'); }}
+        onPress={() => {
+          const scheduled = postedToast?.scheduled;
+          setPostedToast(null);
+          if (scheduled) { router.push('/scheduled'); return; }
+          scrollHomeTop();
+          navigation.navigate('index');
+        }}
         onHide={() => setPostedToast(null)}
+      />
+    </View>
+  );
+}
+
+// One iOS-style settings row on the details step: the label, an ⓘ that explains
+// it, and its switch.
+function SettingSwitch({ label, value, onChange, onInfo, infoLabel, last, styles, colors }: {
+  label: string;
+  value: boolean;
+  onChange: (on: boolean) => void;
+  onInfo: () => void;
+  infoLabel: string;
+  last?: boolean;
+  styles: ReturnType<typeof makeStyles>;
+  colors: ThemePalette;
+}) {
+  // iOS's own off-track grey: the app's surfaceLight would vanish into the card.
+  const offTrack = isDarkPalette(colors) ? '#39393D' : '#E3E3E8';
+  return (
+    <View style={[styles.settingRow, !last && styles.settingRowDivider]}>
+      <Text style={styles.settingLabel}>{label}</Text>
+      <TouchableOpacity onPress={onInfo} hitSlop={8} accessibilityRole="button" accessibilityLabel={`${infoLabel}: ${label}`}>
+        <Ionicons name="information-circle-outline" size={20} color={colors.textTertiary} />
+      </TouchableOpacity>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ true: colors.text, false: offTrack }}
+        ios_backgroundColor={offTrack}
+        thumbColor={value ? colors.background : '#fff'}
+        accessibilityLabel={label}
       />
     </View>
   );
@@ -2835,12 +3254,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   headerBtn: { width: 64, paddingVertical: 4 },
   headerTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
   headerAction: { width: 64, alignItems: 'flex-end', paddingVertical: 4, paddingRight: SPACING.xs },
-  // Still brand, deliberately, while the step-forward ARROWS in this same slot
-  // went neutral (owner, 2026-08-28). They are not the same kind of thing: the
-  // arrows advance a step and there is another screen after them, whereas Share
-  // is the terminal action that publishes the post. Exactly one control in this
-  // flow should be wearing brand, and this is it.
-  headerActionText: { color: colors.primary, fontSize: 16, fontWeight: '700' },
+  // The details step's header: both sides one width, so the title stays centred
+  // however wide the Share / Schedule pill is.
+  headerSideWide: { width: 124, alignItems: 'flex-end' },
+  headerSideStart: { width: 124, alignItems: 'flex-start' },
+  // Black on light, white on dark, now or scheduled — the same as the bottom Share
+  // button, so the post's two send buttons are one colour (owner, 2026-09-11).
+  sharePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 124,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.full,
+    backgroundColor: colors.text,
+  },
+  sharePillBusy: { opacity: 0.8 },
+  sharePillText: { flexShrink: 1, color: colors.background, fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
   // Byte-level upload progress under the header while a big file streams up.
   uploadBarTrack: { height: 3, backgroundColor: colors.surfaceLight, overflow: 'hidden' },
   uploadBarFill: { height: 3, backgroundColor: '#ffffff' },
@@ -2891,6 +3317,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   modeMenuLabel: { flex: 1, color: colors.text, fontSize: 14, fontWeight: '600' },
   modeMenuDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginHorizontal: SPACING.sm },
+  // Over the in-app camera while a recording is probed; also blocks a second take.
+  cameraBusy: { alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.45)' },
 
   // Bottom Posts | Music strip — two equal halves, centered labels, same (dark)
   // background; the active label is orange and bolder.
@@ -3087,24 +3515,37 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     color: colors.text, fontSize: 16, letterSpacing: -0.3, marginTop: 6,
   },
 
-  // Public/Private pill button.
-  visBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    backgroundColor: colors.surfaceLight,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
-    borderRadius: RADIUS.full, paddingVertical: SPACING.md, paddingHorizontal: SPACING.lg,
+  // Who sees it and when it goes up — two iOS-style menu buttons side by side.
+  tileRow: { flexDirection: 'row', gap: SPACING.sm },
+  tileWrap: { flex: 1 },
+  // Filled with its symbol's colour, rounded, with a soft shadow of the same colour.
+  // flexGrow keeps both buttons one height when a line under one of them wraps.
+  tile: {
+    flexGrow: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 64,
+    borderRadius: 24, paddingVertical: 11, paddingLeft: 14, paddingRight: 14,
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.28, shadowRadius: 10,
   },
-  // Visibility locked to Public because a community is attached.
-  visBtnLocked: { opacity: 0.7 },
-  visText: { flex: 1 },
-  visLabel: { color: colors.text, fontSize: 16, fontWeight: '600', letterSpacing: -0.3 },
-  visSub: { color: colors.textSecondary, fontSize: 13, letterSpacing: -0.1, marginTop: 2 },
-  // Per-post creator controls (Allow downloads / Allow GIFs) — no outline: the
-  // title, the switch left-aligned under it, then a small grey "Learn more" link.
-  optRow: { marginTop: SPACING.lg, alignItems: 'flex-start', gap: SPACING.sm },
-  optLabel: { color: colors.text, fontSize: 15, fontWeight: '700' },
-  optSwitch: { alignSelf: 'flex-start' },
-  learnMore: { color: colors.textTertiary, fontSize: 12, fontWeight: '600' },
+  tileLocked: { opacity: 0.75 },
+  // The symbol on its own, in a fixed column so both buttons' titles line up.
+  tileIcon: { width: 24, alignItems: 'center', justifyContent: 'center' },
+  tileText: { flex: 1, minWidth: 0 },
+  tileTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  tileTitle: { flexShrink: 1, color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: -0.3 },
+  tileSub: { color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500', lineHeight: 15, marginTop: 1, letterSpacing: -0.1 },
+  // Advanced settings: a header folding away the switches most posts never change —
+  // quieter than a field label, but plainly there.
+  advanced: { gap: SPACING.sm },
+  advancedHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: 6 },
+  advancedTitle: { color: colors.textSecondary, fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
+  advancedDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary },
+  // An iOS inset-grouped card of switch rows.
+  settingsCard: {
+    backgroundColor: colors.surfaceLight, borderRadius: 14, paddingLeft: SPACING.md,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+  },
+  settingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 52, paddingRight: 12, paddingVertical: 8 },
+  settingRowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  settingLabel: { flex: 1, color: colors.text, fontSize: 15, fontWeight: '500', letterSpacing: -0.2 },
   // "Learn more" explanation popup.
   infoRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: SPACING.lg },
   infoBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
@@ -3253,6 +3694,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   draftSaveBtnDisabled: { opacity: 0.5 },
   draftSaveText: { color: colors.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2 },
+  // The details step's primary action, above Save draft.
+  shareCta: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    borderRadius: RADIUS.full, paddingVertical: SPACING.md, marginTop: SPACING.sm,
+    backgroundColor: colors.text,
+  },
+  shareCtaText: { color: colors.background, fontSize: 16, fontWeight: '800', letterSpacing: -0.2, flexShrink: 1 },
+  captionCount: { alignSelf: 'flex-end', color: colors.textTertiary, fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'], marginTop: 4 },
 
   // Drafts opener bar (pick step)
   draftsBar: {

@@ -1,8 +1,10 @@
+import { patchPostList, subscribePostEdited } from '../../lib/postEdits';
 import AppVideo, { type AppVideoHandle } from '../../components/AppVideo';
 import SlideshowCarousel from '../../components/SlideshowCarousel';
 import FloatingComments from '../../components/FloatingComments';
 import { isSlideshow, parseSlides } from '../../lib/slideshow';
 import { songPlaysFor } from '../../lib/postSong';
+import { ambientMixFor, videoSoundFor } from '../../lib/songMix';
 import VideoScrubBar, { type VideoScrubBarHandle } from '../../components/VideoScrubBar';
 import ZoomableView from '../../components/ZoomableView';
 import {
@@ -66,6 +68,7 @@ import Spinner from '../../components/Spinner';
 import { PositionedTopCaption, asTopCaption } from '../../components/TopCaption';
 import TimedStickers from '../../components/TimedStickers';
 import { hasPostStickers } from '../../lib/stickerTiming';
+import { hasBandStickers } from '../../lib/bandCaptions';
 import { setPlaybackPosition } from '../../lib/playbackClock';
 import { openAdCta } from '../../contexts/AdCtaContext';
 import { useProfile } from '../../contexts/ProfileContext';
@@ -261,6 +264,10 @@ const ReelPage = memo(function ReelPage({
 }) {
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
+  // The video's own sound under its song: silent, unless the post's sound mix
+  // keeps some (lib/songMix). The song's mute button silences both.
+  const songMuted = usePostMusicMuted();
+  const sound = songPlaysFor(item) ? videoSoundFor(item, songMuted) : { muted: false, volume: 1 };
   // Stable per page. Both used to be inline arrows, which handed ReelVideo a new
   // prop identity on every render of this page — defeating its memo() entirely,
   // so it re-rendered and pushed a fresh style down to the native VideoView each
@@ -373,7 +380,18 @@ const ReelPage = memo(function ReelPage({
           // memory-disk: the feed/grid thumbnail is the SAME url, so opening a
           // reel paints the poster straight from the memory cache (no disk read
           // during the expand animation).
-          <ExpoImage source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit={landscape ? 'contain' : 'cover'} cachePolicy="memory-disk" recyclingKey={item.id} />
+          <ExpoImage
+            source={{ uri: poster }}
+            // A letterboxed clip's poster is cut to the picture's own rectangle, a
+            // point short at its top and bottom. Drawn `contain` across the whole
+            // screen, a poster a hair taller than the video (a chosen cover, a
+            // re-encoded frame) showed as a thin flickering line above and below the
+            // playing picture.
+            style={landscape ? { position: 'absolute', left: 0, width: SCREEN_W, top: band + 1, height: Math.max(0, videoH - 2) } : StyleSheet.absoluteFill}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            recyclingKey={item.id}
+          />
         ) : null}
         {mountPlayer && item.video_status !== 'processing' ? (
           // POOLED player (lib/feedVideoPool reelPool): assignment is an async
@@ -387,7 +405,8 @@ const ReelPage = memo(function ReelPage({
             contentFit={landscape ? 'contain' : 'cover'}
             loop={item.trim_end == null}
             play={playing}
-            muted={songPlaysFor(item)}
+            muted={sound.muted}
+            volume={sound.volume}
             trimStartSec={item.trim_start}
             trimEndSec={item.trim_end}
             onProgress={onVideoProgress}
@@ -418,20 +437,26 @@ const ReelPage = memo(function ReelPage({
       {/* "Turn your phone" nudge, in the empty letterbox band above the video. */}
       <RotateHint visible={showRotateHint} top={band - 52} />
 
-      {/* Creator's captions. LANDSCAPE: bubbles in the top letterbox band
-          (capped above the rotate hint) and the bottom band (capped above the
-          meta/rail/scrub reserve). VERTICAL: story-style free-placed captions
-          over the video. All only exist in this portrait page — the sideways
-          fullscreen overlay covers it, so rotating hides them. */}
+      {/* Creator's captions. LANDSCAPE: in the top letterbox band (capped above
+          the rotate hint) and the bottom band (capped above the meta/rail/scrub
+          reserve) — 1.0.3's band captions, or an older post's one bubble per band.
+          A 1.0.3 post carries both, the bubbles for older apps: never draw both.
+          VERTICAL: story-style free-placed captions over the video. All only
+          exist in this portrait page — the sideways fullscreen overlay covers
+          it, so rotating hides them. */}
       {ratio > 1 ? (
-        <>
-          {!zoomed && asTopCaption(item.top_caption) ? (
-            <PositionedTopCaption data={asTopCaption(item.top_caption)!} zone="top" ratio={ratio} screenW={SCREEN_W} screenH={SCREEN_H} />
-          ) : null}
-          {!zoomed && asTopCaption(item.bottom_caption) ? (
-            <PositionedTopCaption data={asTopCaption(item.bottom_caption)!} zone="bottom" ratio={ratio} screenW={SCREEN_W} screenH={SCREEN_H} />
-          ) : null}
-        </>
+        zoomed ? null : hasBandStickers(item.timed_captions) ? (
+          <TimedStickers postId={item.id} captions={null} timedCaptions={item.timed_captions} frameW={SCREEN_W} frameH={SCREEN_H} bandRatio={ratio} />
+        ) : (
+          <>
+            {asTopCaption(item.top_caption) ? (
+              <PositionedTopCaption data={asTopCaption(item.top_caption)!} zone="top" ratio={ratio} screenW={SCREEN_W} screenH={SCREEN_H} />
+            ) : null}
+            {asTopCaption(item.bottom_caption) ? (
+              <PositionedTopCaption data={asTopCaption(item.bottom_caption)!} zone="bottom" ratio={ratio} screenW={SCREEN_W} screenH={SCREEN_H} />
+            ) : null}
+          </>
+        )
       ) : !zoomed && hasPostStickers(item.captions, item.timed_captions) ? (
         <TimedStickers postId={item.id} captions={item.captions} timedCaptions={item.timed_captions} frameW={SCREEN_W} frameH={SCREEN_H} />
       ) : !zoomed && asTopCaption(item.top_caption) ? (
@@ -556,6 +581,8 @@ export default function ReelScreen() {
   }, [postParam]);
 
   const [posts, setPosts] = useState<any[]>(seed ? [seed] : []);
+  // An edit saved on app/edit-post shows here at once (lib/postEdits).
+  useEffect(() => subscribePostEdited((id, patch) => setPosts((prev) => patchPostList(prev, id, patch))), []);
   // ── Reel kind filter ────────────────────────────────────────────────────────
   // A dropdown rather than a hard switch, because these are not exclusive
   // universes: picking Vertical does not mean "never show me anything else", it
@@ -1087,7 +1114,7 @@ export default function ReelScreen() {
     // swipe between posts sharing one song is a pure ref handoff (zero native
     // churn), and different songs do a single internal replacement at +320ms.
     const timer = setTimeout(() => {
-      if (songId) playSong(visibleId, songId);
+      if (songId) playSong(visibleId, songId, null, ambientMixFor(visibleItem));
       else stopSong();
     }, 320);
     return () => clearTimeout(timer);
@@ -1581,7 +1608,9 @@ export default function ReelScreen() {
           .from('posts').select(SELECT)
           .eq('is_public', true).in('type', ['video', 'slideshow'])
           .or(`duration_seconds.is.null,duration_seconds.lte.${FILM_SECONDS}`)
-      ).order('created_at', { ascending: false }).limit(40),
+      // Never an archived post: the database hides everyone else's
+      // (supabase/sql/post_archive_visibility.sql), this hides your own.
+      ).is('publish_at', null).is('archived_at', null).order('created_at', { ascending: false }).limit(40),
       uid ? supabase.from('likes').select('post_id').eq('user_id', uid) : Promise.resolve({ data: [] as any }),
       uid ? supabase.from('saves').select('post_id').eq('user_id', uid) : Promise.resolve({ data: [] as any }),
     ]);
@@ -1875,13 +1904,16 @@ export default function ReelScreen() {
             // Auto-scroll is hands-free watching: the hour clock, like ReelVideo.
             leanBack
             showStallIndicator
-            muted={songPlaysFor(item)}
+            muted={songPlaysFor(item) ? videoSoundFor(item, songMuted).muted : false}
+            volume={songPlaysFor(item) ? videoSoundFor(item, songMuted).volume : 1}
             poster={poster}
             posterContentFit="contain"
             trimStartSec={item.trim_start}
             trimEndSec={item.trim_end}
             startPositionSec={resume}
             onProgress={(pos, dur) => {
+              // A song with a sound mix follows its video (PostMusicContext).
+              setPlaybackPosition(item.id, pos / 1000);
               if (overlayIdRef.current === item.id) {
                 // A BACKWARD jump means the clip just played through and wrapped
                 // (either `loop`, or trimEnd seeking back to trimStart). That's

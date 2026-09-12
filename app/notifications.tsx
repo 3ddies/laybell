@@ -247,18 +247,24 @@ export default function NotificationsScreen() {
           ? supabase.from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden').in('id', actorIds)
           : Promise.resolve({ data: [] as any[] }),
         postIds.length
-          ? supabase.from('posts').select('id, type, media_url, cover_url, thumbnail_url').in('id', postIds)
+          ? supabase.from('posts').select('id, type, media_url, cover_url, thumbnail_url, archived_at').in('id', postIds)
           : Promise.resolve({ data: [] as any[] }),
       ]);
       // Actors who have since hidden their account read as "Hidden account".
       const profileMap = Object.fromEntries((profileData ?? []).map(p => [p.id, maskHiddenProfile(p as any)]));
       const previewMap: Record<string, string> = {};
+      // A post you've archived shows nowhere but your archive — the notifications
+      // about it included. (Anyone else's archived post doesn't come back at all.)
+      const archived = new Set<string>();
       for (const p of postsRes.data ?? []) {
+        if (p.archived_at) { archived.add(p.id); continue; }
         const url = postPreviewUrl(p);
         if (url) previewMap[p.id] = url;
       }
       setPreviews(previewMap);
-      setNotifications(notifData.map(n => ({ ...n, actor: (n.actor_id ? profileMap[n.actor_id] : null) ?? null })) as any);
+      setNotifications(notifData
+        .filter(n => !n.post_id || !archived.has(n.post_id))
+        .map(n => ({ ...n, actor: (n.actor_id ? profileMap[n.actor_id] : null) ?? null })) as any);
     } else {
       setNotifications([]);
       setPreviews({});

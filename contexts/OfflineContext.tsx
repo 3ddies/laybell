@@ -104,7 +104,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     const ids = allEntries().map((e) => e.postId);
     if (!ids.length) return;
     try {
-      const { data, error } = await supabase.from('posts').select('id, media_url, downloadable').in('id', ids);
+      const { data, error } = await supabase.from('posts').select('id, media_url, downloadable, archived_at').in('id', ids);
       // CRITICAL: only purge "missing" tracks on a CONFIRMED successful response.
       // If the query failed (offline / flaky network) data is null and every id
       // would look inaccessible — purging then would wipe the user's downloads

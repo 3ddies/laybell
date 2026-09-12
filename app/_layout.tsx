@@ -45,6 +45,8 @@ import { ImageViewerProvider } from '../contexts/ImageViewerContext';
 import { GifPickerProvider } from '../contexts/GifPickerContext';
 import { PhotoPickerProvider } from '../contexts/PhotoPickerContext';
 import { UploadQueueProvider, useUploadQueue } from '../contexts/UploadQueueContext';
+import CaptionCaptureHost from '../components/CaptionCaptureHost';
+import VideoSavedToast from '../components/VideoSavedToast';
 import { CastProvider } from '../contexts/CastContext';
 import { StoryUploadProvider, useStoryUpload } from '../contexts/StoryUploadContext';
 import OfflineBanner from '../components/OfflineBanner';
@@ -360,6 +362,7 @@ function AppContent() {
       />
       <NowPlaying />
       <BadgeUpgradeToast />
+      <VideoSavedToast />
       {/* Live activity from people you follow. Sits beside the other overlays
           so it paints above pushed screens on iOS, same as the toasts. */}
       <ActivityBanner />
@@ -372,6 +375,9 @@ function AppContent() {
   return (
     <PostOptionsProvider>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
+        {/* Draws a saved video's caption images. First, so every screen paints over it
+            (components/CaptionCaptureHost). */}
+        <CaptionCaptureHost />
         <Stack
         screenOptions={{
           headerShown: false,

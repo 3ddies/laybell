@@ -5,12 +5,10 @@ import {
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Image as ExpoImage } from 'expo-image';
 import * as MediaLibrary from 'expo-media-library';
-import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
-import { showPermissionDenied } from '../lib/permissions';
 import { resolveAssetUri, evictAssetUri } from '../lib/assetInfoCache';
 
 const NUM_COLS = 4;
@@ -115,9 +113,11 @@ type PhotoGridProps = {
   selectedIds?: string[];
   // Show the selection order (slideshow) instead of a plain check (single).
   numbered?: boolean;
-  // Videos only (e.g. the ad manager's video creative picker) — also hides the
-  // camera tile, which captures stills.
+  // Videos only (e.g. the ad manager's video creative picker).
   videosOnly?: boolean;
+  // The camera tile, first in the grid — shown only when the host handles it. The
+  // composer opens the in-app camera (components/CaptureCamera) from here.
+  onCamera?: () => void;
 };
 
 // Device camera-roll grid (Instagram-style) showing photos AND videos together.
@@ -127,7 +127,7 @@ type PhotoGridProps = {
 // Selected items show a check (single) or an order number (slideshow), and
 // tapping a selected item removes it (onRemove).
 const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid(
-  { onPick, onRemove, onScroll, onScrollActive, selectedIds = [], numbered = false, videosOnly = false },
+  { onPick, onRemove, onScroll, onScrollActive, selectedIds = [], numbered = false, videosOnly = false, onCamera },
   ref,
 ) {
   const { colors } = useTheme();
@@ -150,6 +150,8 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
   // Stable refs so the memoized cell's onSelect/onRemove never change identity.
   const onPickRef = useRef(onPick); onPickRef.current = onPick;
   const onRemoveRef = useRef(onRemove); onRemoveRef.current = onRemove;
+  const onCameraRef = useRef(onCamera); onCameraRef.current = onCamera;
+  const hasCamera = !!onCamera && !videosOnly;
   const resolvingRef = useRef(false);
 
   useImperativeHandle(ref, () => ({
@@ -235,36 +237,20 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
     return () => { cancelled = true; };
   }, []);
 
-  async function openCamera() {
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    // iOS only ever shows its own prompt once, so after the first denial this
-    // dialog is the only route back to the setting.
-    if (!perm.granted) { showPermissionDenied('camera', t); return; }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 1,
-    });
-    if (!result.canceled && result.assets[0]) {
-      const a = result.assets[0];
-      // No MediaLibrary id for a fresh capture — key it by its uri.
-      onPick({ id: a.uri, uri: a.uri, posterUri: a.uri, width: a.width ?? 1, height: a.height ?? 1, type: 'image' });
-    }
-  }
-
   // Rebuilt only when the asset list actually changes — NOT on every render (a
   // scroll-driven parent re-render, a loading/resolving toggle), so FlashList
   // isn't handed a fresh data array (and forced to re-diff the whole list) each
   // time.
   const data = useMemo<any[]>(
-    () => (videosOnly ? assets : [{ id: '__camera__' } as any, ...assets]),
-    [assets, videosOnly],
+    () => (hasCamera ? [{ id: '__camera__' } as any, ...assets] : assets),
+    [assets, hasCamera],
   );
 
   const renderItem = useCallback(({ item }: { item: any }) => {
     if (item.id === '__camera__') {
       return (
         <View style={styles.slot}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.camera')} style={[styles.cell, styles.cameraCell]} onPress={openCamera}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.camera')} style={[styles.cell, styles.cameraCell]} onPress={() => onCameraRef.current?.()}>
             <Ionicons name="camera" size={26} color={colors.text} />
           </TouchableOpacity>
         </View>

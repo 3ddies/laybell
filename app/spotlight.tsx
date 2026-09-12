@@ -210,6 +210,9 @@ export default function SpotlightScreen() {
         .select('id, type, media_url, thumbnail_url, cover_url, caption, created_at')
         .eq('user_id', user.id)
         .eq('is_public', true)
+        // Not a scheduled post: it is hidden until it goes live, and a spotlight's
+        // clock would run the whole time.
+        .is('publish_at', null)
         .order('created_at', { ascending: false });
       // archived_at is absent until the archive migration — fall back cleanly.
       let { data, error } = await base().is('archived_at', null);

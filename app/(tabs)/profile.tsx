@@ -1,3 +1,4 @@
+import { patchPostList, subscribePostEdited } from '../../lib/postEdits';
 import { isFilm, filmName, fmtRuntime } from '../../lib/tv';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
@@ -106,6 +107,8 @@ export default function ProfileScreen() {
   const [qrVisible, setQrVisible] = useState(false);
   const [activeTab, setActiveTab] = useState('posts');
   const [userPosts, setUserPosts] = useState<any[]>([]);
+  // An edit saved on app/edit-post shows here at once (lib/postEdits).
+  useEffect(() => subscribePostEdited((id, patch) => setUserPosts((prev) => patchPostList(prev, id, patch))), []);
   // Post ids with a LIVE spotlight → a subtle sparkle on their grid thumbnail.
   const [spotlightIds, setSpotlightIds] = useState<Set<string>>(new Set());
   const [repostedPosts, setRepostedPosts] = useState<any[]>([]);
@@ -333,8 +336,8 @@ export default function ProfileScreen() {
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', user.id),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', user.id),
       // Exclude archived posts so the count matches the grid (which filters them too).
-      supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', user.id).is('archived_at', null),
-      supabase.from('posts').select('*').eq('user_id', user.id).eq('is_public', true).order('created_at', { ascending: false }),
+      supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', user.id).is('archived_at', null).is('publish_at', null),
+      supabase.from('posts').select('*').eq('user_id', user.id).eq('is_public', true).is('publish_at', null).order('created_at', { ascending: false }),
       supabase.from('reposts').select('posts(*, profiles!posts_user_id_fkey(display_name))').eq('user_id', user.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('playlists').select('*').eq('user_id', user.id).eq('is_public', true).order('play_count', { ascending: false }),
     ]);
@@ -353,8 +356,9 @@ export default function ProfileScreen() {
     // to be what a visitor sees. Swallowed failure: on a database without
     // albums.sql the shelf is simply absent rather than taking the profile down.
     if (user?.id) fetchAlbums(user.id).then(setAlbums).catch(() => setAlbums([]));
-    // `reposts` may not be migrated yet — degrade to an empty tab if so.
-    setRepostedPosts((repostsRes.data ?? []).map((r: any) => r.posts).filter(Boolean));
+    // `reposts` may not be migrated yet — degrade to an empty tab if so. Never an
+    // archived post (the database hides others'; this, any of your own).
+    setRepostedPosts((repostsRes.data ?? []).map((r: any) => r.posts).filter((p: any) => p && !p.archived_at));
     // Public playlists tab: only the ones holding an active badge slot, faced
     // with their first track's cover. Degrades to empty pre-migration.
     try {

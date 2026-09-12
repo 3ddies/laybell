@@ -38,7 +38,7 @@ export type PlayerPool = {
   acquire: (
     ownerId: string,
     uri: string,
-    opts: { loop: boolean; muted: boolean; timeUpdateSec: number },
+    opts: { loop: boolean; muted: boolean; volume?: number; timeUpdateSec: number },
     onStolen: () => void,
   ) => PoolAcquisition | null; // null = nothing stealable right now (stay on the poster)
   release: (ownerId: string, player: VideoPlayer) => void;
@@ -97,6 +97,9 @@ function makePool(size: number): PlayerPool {
       try {
         p.loop = opts.loop;
         p.muted = opts.muted;
+        // Set on every acquire, so a reused player never carries one post's sound
+        // mix (lib/songMix) onto the next. An owner that names no level gets full.
+        p.volume = opts.volume ?? 1;
         p.timeUpdateEventInterval = opts.timeUpdateSec;
         if (entry.uri !== uri) {
           try { p.pause(); } catch {}

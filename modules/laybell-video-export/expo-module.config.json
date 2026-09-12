@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["LaybellVideoExportModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.laybellvideoexport.LaybellVideoExportModule"]
+  }
+}

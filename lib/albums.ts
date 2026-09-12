@@ -64,12 +64,14 @@ export function albumCover(a: Album): string | null {
 export async function fetchAlbums(userId: string): Promise<Album[]> {
   const { data, error } = await supabase
     .from('albums')
-    .select('*, album_tracks(post_id, position, title, posts(id, cover_url))')
+    .select('*, album_tracks(post_id, position, title, posts(id, cover_url, archived_at))')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []).map((row: any) => {
-    const rows = (row.album_tracks ?? []) as any[];
+    // A track this viewer can't see, or one its artist archived, isn't on the album
+    // for them — its count and its cover included (as in fetchAlbum).
+    const rows = ((row.album_tracks ?? []) as any[]).filter((t) => t.posts && !t.posts.archived_at);
     return {
       ...row,
       track_count: rows.length,
@@ -89,25 +91,25 @@ export async function fetchAlbum(albumId: string): Promise<Album | null> {
       *,
       album_tracks(
         post_id, position, title,
-        posts(id, caption, media_url, cover_url, duration_seconds, stream_count, created_at)
+        posts(id, caption, media_url, cover_url, duration_seconds, stream_count, created_at, archived_at)
       )
     `)
     .eq('id', albumId)
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const rows = ((data as any).album_tracks ?? []) as any[];
+  // A track whose post has been deleted or made private drops out for this viewer
+  // — posts' own RLS decides that, and the join simply returns null — and so does
+  // an archived one: RLS hides it from everyone else, and this from its artist.
+  // Filtering here means every consumer gets a list it can render rather than a
+  // hole it has to remember to check for.
+  const rows = (((data as any).album_tracks ?? []) as any[]).filter((t) => t.posts && !t.posts.archived_at);
   return {
     ...(data as any),
     track_count: rows.length,
     tracks: rows
       .slice()
       .sort((a, b) => a.position - b.position)
-      // A track whose post has been deleted, archived or made private drops out
-      // for this viewer — posts' own RLS decides that, and the join simply
-      // returns null. Filtering here means every consumer gets a list it can
-      // render rather than a hole it has to remember to check for.
-      .filter((t) => t.posts)
       .map((t) => ({ post_id: t.post_id, position: t.position, title: t.title, post: t.posts })),
   } as Album;
 }
@@ -208,6 +210,7 @@ export async function fetchAddableTracks(userId: string, albumId: string): Promi
       .select('id, caption, cover_url, duration_seconds, created_at, archived_at')
       .eq('user_id', userId)
       .eq('type', 'audio')
+      .is('publish_at', null)
       .order('created_at', { ascending: false })
       .limit(300),
     supabase.from('album_tracks').select('post_id').eq('album_id', albumId),

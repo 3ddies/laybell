@@ -54,6 +54,7 @@ export async function fetchFilms(userId: string | null, limit = 12): Promise<any
     .eq('type', 'video')
     .eq('is_public', true)
     .gt('duration_seconds', 540)
+    .is('publish_at', null)
     .order('created_at', { ascending: false })
     .limit(limit * 2);
   if (error) throw error;
@@ -104,6 +105,7 @@ export async function fetchFilmCatalog(userId: string | null, limit = 60): Promi
     .eq('type', 'video')
     .eq('is_public', true)
     .gt('duration_seconds', 540)
+    .is('publish_at', null)
     .order('created_at', { ascending: false })
     .limit(limit * 2);
   if (error) throw error;
@@ -182,6 +184,7 @@ export async function fetchHorizontalVideos(limit = 60): Promise<any[]> {
     .select('*, profiles!posts_user_id_fkey (username, display_name, badge_tier, badge_show, profile_theme), likes(count), comments(count)')
     .eq('type', 'video')
     .eq('is_public', true)
+    .is('publish_at', null)
     .order('created_at', { ascending: false })
     .limit(limit * 3);
   if (error) throw error;

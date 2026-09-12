@@ -1,0 +1,27 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+// Laybell's local native video exporter (see ../index.ts). The Expo module plugin
+// supplies Kotlin, expo-modules-core and the SDK levels; namespace and versionName
+// are required by its publishing step.
+group = 'expo.modules.laybellvideoexport'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.laybellvideoexport"
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // The same Media3 release expo-video and expo-audio pin in SDK 54, so the app
+  // carries one copy of it.
+  def androidxMedia3Version = "1.8.0"
+  implementation "androidx.media3:media3-transformer:${androidxMedia3Version}"
+  implementation "androidx.media3:media3-effect:${androidxMedia3Version}"
+  implementation "androidx.media3:media3-common:${androidxMedia3Version}"
+}

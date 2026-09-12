@@ -418,13 +418,13 @@ export async function removeTrack(postId: string): Promise<void> {
 }
 
 // Re-confirm opt-out / drift for cached tracks when back online. Purges any whose
-// source post is now opted-out or re-uploaded. Best-effort; safe to call on app
+// source post is now opted-out, archived or re-uploaded. Best-effort; safe to call on app
 // foreground. `posts` are the freshly-fetched rows for the cached ids. When
 // `requestedIds` is given, any requested id MISSING from `posts` is also purged —
 // that means the post was deleted, made private, or its author blocked us (the
 // fetch is RLS-filtered, so an inaccessible post simply doesn't come back).
 export async function reconcileAgainst(
-  posts: { id: string; media_url?: string | null; downloadable?: boolean | null }[],
+  posts: { id: string; media_url?: string | null; downloadable?: boolean | null; archived_at?: string | null }[],
   requestedIds?: string[],
 ) {
   if (isWeb || !manifest.size) return;
@@ -444,7 +444,10 @@ export async function reconcileAgainst(
     }
     const optedOut = p.downloadable === false;
     const drifted = !!p.media_url && p.media_url !== e.mediaUrl;
-    if (optedOut || drifted) await purge(e.postId, e.path);
+    // Archived — by you, since anyone else's doesn't come back: it shows nowhere but
+    // the archive.
+    const archived = !!p.archived_at;
+    if (optedOut || drifted || archived) await purge(e.postId, e.path);
     else e.checkedAt = Date.now();
   }
   if (changed) { emit(); schedulePersist(); }

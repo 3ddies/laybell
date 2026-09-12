@@ -1,5 +1,7 @@
+import { subscribePostEdited } from '../../lib/postEdits';
 import AppVideo from '../../components/AppVideo';
 import { songPlaysFor } from '../../lib/postSong';
+import { ambientMixFor, videoSoundFor } from '../../lib/songMix';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Image, TextInput, KeyboardAvoidingView,
@@ -63,6 +65,10 @@ type Post = {
   song_id?: string | null;
   // True when the song is a CREDIT only (music video) — see lib/postSong.
   song_link_only?: boolean | null;
+  // The song's part and levels — null without a sound mix (lib/songMix).
+  song_start_sec?: number | null;
+  song_volume?: number | null;
+  video_volume?: number | null;
   song_title?: string | null;
   song_artist?: string | null;
   song_artist_id?: string | null;
@@ -110,6 +116,10 @@ export default function PostDetailScreen() {
     try { return postParam ? (JSON.parse(postParam) as any) : null; } catch { return null; }
   }, [postParam]);
   const [post, setPost] = useState<Post | null>(seeded);
+  // An edit saved on app/edit-post shows here at once (lib/postEdits).
+  useEffect(() => subscribePostEdited((postId, patch) => {
+    setPost((p) => (p && p.id === postId ? ({ ...p, ...patch } as Post) : p));
+  }), []);
   // Drives the subtle sparkle emblem by the username. A post tapped from the feed
   // carries its served __spotlight meta in the seed (instant), but the same post
   // opened from a profile/anywhere else doesn't — so setup() also asks the server
@@ -196,7 +206,7 @@ export default function PostDetailScreen() {
           promoteAttachedSong(songId);
         }
       } else if (!slideAudioActive) {
-        playSong(post.id, songId); // video post → ambient
+        playSong(post.id, songId, null, ambientMixFor(post)); // video post → ambient
       } else {
         stopSong(post.id);
       }
@@ -209,7 +219,7 @@ export default function PostDetailScreen() {
       if (post?.id && !isSongTakeover) stopSong(post.id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [post?.id, post?.song_id, post?.type, isFocused, slideAudioActive, isSongTakeover]);
+  }, [post?.id, post?.song_id, post?.type, post?.song_start_sec, post?.song_volume, post?.video_volume, isFocused, slideAudioActive, isSongTakeover]);
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -436,7 +446,8 @@ export default function PostDetailScreen() {
               <AppVideo
                 source={{ uri: post.media_url }}
                 style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(post.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
-                muted={songPlaysFor(post)}
+                muted={songPlaysFor(post) ? videoSoundFor(post, songMuted).muted : false}
+                volume={songPlaysFor(post) ? videoSoundFor(post, songMuted).volume : 1}
                 nativeControls
                 poster={post.thumbnail_url ?? post.cover_url}
                 posterContentFit="cover"

@@ -18,6 +18,8 @@ import {
 
 export type CaptionStyle = { x: number; y: number; scale: number; rotation: number };
 export const DEFAULT_CAPTION_STYLE: CaptionStyle = { x: 0.5, y: 0.5, scale: 1, rotation: 0 };
+/** A live placement as a host's `constrain` sees it: normalized to the frame, plus the size before scale and rotation (0 until measured). */
+export type StickerFit = CaptionStyle & { w: number; h: number };
 
 // ─── Text styling (iOS-style font presets, colors, backgrounds) ────────────────
 // All of this is PURE METADATA stored in the stories.stickers jsonb — the editor,
@@ -43,6 +45,9 @@ export type Sticker = {
   // and every caption posted before 1.0.3 show for their whole length.
   start?: number;
   end?: number;
+  // A horizontal video's captions only: the letterbox band it sits in, with its
+  // `y` measured inside that band (lib/bandCaptions).
+  band?: 'top' | 'bottom';
 } & CaptionStyle;
 
 export const STICKER_FONTS: { key: StickerFont; label: string }[] = [
@@ -244,7 +249,7 @@ function pinch(touches: any[]) {
 
 export default function StickerLayer({
   stickers, frameW, frameH, editingId, onManipulate, onTapSticker, onTapEmpty,
-  onDragActive, onDragMove, onRelease,
+  onDragActive, onDragMove, onRelease, faintIds, constrain,
 }: {
   stickers: Sticker[];
   frameW: number;
@@ -260,9 +265,19 @@ export default function StickerLayer({
   // Release position of a finished drag; the host deletes the sticker if it was
   // dropped on the trash. Fired after the placement has been committed.
   onRelease?: (id: string, xNorm: number, yNorm: number) => void;
+  // Drawn faint: an editor's selected sticker, kept on screen while the playhead
+  // is outside its timing so it can still be found and moved.
+  faintIds?: string[];
+  // Where a sticker may be, applied live while it's dragged or pinched and whenever
+  // it's laid out, so it never shows anywhere the host won't keep it — a horizontal
+  // video's captions stay whole inside its letterbox bands.
+  constrain?: (fit: StickerFit) => { x: number; y: number; scale: number };
 }) {
   const animRef = useRef<Record<string, Anim>>({});
   const curRef = useRef<Record<string, Cur>>({});
+  // Each sticker's laid-out size before scale and rotation, for `constrain`.
+  const sizeRef = useRef<Record<string, { w: number; h: number }>>({});
+  const constrainRef = useRef(constrain); constrainRef.current = constrain;
 
   function getAnim(s: Sticker): Anim {
     let a = animRef.current[s.id];
@@ -288,6 +303,34 @@ export default function StickerLayer({
   const last = useRef({ x: 0, y: 0 });
   const base = useRef({ cx: 0, cy: 0, dist: 0, angle: 0, px: 0, py: 0, scale: 1, rotation: 0 });
   const prevCount = useRef(0);
+
+  // The host's limits on a live placement (px offsets from the frame's centre).
+  function fit(id: string, cur: Cur) {
+    const limit = constrainRef.current;
+    if (!limit) return;
+    const size = sizeRef.current[id];
+    const next = limit({
+      x: cur.x / frameW + 0.5, y: cur.y / frameH + 0.5, scale: cur.scale, rotation: cur.rotation,
+      w: size?.w ?? 0, h: size?.h ?? 0,
+    });
+    cur.x = (next.x - 0.5) * frameW;
+    cur.y = (next.y - 0.5) * frameH;
+    cur.scale = next.scale;
+  }
+
+  // A sticker laid out — first shown, or its words changed — is fitted to the host's
+  // limits at its real size. Not mid-gesture: the gesture fits it as it goes.
+  function measured(id: string, w: number, h: number) {
+    const prev = sizeRef.current[id];
+    if (prev && Math.abs(prev.w - w) < 0.5 && Math.abs(prev.h - h) < 0.5) return;
+    sizeRef.current[id] = { w, h };
+    const a = animRef.current[id];
+    const cur = curRef.current[id];
+    if (!constrainRef.current || !a || !cur || active.current === id) return;
+    fit(id, cur);
+    a.pan.setValue({ x: cur.x, y: cur.y });
+    a.scale.setValue(cur.scale);
+  }
 
   function rebaseline(touches: any[]) {
     const c = centroid(touches);
@@ -366,8 +409,9 @@ export default function StickerLayer({
           nr = base.current.rotation + (p.angle - base.current.angle);
           moved.current = true;
         }
-        a.pan.setValue({ x: nx, y: ny }); a.scale.setValue(ns); a.rot.setValue(nr);
         cur.x = nx; cur.y = ny; cur.scale = ns; cur.rotation = nr;
+        fit(id, cur);
+        a.pan.setValue({ x: cur.x, y: cur.y }); a.scale.setValue(cur.scale); a.rot.setValue(cur.rotation);
       },
       onPanResponderRelease: endGesture,
       onPanResponderTerminate: endGesture,
@@ -382,7 +426,9 @@ export default function StickerLayer({
         return (
           <View key={s.id} style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">
             <Animated.View
+              onLayout={(e) => measured(s.id, e.nativeEvent.layout.width, e.nativeEvent.layout.height)}
               style={{
+                opacity: faintIds?.includes(s.id) ? 0.4 : 1,
                 transform: [
                   { translateX: a.pan.x },
                   { translateY: a.pan.y },

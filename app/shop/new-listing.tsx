@@ -123,6 +123,8 @@ export default function NewListingScreen() {
         .select('id, media_url, thumbnail_url, cover_url')
         .eq('user_id', auth.user.id)
         .eq('is_public', true)
+        .is('publish_at', null)
+        .is('archived_at', null)
         .order('created_at', { ascending: false })
         .limit(90);
       setMyPosts((data ?? []).map((p: Record<string, string | null>) => ({
