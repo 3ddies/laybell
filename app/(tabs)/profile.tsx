@@ -32,6 +32,7 @@ import ProfileQRModal from '../../components/ProfileQRModal';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { type Album, albumCover, fetchAlbums } from '../../lib/albums';
+import GuardedRail from '../../components/GuardedRail';
 import { countLabel } from '../../lib/i18n';
 import { displayUrl } from '../../lib/profileOptions';
 import { useLinkGuard } from '../../contexts/LinkGuardContext';
@@ -241,7 +242,9 @@ export default function ProfileScreen() {
 
   // While a finger is on ANY horizontal rail inside the page — the tabs pill
   // row, the albums shelf — the page responder stands down so the rail scrolls
-  // instead of stepping the sub-tab.
+  // instead of stepping the sub-tab. Only while the rail can scroll
+  // (components/GuardedRail): a row that fits — three pills, a couple of albums —
+  // must not dead-zone the page's swipes.
   //
   // This is the same-axis problem: a horizontal scroller inside a horizontal
   // gesture owner. Crossed axes sort themselves out; same-axis competitors never
@@ -496,14 +499,14 @@ export default function ProfileScreen() {
         <Text style={styles.albumShelfLabel}>{t('album.shelf')}</Text>
         {/* Same stand-down as the tabs row: without it, flicking along the
             albums also steps to the next sub-tab, because the page responder
-            and this shelf are competing for the identical gesture. */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
+            and this shelf are competing for the identical gesture. Only while
+            the shelf can scroll, though — one that fits leaves its empty space
+            to the page swipe. */}
+        <GuardedRail
           contentContainerStyle={styles.albumShelfRow}
-          onTouchStart={() => { hRailTouchRef.current = true; }}
-          onTouchEnd={() => { hRailTouchRef.current = false; }}
-          onTouchCancel={() => { hRailTouchRef.current = false; }}
+          alwaysBounceHorizontal={false}
+          onGuardStart={() => { hRailTouchRef.current = true; }}
+          onGuardEnd={() => { hRailTouchRef.current = false; }}
         >
           {albums.map((a) => {
             const cover = albumCover(a);
@@ -521,7 +524,7 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
+        </GuardedRail>
       </View>
     );
   }
@@ -1050,16 +1053,14 @@ export default function ProfileScreen() {
           item. It settles rather than oscillating: the pills cannot shrink, so a
           row too wide for the viewport still measures too wide and keeps
           scrolling. */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
+      <GuardedRail
         style={styles.tabsScroll}
         onLayout={(e) => setTabsViewportW(e.nativeEvent.layout.width)}
         onContentSizeChange={(w) => setTabsContentW(w)}
         contentContainerStyle={tabsFit ? styles.tabsContentFit : undefined}
-        onTouchStart={() => { hRailTouchRef.current = true; }}
-        onTouchEnd={() => { hRailTouchRef.current = false; }}
-        onTouchCancel={() => { hRailTouchRef.current = false; }}
+        alwaysBounceHorizontal={false}
+        onGuardStart={() => { hRailTouchRef.current = true; }}
+        onGuardEnd={() => { hRailTouchRef.current = false; }}
       >
         <View style={[styles.tabsRow, tabsFit && styles.tabsRowFit]}>
           {orderedTabs.map((tab) => (
@@ -1082,7 +1083,7 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           ))}
         </View>
-      </ScrollView>
+      </GuardedRail>
       </View>
 
       {/* Sub-tab pages — ALL stay mounted; switching just flips visibility, so

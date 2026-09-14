@@ -41,6 +41,7 @@ import StoryAvatar from '../../components/StoryAvatar';
 import TopSongsSpotlight from '../../components/TopSongsSpotlight';
 import FollowButton from '../../components/FollowButton';
 import { MusicScreenSkeleton, DiscoverSkeleton, TrackListSkeleton } from '../../components/Skeleton';
+import GuardedRail from '../../components/GuardedRail';
 import {
   buildAffinityProfile, loadSeenPostIds, scorePost,
   sortRailByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
@@ -65,37 +66,6 @@ const DISCOVER_TS_KEY    = 'discover_refreshed_at';
 const DISCOVER_TTL_MS    = 4 * 24 * 60 * 60 * 1000; // 4 days
 
 type ContentType = 'music' | 'podcast' | 'audiobook';
-
-// A horizontal rail that suppresses the outer page swipes ONLY while it can
-// actually scroll (content wider than its frame). A rail with one or two cards
-// — or empty trailing space across the whole row — lets tab/pill swipes pass
-// straight through instead of dead-zoning the row.
-function GuardedRail({ onGuardStart, onGuardEnd, ...props }: any) {
-  const frameW = useRef(0);
-  const contentW = useRef(0);
-  const guarding = useRef(false);
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      {...props}
-      onLayout={(e: any) => { frameW.current = e.nativeEvent.layout.width; props.onLayout?.(e); }}
-      onContentSizeChange={(w: number, h: number) => { contentW.current = w; props.onContentSizeChange?.(w, h); }}
-      onTouchStart={(e: any) => {
-        if (contentW.current > frameW.current + 1) { guarding.current = true; onGuardStart(); }
-        props.onTouchStart?.(e);
-      }}
-      onTouchEnd={(e: any) => {
-        if (guarding.current) { guarding.current = false; onGuardEnd(); }
-        props.onTouchEnd?.(e);
-      }}
-      onTouchCancel={(e: any) => {
-        if (guarding.current) { guarding.current = false; onGuardEnd(); }
-        props.onTouchCancel?.(e);
-      }}
-    />
-  );
-}
 
 type Playlist = { id: string; name: string; is_public: boolean; created_at: string; play_count?: number; cover?: string | null };
 type Track = {

@@ -36,6 +36,7 @@ import ProfileQRModal from '../../components/ProfileQRModal';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { type Album, albumCover, fetchAlbums } from '../../lib/albums';
+import GuardedRail from '../../components/GuardedRail';
 import { countLabel } from '../../lib/i18n';
 import { displayUrl } from '../../lib/profileOptions';
 import { useLinkGuard } from '../../contexts/LinkGuardContext';
@@ -191,7 +192,8 @@ export default function PublicProfileScreen() {
 
   // While a finger is on a horizontal rail inside the page — currently the
   // albums shelf — the page responder stands down so the rail scrolls instead of
-  // stepping the sub-tab.
+  // stepping the sub-tab. Only while the rail can scroll (components/GuardedRail):
+  // a shelf too short to scroll must not dead-zone the page's swipes.
   //
   // Same-axis competitors: a horizontal scroller inside a horizontal gesture
   // owner. No threshold can separate them, because the two gestures are the same
@@ -425,15 +427,15 @@ export default function PublicProfileScreen() {
     return (
       <View style={styles.albumShelf}>
         <Text style={styles.albumShelfLabel}>{t('album.shelf')}</Text>
-        {/* Stands the page responder down for the length of the touch, so a
-            flick along the albums scrolls the shelf instead of changing tab. */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
+        {/* Stands the page responder down for the length of a touch, so a flick
+            along the albums scrolls the shelf instead of changing tab — but only
+            while there are enough albums to scroll. A shelf that fits leaves its
+            empty space (and its cards) to the page swipe. */}
+        <GuardedRail
           contentContainerStyle={styles.albumShelfRow}
-          onTouchStart={() => { hRailTouchRef.current = true; }}
-          onTouchEnd={() => { hRailTouchRef.current = false; }}
-          onTouchCancel={() => { hRailTouchRef.current = false; }}
+          alwaysBounceHorizontal={false}
+          onGuardStart={() => { hRailTouchRef.current = true; }}
+          onGuardEnd={() => { hRailTouchRef.current = false; }}
         >
           {albums.map((a) => {
             const cover = albumCover(a);
@@ -451,7 +453,7 @@ export default function PublicProfileScreen() {
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
+        </GuardedRail>
       </View>
     );
   }
