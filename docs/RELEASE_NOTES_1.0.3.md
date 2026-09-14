@@ -925,7 +925,8 @@ Built and typechecked; the owner went on to release. Not reported item by item:
 - [x] The build finished (11:38 UTC, 2026-09-14, from `ddc037b`), and the scheduled EAS
       submission (`cea01238`) uploaded it to App Store Connect, where Apple processes it
       before it can be picked.
-- [ ] **Owner, in App Store Connect** — `eas submit` sends the binary and nothing else:
+- [x] **Owner, in App Store Connect — submitted for review 2026-09-14.** `eas submit` sends the
+      binary and nothing else:
       1. Laybell → App Store → "+" → iOS version **1.0.3**.
       2. What's New: paste the App Store block at the top of this file (2883/4000).
       3. Build: choose **1.0.3 (11)** once it has finished processing.

@@ -20,7 +20,7 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ## 0.0 ✅ THE CURRENT STATE — updated 2026-09-11
 
-**One-line status: 1.0.2 is live on the App Store; Android 1.0.2 is not submitted; 1.0.3 (11) is uploaded to App Store Connect (2026-09-14) and waits for the owner to submit it for review; Android 1.0.3 (versionCode 10) is built, not submitted (needs the Play key).**
+**One-line status: 1.0.2 is live on the App Store; Android 1.0.2 is not submitted; 1.0.3 (11) is IN APP REVIEW (submitted 2026-09-14); Android 1.0.3 (versionCode 10) is built, not submitted (needs the Play key).**
 
 | Version | iOS | Android |
 |---|---|---|
@@ -106,13 +106,12 @@ root, e.g. `node scripts/tests/test-bandcaptions.mjs`):
 3. The reliability batch, queued behind the editor: a slow poll for the realtime screens,
    pruning dead push tokens, and Play's build warnings (16 KB alignment re-check, edge-to-edge,
    large screens).
-4. ⏳ **Releasing 1.0.3 (started 2026-09-13).** iOS: build 1.0.3 (11) is uploaded to App Store
-   Connect — the owner creates the 1.0.3 version, pastes What's New and
-   `docs/APP_REVIEW_NOTES_1.0.3.txt`, picks build 11 and submits for review (steps in the
-   release notes, "Build and submit"). Android: 1.0.3 (versionCode 10) is BUILT — the export
-   module's Kotlin compiled first try (EAS `c04ea4e2`) — and Play needs the service-account key
-   or a manual `.aab` upload. Store screenshots stay as they are unless the owner reshoots the
-   composer.
+4. ⏳ **Releasing 1.0.3 (started 2026-09-13).** iOS: 1.0.3 (11) was SUBMITTED for review on
+   2026-09-14, with What's New and `docs/APP_REVIEW_NOTES_1.0.3.txt` pasted by the owner; tag
+   `v1.0.3-build11` once approved. Android — the owner does it later: 1.0.3 (versionCode 10) is
+   BUILT (the export module's Kotlin compiled first try, EAS `c04ea4e2`); Play needs the
+   service-account key or a manual `.aab` upload, with the 456-character "What's new" from the
+   release notes.
 
 **Owner-only:**
 - Create the Play service-account key — it blocks every Android submission.
