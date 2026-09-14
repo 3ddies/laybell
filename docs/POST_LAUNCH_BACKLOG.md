@@ -407,3 +407,44 @@ it or drop iPad from the supported device families in a future version.
 ## 10. Trademark — `LAYBELL` wordmark
 Filing spec is ready in `LAUNCH_CHECKLIST.md` (Class 9, Intent to Use, ~$350). Preliminary
 clearance looked clear. Nice-to-have; the ™ is already shown in-app.
+
+---
+
+## 11. Explore previews — more motion, without a bill that grows with users
+
+**Owner, 2026-09-14:** liked 1.0.2's video previews better than the moving stills, but not at a
+cost that multiplies as users grow. 1.0.3 ships with the stills; the options are parked here.
+
+**Why video previews cost money at all:** Cloudflare Stream bills every second of video it
+delivers — including what the player downloads ahead of what is on screen — rounded up to
+4-second chunks. Thumbnail images are not billed, which is why the stills cost $0.
+
+**Considered and dropped for 1.0.3 — 5–10 seconds of real video, then back to stills** (fresh
+each time a tile comes into view and each time you land on Explore): roughly 10 billed seconds
+per preview. At ~30 previews a day per active user, that is about $0.15 per user per month:
+
+| Active users | Monthly cost (estimate) |
+|---|---|
+| 1,000 | ~$150 |
+| 10,000 | ~$1,500 |
+| 100,000 | ~$15,000 |
+
+Heavy Explore users could double these.
+
+**Options for a future update:**
+1. **Livelier stills — $0 at any scale.** Six to eight frames instead of four, on a quicker
+   rhythm, so a tile reads closer to video. Frames are Cloudflare thumbnails (unbilled, ~60 KB
+   each at tile size). Only `components/PreviewStills.tsx` and `lib/previewFrames.ts` change
+   (tests: `scripts/tests/test-previewframes.mjs`). Watch users' data use, and the first load of
+   a frame Cloudflare hasn't generated yet (~1–2 s).
+2. **Cached 5-second clips — real video, cost grows slowly.** Each post gets a 5-second
+   Cloudflare clip with its MP4 download enabled. A phone downloads it once and replays it from
+   its own cache (expo-video `useCaching`), so replays, scroll-backs and return visits are free;
+   only a preview someone has never seen costs anything (~5 s, about $1 per 12,000 first views).
+   Needs server work: a clip for every new post plus a backfill of existing ones, deleting the
+   clip with its post, and teaching `stream-sweep`/`stream-reap` that clips are not orphans.
+   More in `docs/RELEASE_NOTES_1.0.3.md` ("Not built — near-free real video loops").
+
+Whichever is picked, keep 1.0.3's rules: nothing plays behind a covered screen or while the
+phone sits idle, and a preview player that finishes must unload its video, not just pause —
+a paused player can keep downloading, and that download is billed.

@@ -35,7 +35,7 @@ Change a post after it's up: the caption, who's tagged, the genre, who can see i
 
 SAVE THE FINISHED VIDEO
 
-When your video posts, Laybell can keep a copy in your camera roll: trimmed, with its song mixed in, and with its captions on vertical videos. Ready to share anywhere. It's on by default, under Advanced settings.
+When your video posts, Laybell can keep a copy in your camera roll: trimmed, with its song mixed in and its captions on. Ready to share anywhere. It's on by default, under Advanced settings.
 
 A NICER WAY TO POST
 
@@ -43,7 +43,7 @@ Videos open straight into one editor for text, music, sound and cover, and you c
 
 CAPTIONS THAT HIT THEIR MOMENT
 
-Add text and emoji to your vertical videos and choose exactly when each one appears and leaves. Your clip plays right in the editor: scrub to the moment, drag the ends of a caption's bar, and watch it land just the way your followers will see it.
+Add text and emoji to your videos (on horizontal ones they sit above and below the picture) and choose exactly when each one appears and leaves. Your clip plays right in the editor: scrub to the moment, drag the ends of a caption's bar, and watch it land just the way your followers will see it.
 
 YOUR SONG, YOUR MIX
 
@@ -152,7 +152,9 @@ that plays from the phone. It has to be MP4: expo-video "cannot" cache HLS on iO
 looping the existing stream bills every pass. Costs of building it: a clip job per
 post plus a backfill, clip deletion alongside the post, teaching `stream-sweep` that
 clips are not orphans, and bringing a video player back into the grid. **Owner's
-decision (2026-09-10): keep the stills.**
+decision (2026-09-10): keep the stills.** Revisited 2026-09-14: 5–10 seconds of real video per
+tile was estimated at ~$0.15 per active user per month, so 1.0.3 keeps the stills. The options
+for later are in `docs/POST_LAUNCH_BACKLOG.md` §11.
 
 **Dev builds narrate.** Previews go idle after **1 minute** and lean-back after
 **2 minutes** (production: 5 minutes, 1 hour), announced at startup by
@@ -880,6 +882,68 @@ camera and a recording goes straight into the video editor.
       as before (its code moved).
 - [ ] Recording pauses a playing song, as in stories; the editor's sound plays normally
       after a recording.
+
+## Profile swipes over short rails (2026-09-13, owner report)
+
+**Owner report:** swiping on the empty space of a profile's album shelf did nothing.
+
+**Cause:** the shelf told the page's swipe handler to stand down on every touch — so a
+flick along the albums scrolls them instead of changing tab — even when there were too
+few albums to scroll. The own profile's row of tab pills did the same whenever the
+pills fit on screen.
+
+**Fix (JS only, commit `109b2eb`):** both album shelves and the pill row use
+`components/GuardedRail` (moved out of the Music tab unchanged), which stands the page
+down only while the row can actually scroll, with iOS's rubber-band off when it fits.
+Built and typechecked; the owner went on to release. Not reported item by item:
+- [ ] A profile with one or two albums changes tab when swiped beside them or on them.
+- [ ] A shelf long enough to scroll still scrolls instead of changing tab.
+- [ ] Own profile: swiping across tab pills that fit changes tab.
+
+## Build and submit — iOS first, then Android (started 2026-09-13)
+
+**Owner, 2026-09-13:** release now — Apple tonight, Android after.
+
+**Checked before building:**
+- [x] Every server change 1.0.3 needs is already live: the four SQL files are APPLIED, and no
+      edge function, `web/` page or legal file changed since `v1.0.2-build9`.
+- [x] No money code changed since 1.0.2 — the three money-area files only gained
+      archived-post filters.
+- [x] **No demo or withdrawable money is live** (2026-09-13): no non-platform ledger account
+      holds any balance, and the health check is clean (every `_must_be_0` is 0; one open
+      post report to look at).
+- [x] The demo account (`3ddiemusic@gmail.com`) still has Premium and Premium+ (to 2036) and
+      2 posts, but **0 credits** — so the 1.0.3 review notes no longer promise a credit
+      balance; reviewers can buy credits with a sandbox purchase.
+- [x] The export module's Swift calls none of Apple's required-reason APIs, so no
+      privacy-manifest change.
+- [x] Version `1.0.3` (`ddc037b`); typecheck clean; `scripts/tests` 274/274 (2026-09-12).
+
+**iOS:**
+- [x] EAS build `2ac65d55-0bf0-40ae-9647-045daaebd30c` — **1.0.3 (11)**. Build number 10 was
+      spent on a first attempt whose upload dropped (ECONNRESET) before any build ran.
+- [x] The build finished (11:38 UTC, 2026-09-14, from `ddc037b`), and the scheduled EAS
+      submission (`cea01238`) uploaded it to App Store Connect, where Apple processes it
+      before it can be picked.
+- [ ] **Owner, in App Store Connect** — `eas submit` sends the binary and nothing else:
+      1. Laybell → App Store → "+" → iOS version **1.0.3**.
+      2. What's New: paste the App Store block at the top of this file (2883/4000).
+      3. Build: choose **1.0.3 (11)** once it has finished processing.
+      4. App Review Information: sign in with the demo **email**, and paste
+         `docs/APP_REVIEW_NOTES_1.0.3.txt` into Notes (3975/4000).
+      5. Version release: automatic, as 1.0.2 — unless you want to hold it.
+      6. Add for Review → Submit to App Review.
+- [ ] Optional, before submitting: install 1.0.3 (11) from TestFlight and check the one thing
+      a dev build can't show — a video you opened plays to its end, then the phone auto-locks.
+- [ ] Tag `v1.0.3-build11` once approved.
+
+**Android — after iOS is in review:**
+- [x] `eas build --platform android --profile production` — EAS build `c04ea4e2`, **1.0.3
+      (versionCode 10)**, finished 2026-09-14. The export module's Kotlin compiled on its
+      first try, and the `.aab` is on EAS.
+- [ ] Submit: `eas submit --platform android` needs the Play service-account key
+      (`docs/PLAY_SERVICE_ACCOUNT.md`, owner-only), or upload the `.aab` by hand in Play
+      Console. Play's "What's new" is the 456-character block at the top of this file.
 
 ## Owner, not code
 - [ ] **Cloudflare budget alert** (Billing → Billable usage → Create budget alert),
