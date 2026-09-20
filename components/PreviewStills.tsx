@@ -35,6 +35,8 @@ type Props = {
   /** The post's media_url — a Cloudflare Stream HLS manifest. Anything else shows its poster only. */
   uri: string;
   thumbnailUrl?: string | null;
+  /** The post's thumbhash, drawn blurred while the poster loads. */
+  placeholder?: string | null;
   durationSec?: number | null;
   trimStartSec?: number | null;
   trimEndSec?: number | null;
@@ -44,7 +46,7 @@ type Props = {
 };
 
 const PreviewStills = memo(function PreviewStills({
-  uri, thumbnailUrl, durationSec, trimStartSec, trimEndSec, play, style,
+  uri, thumbnailUrl, placeholder, durationSec, trimStartSec, trimEndSec, play, style,
 }: Props) {
   const frames = useMemo(
     () => previewFrameTimes(durationSec, trimStartSec, trimEndSec, FRAME_COUNT)
@@ -96,7 +98,7 @@ const PreviewStills = memo(function PreviewStills({
 
   return (
     <View style={[style, styles.clip]}>
-      <VideoThumb thumbnailUrl={poster} mediaUrl={uri} style={StyleSheet.absoluteFill} />
+      <VideoThumb thumbnailUrl={poster} placeholder={placeholder} mediaUrl={uri} style={StyleSheet.absoluteFill} />
       {engaged && frames.length > 0 && (
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { transform: [{ scale }] }]}>
           <ExpoImage

@@ -157,6 +157,28 @@ export async function buildAffinityProfile(
   return profile;
 }
 
+// Cold-start path (1.0.4): whatever profile the phone has, however old, at once —
+// and a fresh one built in the background for the next load, handed to `onFresh`.
+// A profile comes from the last ~60 likes and saves, so one load ranked on a slightly
+// stale one reads the same; building it first put two round trips in front of the
+// feed's first paint on most app opens (the cache only lasts PROFILE_TTL_MS).
+export async function loadAffinityProfileFast(
+  userId: string,
+  onFresh?: (profile: UserAffinityProfile) => void,
+): Promise<UserAffinityProfile> {
+  try {
+    const raw = await AsyncStorage.getItem(`${PROFILE_KEY}_${userId}`);
+    if (raw) {
+      const cached: UserAffinityProfile = JSON.parse(raw);
+      if (Date.now() - cached.builtAt >= PROFILE_TTL_MS) {
+        buildAffinityProfile(userId, true).then((p) => onFresh?.(p)).catch(() => {});
+      }
+      return cached;
+    }
+  } catch {}
+  return buildAffinityProfile(userId);
+}
+
 // ─── Post scoring ────────────────────────────────────────────────────────────
 //
 // All multipliers are applied on top of the time-decayed engagement score so

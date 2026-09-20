@@ -7,6 +7,7 @@ import { effectivePinLimit, subscribePremium } from '../lib/entitlements';
 import { flushStreamOutbox } from '../lib/streamOutbox';
 import { subscribeNetwork, getNetworkState } from '../lib/network';
 import { runOfflinePrefetch } from '../lib/offlinePrefetch';
+import { afterHomePaint } from '../lib/startupGate';
 import { getPrefs, setPrefs, subscribePrefs, DEFAULT_PREFS, type OfflinePrefs } from '../lib/offlinePrefs';
 import {
   initOffline, subscribe, allEntries, pinnedEntries, isPinned as engineIsPinned,
@@ -116,10 +117,19 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
 
   // Init the engine for the signed-in user, flush any queued offline stream credit,
   // and reconcile cached tracks against the server (opt-outs / deletions / drift).
+  //
+  // ALL of it waits for Home's first paint (lib/startupGate). None of it is on
+  // screen at launch, and the prefetch below DOWNLOADS songs — which it was
+  // doing while the feed was still fetching its own pictures, over the same
+  // connection.
   useEffect(() => {
     let active = true;
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      await afterHomePaint();
+      if (!active) return;
+    // getSession (on the phone), not getUser (a round trip) — see app/(tabs)/index.tsx.
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user ?? null;
       if (!active || !user) return;
       uidRef.current = user.id;
       await initOffline(user.id);

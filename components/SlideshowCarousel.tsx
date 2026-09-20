@@ -4,6 +4,7 @@ import {
   type NativeSyntheticEvent, type NativeScrollEvent,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
+import { MEDIA_FADE_MS } from '../lib/mediaPreview';
 import AppVideo from './AppVideo';
 import { Ionicons } from '@expo/vector-icons';
 import { RADIUS } from '../constants/theme';
@@ -179,7 +180,17 @@ export default function SlideshowCarousel({
                 // Per-slide, not hard-coded: a slide published as 'contain' is
                 // one the poster chose NOT to crop, so filling it here would
                 // undo exactly the decision they made on the Arrange screen.
-                <ExpoImage source={{ uri: s.url }} style={{ width, height }} contentFit={slideFit(s)} cachePolicy="memory-disk" />
+                <ExpoImage
+                  source={{ uri: s.url }}
+                  style={{ width, height }}
+                  contentFit={slideFit(s)}
+                  cachePolicy="memory-disk"
+                  // The slide's small copy (or its blurred placeholder) while it
+                  // loads, framed the way the slide is (lib/mediaPreview).
+                  placeholder={s.thumb_url ? { uri: s.thumb_url } : s.placeholder ? { thumbhash: s.placeholder } : undefined}
+                  placeholderContentFit={slideFit(s)}
+                  transition={MEDIA_FADE_MS}
+                />
               )}
             </View>
           );

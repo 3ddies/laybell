@@ -1,6 +1,7 @@
 import { Alert } from 'react-native';
 import { supabase } from './supabase';
 import { tg } from './i18n';
+import { clearFeedSnapshot } from './feedSnapshot';
 
 // Shared account hide / delete flow so screens other than Settings (e.g. the
 // Privacy Center) can offer it without duplicating the wording. Mirrors the
@@ -28,6 +29,8 @@ async function flagDeletion(extra: Record<string, any>, signOut: boolean, okTitl
     if (extra.delete_immediately === true) {
       try { const { data } = await supabase.rpc('current_account_has_reports'); reported = data === true; } catch {}
     }
+    // The Home feed's saved first screen (lib/feedSnapshot) goes with the account.
+    await clearFeedSnapshot(user.id);
     await supabase.auth.signOut();
     if (extra.delete_immediately === true) {
       Alert.alert(tg('delete.doneTitle'), reported

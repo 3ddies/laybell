@@ -9,6 +9,9 @@ export type Slide = {
   type: 'image' | 'video';
   url: string;
   thumbnail_url?: string | null; // poster for video slides (and convenient for images)
+  // The slide picture's small copy + thumbhash (1.0.4, lib/mediaPreview).
+  thumb_url?: string | null;
+  placeholder?: string | null;
   aspect_ratio?: string | null;  // the slide's native ratio (videos); informational
   // How this slide meets the carousel's frame: 'cover' crops it to fill,
   // 'contain' letterboxes it so nothing is cut off. Absent on every post made
@@ -32,6 +35,8 @@ export function parseSlides(post: any): Slide[] {
       type: s.type,
       url: s.url,
       thumbnail_url: s.thumbnail_url ?? null,
+      thumb_url: typeof s.thumb_url === 'string' ? s.thumb_url : null,
+      placeholder: typeof s.placeholder === 'string' ? s.placeholder : null,
       aspect_ratio: s.aspect_ratio ?? null,
       fit: s.fit === 'contain' ? 'contain' : 'cover',
     }));

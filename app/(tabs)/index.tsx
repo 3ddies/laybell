@@ -1,8 +1,12 @@
 import { patchPostList, subscribePostEdited } from '../../lib/postEdits';
 import {
-  buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost, arrangeFeed,
+  loadAffinityProfileFast, loadSeenPostIds, recordSeenPostIds, scorePost, arrangeFeed,
   EMPTY_PROFILE, type UserAffinityProfile, type ScoreOpts,
 } from '../../lib/feedScorer';
+import { loadFeedSnapshot, saveFeedSnapshot } from '../../lib/feedSnapshot';
+import { mergeFreshBelow } from '../../lib/feedMerge';
+import { markHomePainted } from '../../lib/startupGate';
+import { fullImagePreviewProps } from '../../lib/mediaPreview';
 import { fetchGirlSpaceCommunityIds } from '../../lib/communities';
 import { captionEchoesTitle, names, songCreditLine, songIsLinkOnly, songPlaysFor } from '../../lib/postSong';
 import { ambientMixFor, videoSoundFor, type AmbientMix } from '../../lib/songMix';
@@ -474,6 +478,9 @@ const PostCard = memo(function PostCard({
                 multi-MP original — memory spikes + dropped frames mid-scroll). */}
             <ExpoImage
               source={{ uri: item.media_url }}
+              // The small copy (or a blurred placeholder) while the photo loads,
+              // then a fade — never an empty box (lib/mediaPreview).
+              {...fullImagePreviewProps(item as any)}
               // Recycled cells must never flash the PREVIOUS post's image while
               // the new one decodes — recyclingKey clears the view on reuse.
               recyclingKey={item.id}
@@ -846,6 +853,11 @@ export default function HomeScreen() {
   // can't clobber a newer fetch (pull-to-refresh / feed-mode switch mid-load).
   const fetchSeq = useRef(0);
   postsRef.current = posts;
+  // Last session's first screen is up and the fresh feed hasn't replaced it yet
+  // (lib/feedSnapshot), and whether the reader has started scrolling — which
+  // decides whether the fresh feed replaces the saved one or continues below it.
+  const snapshotShownRef = useRef(false);
+  const feedTouchedRef = useRef(false);
 
   // While a background upload's optimistic card is showing, hide the real DB row
   // with the same id so the two never appear together — the card hands off to the
@@ -1826,6 +1838,14 @@ export default function HomeScreen() {
     setup();
   }, []);
 
+  // Home's first paint releases the other tabs' launch loads (lib/startupGate) —
+  // a beat after it, so the feed's first frames don't share the JS thread.
+  useEffect(() => {
+    if (loading) return;
+    const timer = setTimeout(markHomePainted, 300);
+    return () => clearTimeout(timer);
+  }, [loading]);
+
   // Auto-play the attached song of the most-visible music post while the feed is
   // focused; stop when it scrolls away or you leave the tab. A slideshow whose
   // current video slide has its audio on pauses its song so they don't overlap.
@@ -1857,19 +1877,38 @@ export default function HomeScreen() {
   useEffect(() => () => { if (ambientPlayingRef.current) musicCtl.current.stopSong(ambientPlayingRef.current); }, []);
 
   async function setup() {
-    const { data: { user } } = await supabase.auth.getUser();
-    const userId = user?.id ?? null;
+    // The session is already on the phone. getUser() first asks Supabase's auth
+    // server to confirm it — a network round trip in front of everything else on a
+    // cold start. The feed only needs the id, and the server still checks the token
+    // on every request it answers.
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id ?? null;
     if (userId) setCurrentUserId(userId);
 
-    const [seen, profile] = await Promise.all([
-      loadSeenPostIds(),
-      userId ? buildAffinityProfile(userId) : Promise.resolve(EMPTY_PROFILE),
-    ]);
-    setSeenPostIds(seen);
-    affinityProfile.current = profile;
+    // Last session's first screen, painted at once while the fresh feed loads
+    // (lib/feedSnapshot) — Instagram opens on what you last saw, not a skeleton.
+    if (userId) {
+      const snap = await loadFeedSnapshot<Post>(userId);
+      if (snap && fetchSeq.current === 0) {
+        snapshotShownRef.current = true;
+        setLikedPosts(new Set(snap.liked));
+        setSavedPosts(new Set(snap.saved));
+        setPosts(snap.posts);
+        setLoading(false);
+      }
+    }
+
+    // The seen list and the taste profile load alongside the feed request instead
+    // of in front of it; scoring waits for all of them.
+    const seenP = loadSeenPostIds();
+    const profileP = userId
+      ? loadAffinityProfileFast(userId, (fresh) => { affinityProfile.current = fresh; })
+      : Promise.resolve(EMPTY_PROFILE);
+    seenP.then(setSeenPostIds);
+    profileP.then((p) => { affinityProfile.current = p; }).catch(() => {});
 
     await Promise.all([
-      fetchPosts(userId ?? undefined, seen),
+      fetchPosts(userId ?? undefined, seenP, profileP),
       userId
         ? supabase.from('notifications').select('*', { count: 'exact', head: true })
             .eq('user_id', userId).eq('read', false)
@@ -1879,7 +1918,11 @@ export default function HomeScreen() {
     setInitialized(true);
   }
 
-  async function fetchPosts(userId?: string, seen: Set<string> = seenPostIds) {
+  async function fetchPosts(
+    userId?: string,
+    seenIn: Set<string> | Promise<Set<string>> = seenPostIds,
+    profileIn?: Promise<UserAffinityProfile>,
+  ) {
     // Own this fetch — the deferred promoted-layer paint below only writes while
     // it's still the latest fetch (a newer pull-to-refresh / mode switch bumps it).
     const seq = ++fetchSeq.current;
@@ -1902,19 +1945,24 @@ export default function HomeScreen() {
     //   • following mode  – needed to filter posts
     //   • friends mode    – combined with my followers to find mutual follows
     //   • discovery mode  – needed to apply the follow-boost multiplier
+    // Following / Friends filter the query by it, so there it has to land first. The
+    // default feed only uses it in scoring, so there it rides along with the posts
+    // request instead of holding it back a round trip.
+    const followsPromise: Promise<any[] | null> = userId
+      ? Promise.resolve(supabase.from('follows').select('following_id').eq('follower_id', userId))
+          .then(({ data }) => (data as any[] | null) ?? null)
+      : Promise.resolve(null);
     let followingData: any[] | null = null;
-    if (userId) {
-      const { data } = await supabase.from('follows').select('following_id').eq('follower_id', userId);
-      followingData = data;
-    }
 
     if (feedMode === 'following') {
+      followingData = await followsPromise;
       const followingIds = followingData?.map((f: any) => f.following_id) ?? [];
       if (followingIds.length === 0) {
         setPosts([]); setLoading(false); setRefreshing(false); return;
       }
       query = query.in('user_id', followingIds);
     } else if (feedMode === 'friends') {
+      followingData = await followsPromise;
       // Friends = mutual follows: people I follow who also follow me.
       const iFollow = new Set(followingData?.map((f: any) => f.following_id) ?? []);
       const { data: followers } = userId
@@ -1931,6 +1979,24 @@ export default function HomeScreen() {
       query = query.eq('is_public', true);
     }
 
+    // CORE requests go out NOW, before anything below waits on anything (the try
+    // block says why each one is here). The catch only marks the promise handled
+    // while the lines below await other things; the real handling is the await.
+    const corePromise = Promise.all([
+      query,
+      userId ? supabase.from('likes').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
+      userId ? supabase.from('saves').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
+      userId ? fetchBlockedIds() : Promise.resolve(new Set<string>()),
+      fetchGirlSpaceCommunityIds(),
+      followsPromise,
+    ]);
+    corePromise.catch(() => {});
+
+    // The taste profile. On a cold start it comes from the phone's cache
+    // (feedScorer.loadAffinityProfileFast) — milliseconds, not round trips.
+    const profile = await Promise.resolve(profileIn ?? affinityProfile.current)
+      .catch(() => affinityProfile.current);
+
     // Viewer context for ad targeting (own profile demographics + taste affinity).
     const adViewer: AdViewer = {
       id: userId ?? null,
@@ -1940,7 +2006,7 @@ export default function HomeScreen() {
         latitude: (viewerProfileRef.current as any).latitude,
         longitude: (viewerProfileRef.current as any).longitude,
       } : null,
-      affinity: affinityProfile.current,
+      affinity: profile,
     };
 
     // Kick the promoted layer (spotlights + ads) off NOW, in parallel with the
@@ -1967,16 +2033,15 @@ export default function HomeScreen() {
       // per-campaign AsyncStorage reads and ad targeting runs its own pass, so
       // keeping them off the critical path lets the first screen of real posts
       // replace the skeleton as soon as the posts query returns.
-      const [{ data }, { data: likesData }, { data: savesData }, blockedIds, girlSpaceIds] = await Promise.all([
-        query,
-        userId ? supabase.from('likes').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
-        userId ? supabase.from('saves').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
-        userId ? fetchBlockedIds() : Promise.resolve(new Set<string>()),
-        fetchGirlSpaceCommunityIds(),
-      ]);
+      const [{ data }, { data: likesData }, { data: savesData }, blockedIds, girlSpaceIds, followsData] = await corePromise;
+      // The default feed's follow list rode along with the core requests.
+      if (feedMode === 'all') followingData = followsData;
+      const seen = await seenIn;
 
-      if (likesData) setLikedPosts(new Set(likesData.map((l: any) => l.post_id)));
-      if (savesData) setSavedPosts(new Set(savesData.map((s: any) => s.post_id)));
+      const likedNow = likesData ? new Set<string>(likesData.map((l: any) => l.post_id)) : null;
+      const savedNow = savesData ? new Set<string>(savesData.map((s: any) => s.post_id)) : null;
+      if (likedNow) setLikedPosts(likedNow);
+      if (savedNow) setSavedPosts(savedNow);
       if (!data) return; // finally clears loading/refreshing
 
       // Girl space: feminine-tagged community posts are softly down-ranked for men
@@ -1994,7 +2059,6 @@ export default function HomeScreen() {
       // Deterministic recency × engagement × personalization score (see scorePost).
       // This exact score anchors spotlight placement below, so it stays stable.
       const now = Date.now();
-      const profile = affinityProfile.current;
       const scoredPairs = visible.map((p) => ({
         item: p,
         score: scorePost(p, profile, followingSet, seen, now, scoreOpts),
@@ -2019,6 +2083,7 @@ export default function HomeScreen() {
       // Following / Friends keep their strict "people you chose" guarantee — no
       // spotlights or ads. Paint the organic order once, record seen, stop.
       if (feedMode !== 'all') {
+        snapshotShownRef.current = false;
         setPosts(organicList);
         setLoading(false);
         setRefreshing(false);
@@ -2105,9 +2170,15 @@ export default function HomeScreen() {
 
       // A newer fetch may have started while we built the promoted layer.
       if (fetchSeq.current !== seq) return;
-      setPosts(woven);
+      // Last session's saved first screen may still be up (lib/feedSnapshot). Not
+      // scrolled yet: the fresh feed replaces it. Scrolled: what is on screen stays
+      // where it is and the fresh feed continues below it (lib/feedMerge).
+      const replacingSnapshot = snapshotShownRef.current;
+      snapshotShownRef.current = false;
+      setPosts(replacingSnapshot && feedTouchedRef.current ? mergeFreshBelow(postsRef.current, woven) : woven);
       setLoading(false);
       setRefreshing(false);
+      if (userId) saveFeedSnapshot(userId, organicList, likedNow, savedNow);
       // Persist shown IDs (spotlights excluded) so they deprioritise next session.
       recordSeenPostIds(visible.filter((p: any) => !spotPostIds.has(p.id)).map((p: any) => p.id));
     } finally {
@@ -2548,7 +2619,7 @@ export default function HomeScreen() {
           trackFeedScroll(y, e.nativeEvent.contentSize.height - e.nativeEvent.layoutMeasurement.height);
           trackScrollVelocity(y);
         }}
-        onScrollBeginDrag={() => { scrollingRef.current = true; draggingRef.current = true; cancelMusicFlush(); feedDragStart(); }}
+        onScrollBeginDrag={() => { scrollingRef.current = true; draggingRef.current = true; feedTouchedRef.current = true; cancelMusicFlush(); feedDragStart(); }}
         // The lift, not the stop. Momentum may still be running (scrollingRef
         // stays set through it); this only re-opens checkScrollStop's ability
         // to call rest, which it then does on the usual 100ms-idle rule — so a

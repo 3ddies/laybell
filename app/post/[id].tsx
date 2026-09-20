@@ -2,6 +2,8 @@ import { subscribePostEdited } from '../../lib/postEdits';
 import AppVideo from '../../components/AppVideo';
 import { songPlaysFor } from '../../lib/postSong';
 import { ambientMixFor, videoSoundFor } from '../../lib/songMix';
+import { Image as ExpoImage } from 'expo-image';
+import { fullImagePreviewProps } from '../../lib/mediaPreview';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Image, TextInput, KeyboardAvoidingView,
@@ -405,7 +407,7 @@ export default function PostDetailScreen() {
             {/* Media */}
             {post.type === 'image' && post.media_url && (
               <TouchableOpacity activeOpacity={1} onPress={() => onMediaTap()}>
-                <Image source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 1), height: undefined, backgroundColor: '#000' }]} resizeMode="cover" />
+                <ExpoImage source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 1), height: undefined, backgroundColor: '#000' }]} contentFit="cover" cachePolicy="memory-disk" {...fullImagePreviewProps(post)} />
                 {!!post.song_id && (
                   <TouchableOpacity accessibilityRole="button" accessibilityLabel={songMuted ? t('a11y.unmute') : t('a11y.mute')} style={styles.songMuteBtn} onPress={toggleSongMuted}>
                     <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />

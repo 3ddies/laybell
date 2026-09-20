@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { isPremium as readPremium, isPremiumPlus as readPremiumPlus, subscribePremium } from '../lib/entitlements';
+import { afterHomePaint } from '../lib/startupGate';
 import {
   initPurchases, getPackages, purchase as doPurchase, restore as doRestore,
   purchasesConfigured, type Pkg,
@@ -44,9 +45,15 @@ export function PremiumProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      await initPurchases(user?.id ?? null);
-      setPackages(await getPackages());
+    // getSession (on the phone), not getUser (a round trip) — see app/(tabs)/index.tsx.
+      const { data: { session } } = await supabase.auth.getSession();
+      await initPurchases(session?.user?.id ?? null);
+      // The entitlement (above) gates ads, so it resolves now. The price list is
+      // only ever read by the paywall, and fetching it at launch put a store
+      // round trip next to the feed's first load — it waits for Home's paint.
+      afterHomePaint().then(async () => {
+        try { setPackages(await getPackages()); } catch {}
+      });
     } catch {}
     setLoading(false);
   }, []);

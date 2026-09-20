@@ -56,9 +56,18 @@ const DSN = process.env.EXPO_PUBLIC_SENTRY_DSN ?? '';
 const FORCE = process.env.EXPO_PUBLIC_SENTRY_DEBUG === '1';
 const ENABLED = !!DSN && (!__DEV__ || FORCE);
 
+// Share of sessions whose performance is traced (app start, screen loads, slow and
+// frozen frames, JS stalls). Errors are unaffected — every one is always captured.
+// 1.0.4 turned this on to measure the app before and after its performance work
+// (owner, 2026-09-19). Each traced session sends a handful of transactions; lower
+// this as the user base grows so the Sentry plan's quota holds.
+const TRACES_SAMPLE_RATE = 0.3;
+
 let mod: SentryModule | null = null;
 let resolved = false;
 let started = false;
+// Times each screen change and how long the new screen takes to draw (TTID).
+let navigation: { registerNavigationContainer: (ref: unknown) => void } | null = null;
 
 // Loaded lazily and behind a try/catch, mirroring how _layout.tsx guards
 // @livekit/react-native. Two reasons, both real:
@@ -118,6 +127,25 @@ function stripQuery(url: unknown): unknown {
   return q === -1 ? url : `${url.slice(0, q)}?[stripped]`;
 }
 
+// Request spans name their URL in the description ("GET https://…?id=eq.<uuid>") and
+// again in their data, so the same row filters as above would ride along with every
+// traced session. Strip them the way breadcrumbs are stripped.
+function stripSpanUrls(event: any): any {
+  for (const span of event?.spans ?? []) {
+    if (typeof span.description === 'string' && /^[A-Z]+ https?:\/\//.test(span.description)) {
+      span.description = stripQuery(span.description);
+    }
+    if (span.data) {
+      for (const key of ['url', 'http.url', 'server.address']) {
+        if (typeof span.data[key] === 'string') span.data[key] = stripQuery(span.data[key]);
+      }
+      delete span.data['http.query'];
+      delete span.data['http.fragment'];
+    }
+  }
+  return event;
+}
+
 export function initMonitoring(): void {
   if (started) return;
   const S = sentry();
@@ -127,6 +155,11 @@ export function initMonitoring(): void {
   // Start the preference read immediately. Until it lands, beforeSend drops
   // every event (see the opt-out note above).
   isCrashReportingEnabled();
+
+  // Screen timings. Route names only ("profile/[id]") — this integration records no
+  // route params, which matters here because screens pass whole posts as JSON params.
+  const nav = S.reactNavigationIntegration({ enableTimeToInitialDisplay: true });
+  navigation = nav as any;
 
   S.init({
     dsn: DSN,
@@ -145,9 +178,16 @@ export function initMonitoring(): void {
     //    user hit a money bug opts in explicitly.
     sendDefaultPii: false,
 
-    // Errors are always captured; performance tracing is not the point here and
-    // would burn the quota on a free plan. Enable deliberately if ever needed.
-    tracesSampleRate: 0,
+    // ── Performance (1.0.4) ──────────────────────────────────────────────
+    // A sample of sessions is traced: cold/warm app start, each screen's time to
+    // first draw, slow and frozen frames, and JS-thread stalls — the numbers that
+    // say where the app feels slow on real phones. See TRACES_SAMPLE_RATE.
+    tracesSampleRate: TRACES_SAMPLE_RATE,
+    integrations: [nav],
+    // No trace headers on outgoing requests. There is no backend of ours to join
+    // traces up with, and Supabase, Cloudflare's upload endpoints and the rest
+    // should see exactly the requests they always have.
+    tracePropagationTargets: [],
 
     // Which build threw. Essential once OTA updates are live, because the
     // JavaScript on a user's phone may not be the JavaScript in the store build.
@@ -158,6 +198,12 @@ export function initMonitoring(): void {
       // Returning null discards the event entirely.
       if (allowSend !== true) return null;
       return scrub(event);
+    },
+
+    // Performance data answers to the same opt-out and the same scrubbing.
+    beforeSendTransaction(event: any) {
+      if (allowSend !== true) return null;
+      return scrub(stripSpanUrls(event));
     },
 
     beforeBreadcrumb(crumb: any) {
@@ -201,6 +247,12 @@ export function reportIssue(message: string, context?: Record<string, any>): voi
     level: 'error',
     ...(context ? { extra: scrub(context) } : {}),
   } as any);
+}
+
+// Hands expo-router's navigation container to the screen-timing integration. Called
+// once from the root layout; a no-op while monitoring is off.
+export function registerNavigationContainer(ref: unknown): void {
+  if (ref) navigation?.registerNavigationContainer(ref);
 }
 
 // Wraps the root component so React render errors are captured with a component

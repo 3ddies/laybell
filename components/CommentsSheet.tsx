@@ -1,8 +1,12 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal, View, Text, StyleSheet, TouchableOpacity, Keyboard, Platform,
-  Pressable, useWindowDimensions, Animated, PanResponder, Easing,
+  Pressable, useWindowDimensions,
 } from 'react-native';
+import Reanimated, {
+  Easing as REasing, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Comments from './Comments';
@@ -14,6 +18,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 // snaps back. Displacement approaches `max` asymptotically so it always feels
 // like there's more resistance the further you pull.
 function rubber(excess: number, max = 38): number {
+  'worklet'; // read by the drag, which runs on the UI thread
   return max * (1 - Math.exp(-excess / max));
 }
 
@@ -48,41 +53,46 @@ function CommentsSheet({ visible, postId, ownerId, onClose, onPosted, inOverlay 
   const FULL_H = SCREEN_H - insets.top;
   const DEFAULT_H = Math.min(Math.round(SCREEN_H * 0.75), FULL_H); // 3/4 at rest; drag/type → full
 
-  // DRIVER SPLIT (do not merge these back onto one node): `height` is the ONLY
-  // JS-driven value (a layout prop — the default↔full detent resize genuinely
-  // reflows the comment list). `translateY` and `backdrop` are NATIVE-driven —
-  // the open/dismiss slide and the drag now run on the UI thread, so they stay
-  // smooth while a reel plays behind the sheet. A native and a JS value must
-  // never share one Animated.View: hence the two nested nodes in the JSX.
-  const height = useRef(new Animated.Value(DEFAULT_H)).current;        // JS driver (layout)
-  const translateY = useRef(new Animated.Value(DEFAULT_H)).current;   // native driver
-  const backdrop = useRef(new Animated.Value(0)).current;             // native driver
-  const detent = useRef<'default' | 'full'>('default');
-  const startH = useRef(DEFAULT_H);
-  // Last height actually written — skips the redundant per-frame setValue(DEF)
-  // the dismiss drag used to issue (each one flushed a full JS layout pass).
-  const lastH = useRef(DEFAULT_H);
+  // EVERYTHING the drag touches is a shared value, so the whole gesture — the
+  // slide, the backdrop AND the height — runs on the UI thread.
+  //
+  // The old split (height on the JS driver, slide and backdrop on the native
+  // one, two nested nodes so the two drivers never met) existed because RN's
+  // Animated cannot drive a layout prop natively. Reanimated can, so the split
+  // is gone: the detent resize no longer flushes a JS layout pass per frame
+  // while a reel plays behind the sheet.
+  const h = useSharedValue(DEFAULT_H);      // the sheet's height (a real layout)
+  const ty = useSharedValue(DEFAULT_H);     // how far it sits below its place
+  const startH = useSharedValue(DEFAULT_H); // height when the drag began
+  // Geometry the worklets read. Mirrored from render, because a worklet cannot
+  // reach into a JS ref.
+  const fullSv = useSharedValue(FULL_H);
+  const defSv = useSharedValue(DEFAULT_H);
+  useEffect(() => { fullSv.value = FULL_H; defSv.value = DEFAULT_H; }, [FULL_H, DEFAULT_H, fullSv, defSv]);
 
-  // Live geometry for the (once-created) pan handlers.
-  const fullRef = useRef(FULL_H); fullRef.current = FULL_H;
-  const defRef = useRef(DEFAULT_H); defRef.current = DEFAULT_H;
+  const sheetStyle = useAnimatedStyle(() => ({
+    height: h.value,
+    transform: [{ translateY: ty.value }],
+  }));
+  // Derived from the slide rather than animated beside it, so they cannot drift.
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: 1 - Math.min(1, Math.max(0, ty.value) / Math.max(1, defSv.value)),
+  }));
+
   const closeRef = useRef(onClose); closeRef.current = onClose;
+  // One frame after the slide lands, so the host's re-render and this sheet's
+  // teardown are never seen happening (same reason as PostOptionsContext).
+  const finishClose = useCallback(() => { requestAnimationFrame(() => closeRef.current()); }, []);
 
   // Height of the on-screen keyboard, used to lift the sheet's input above it.
   const [kbHeight, setKbHeight] = useState(0);
 
   useEffect(() => {
     if (visible) {
-      detent.current = 'default';
       setKbHeight(0);
-      height.setValue(defRef.current);
-      lastH.current = defRef.current;
-      translateY.setValue(defRef.current);
-      backdrop.setValue(0);
-      Animated.parallel([
-        Animated.timing(translateY, { toValue: 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(backdrop, { toValue: 1, duration: 220, useNativeDriver: true }),
-      ]).start();
+      h.value = DEFAULT_H;
+      ty.value = DEFAULT_H;
+      ty.value = withTiming(0, { duration: 260, easing: REasing.out(REasing.cubic) });
     }
   }, [visible]);
 
@@ -101,105 +111,106 @@ function CommentsSheet({ visible, postId, ownerId, onClose, onPosted, inOverlay 
     return () => { showSub.remove(); hideSub.remove(); };
   }, []);
 
-  function dismiss() {
-    Animated.parallel([
-      Animated.timing(translateY, { toValue: fullRef.current, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(backdrop, { toValue: 0, duration: 220, useNativeDriver: true }),
-    ]).start(() => closeRef.current());
-  }
+  // The detent spring, soft and quick — the numbers the owner tuned as
+  // (bounciness 2, speed 14) on RN's spring.
+  const SNAP = { damping: 18, stiffness: 260, mass: 0.8 };
 
-  function snapTo(target: 'default' | 'full') {
-    detent.current = target;
-    const toH = target === 'full' ? fullRef.current : defRef.current;
-    lastH.current = toH; // the spring lands here; drag-grant re-syncs if interrupted
-    Animated.parallel([
-      // height is the one JS-driven animation left — a real layout resize.
-      Animated.spring(height, { toValue: toH, useNativeDriver: false, bounciness: 2, speed: 14 }),
-      Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 2, speed: 14 }),
-      Animated.timing(backdrop, { toValue: 1, duration: 150, useNativeDriver: true }),
-    ]).start();
-  }
+  // Worklet twins: the gesture settles on the UI thread, while the keyboard
+  // listener and the close button call the JS ones. Both write the same values.
+  const dismissW = useCallback(() => {
+    'worklet';
+    // Aims past the sheet's full height, so it always clears the screen.
+    ty.value = withTiming(fullSv.value, { duration: 220, easing: REasing.out(REasing.quad) }, (done) => {
+      'worklet';
+      if (done) runOnJS(finishClose)();
+    });
+  }, [finishClose, ty, fullSv]);
 
-  const pan = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: () => true,
-    onPanResponderGrant: () => {
-      startH.current = detent.current === 'full' ? fullRef.current : defRef.current;
-      // A grab mid-detent-spring leaves height between detents — sync lastH to
-      // the LIVE value so the guarded writes below can't skip a needed write.
-      height.stopAnimation((v) => { lastH.current = v; });
-    },
-    onPanResponderMove: (_e, g) => {
-      const DEF = defRef.current, FULL = fullRef.current;
-      const target = startH.current - g.dy; // up → taller, down → shorter
-      if (target >= DEF) {
-        // Allow elastic stretch above the full-height ceiling. Live per-frame
-        // height IS the owner-tuned rubber-band feel — only skip exact-equal
-        // writes (each height write flushes a JS layout pass).
-        const clamped = target > FULL ? FULL + rubber(target - FULL) : target;
-        if (clamped !== lastH.current) { height.setValue(clamped); lastH.current = clamped; }
-        translateY.setValue(0);
-        backdrop.setValue(1);
-      } else {
-        // Downward (dismiss) drag: height is CONSTANT at DEF — write it once,
-        // not per frame (the old unconditional write re-laid-out the whole
-        // comment list every frame of the dismiss drag).
-        if (lastH.current !== DEF) { height.setValue(DEF); lastH.current = DEF; }
-        const down = DEF - target;
-        translateY.setValue(down);
-        backdrop.setValue(Math.max(0, 1 - down / DEF));
-      }
-    },
-    onPanResponderRelease: (_e, g) => settleDrag(g),
-    // A CANCELLED touch (system alert, incoming call, app-switch gesture) must
-    // resolve exactly like a release — the grant stops any in-flight detent
-    // spring, so without this the sheet could strand between detents.
-    onPanResponderTerminate: (_e, g) => settleDrag(g),
-  })).current;
+  const snapToW = useCallback((target: 'default' | 'full') => {
+    'worklet';
+    h.value = withSpring(target === 'full' ? fullSv.value : defSv.value, SNAP);
+    ty.value = withSpring(0, SNAP);
+  }, [h, ty, fullSv, defSv]);
 
-  function settleDrag(g: { dy: number; vy: number }) {
-    const DEF = defRef.current, FULL = fullRef.current;
-    const target = startH.current - g.dy;
+  function dismiss() { dismissW(); }
+  function snapTo(target: 'default' | 'full') { snapToW(target); }
+
+  // Where the drag lands. velocityY is px/SECOND here; the PanResponder's vy was
+  // px/ms, hence the ×1000 on the old 1.2 thresholds.
+  const settle = useCallback((dy: number, vy: number) => {
+    'worklet';
+    const DEF = defSv.value, FULL = fullSv.value;
+    const target = startH.value - dy;
     if (target < DEF) {
       const down = DEF - target;
-      if (down > DEF * 0.25 || g.vy > 1.2) dismiss();
-      else snapTo('default');
+      // Projected rest, not raw distance: a short pull released while still
+      // moving down dismisses, the same pull released dead still springs back.
+      if (down + vy * 0.12 > DEF * 0.25) dismissW();
+      else snapToW('default');
     } else if (target > FULL) {
-      // Was in the elastic zone above full — always snap back to full
-      snapTo('full');
+      // Was in the elastic zone above full — always snap back to full.
+      snapToW('full');
     } else {
-      if (target > (DEF + FULL) / 2 || g.vy < -1.2) snapTo('full');
-      else snapTo('default');
+      if (target > (DEF + FULL) / 2 || vy < -1200) snapToW('full');
+      else snapToW('default');
     }
-  }
+  }, [defSv, fullSv, startH, dismissW, snapToW]);
+
+  const drag = useMemo(() => Gesture.Pan()
+    .onBegin(() => {
+      'worklet';
+      // A grab mid-spring starts from where the sheet actually IS, not from the
+      // detent it was heading for.
+      startH.value = h.value;
+    })
+    .onUpdate((e) => {
+      'worklet';
+      const DEF = defSv.value, FULL = fullSv.value;
+      const target = startH.value - e.translationY; // up → taller, down → shorter
+      if (target >= DEF) {
+        // Elastic stretch above the ceiling, then snap back on release.
+        h.value = target > FULL ? FULL + rubber(target - FULL) : target;
+        ty.value = 0;
+      } else {
+        // Downward (dismiss) drag: the height holds and the sheet slides.
+        h.value = DEF;
+        ty.value = DEF - target;
+      }
+    })
+    .onEnd((e) => { 'worklet'; settle(e.translationY, e.velocityY); })
+    // A CANCELLED touch (system alert, incoming call, app-switch gesture) must
+    // resolve exactly like a release, or the sheet strands between detents.
+    // onFinalize runs for both; `ended` is false only when onEnd did not.
+    .onFinalize((e, ended) => { 'worklet'; if (!ended) settle(e.translationY, e.velocityY); }),
+  [settle, h, ty, startH, defSv, fullSv]);
 
   const content = (
       <View style={styles.overlay}>
-        <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
+        <Reanimated.View style={[styles.backdrop, backdropStyle]}>
           {/* While typing, a tap outside the keyboard ONLY dismisses the keyboard
               (doesn't also close the sheet); otherwise it closes the sheet. */}
           <Pressable
             style={StyleSheet.absoluteFill}
             onPress={() => { if (kbHeight > 0) Keyboard.dismiss(); else dismiss(); }}
           />
-        </Animated.View>
-        {/* OUTER node: native translateY ONLY (never add layout props here).
-            INNER node: the JS-driven height + all sheet styles. A native and a
-            JS Animated value on ONE node crashes ("JS driven animation on a
-            node moved to native") — this split is load-bearing. */}
-        <Animated.View style={{ transform: [{ translateY }] }}>
-        <Animated.View
-          // Bottom clearance: the input bar already carries its own bottom
-          // padding (SPACING.md), so the sheet only adds the REMAINDER of the
-          // safe-area inset — stacking the full inset on top left a thick dead
-          // strip under the input. Keyboard open → reserve its exact height.
-          style={[styles.sheet, { height, paddingBottom: kbHeight > 0 ? kbHeight : Math.max(0, insets.bottom - SPACING.md) }]}
+        </Reanimated.View>
+        {/* ONE node now: height and slide are both Reanimated, so they no longer
+            need separate views to keep two animation drivers apart.
+
+            Bottom clearance: the input bar already carries its own bottom
+            padding (SPACING.md), so the sheet only adds the REMAINDER of the
+            safe-area inset — stacking the full inset on top left a thick dead
+            strip under the input. Keyboard open → reserve its exact height. */}
+        <Reanimated.View
+          style={[styles.sheet, { paddingBottom: kbHeight > 0 ? kbHeight : Math.max(0, insets.bottom - SPACING.md) }, sheetStyle]}
         >
           {/* Drag grip — handle + title. Claims the gesture on touch. */}
-          <View style={styles.grab} {...pan.panHandlers}>
-            <View style={styles.handle} />
-            <Text style={styles.title}>{t('comments.title')}</Text>
-          </View>
+          <GestureDetector gesture={drag}>
+            <View style={styles.grab}>
+              <View style={styles.handle} />
+              <Text style={styles.title}>{t('comments.title')}</Text>
+            </View>
+          </GestureDetector>
           <TouchableOpacity style={styles.closeBtn} onPress={dismiss} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
             <Ionicons name="close" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
@@ -207,8 +218,7 @@ function CommentsSheet({ visible, postId, ownerId, onClose, onPosted, inOverlay 
           <View style={styles.body}>
             {postId ? <Comments postId={postId} ownerId={ownerId} contentPadding={SPACING.md} onNavigate={dismiss} onPosted={onPosted} /> : null}
           </View>
-        </Animated.View>
-        </Animated.View>
+        </Reanimated.View>
       </View>
   );
 
@@ -217,12 +227,15 @@ function CommentsSheet({ visible, postId, ownerId, onClose, onPosted, inOverlay 
   // window can't show over native-modal routes (/tv itself) — so the overlay
   // host renders the sheet as a plain absolute-fill view, stacked above the
   // remote by z-order. Everywhere else keeps the real Modal.
+  //
+  // Each host is its own native window, outside the app's root gesture handler,
+  // where a GestureDetector silently does nothing — so each gets its own root.
   if (inOverlay && Platform.OS === 'ios') {
-    return visible ? <View style={[StyleSheet.absoluteFill, { zIndex: 80 }]}>{content}</View> : null;
+    return visible ? <GestureHandlerRootView style={[StyleSheet.absoluteFill, { zIndex: 80 }]}>{content}</GestureHandlerRootView> : null;
   }
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent supportedOrientations={['portrait', 'landscape']}>
-      {content}
+      <GestureHandlerRootView style={styles.overlay}>{content}</GestureHandlerRootView>
     </Modal>
   );
 }

@@ -10,6 +10,8 @@ import { SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { resolveAssetUri, evictAssetUri } from '../lib/assetInfoCache';
+import { useIsFocused } from '@react-navigation/native';
+import { afterHomePaint } from '../lib/startupGate';
 
 const NUM_COLS = 4;
 const GAP = 2;
@@ -222,20 +224,38 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
     setLoading(false);
   }, [videosOnly, cacheKey]);
 
+  // WHEN the camera roll is read. This ran the moment the grid mounted, and the
+  // composer mounts at app LAUNCH with every other tab: a cold start asked for
+  // photo permission — on a first run, a photos dialog over the home feed — and
+  // read 60 assets while the feed was still loading. Now it waits for the
+  // composer to be opened. When permission is already granted there is no dialog
+  // to mistime, so it can quietly preload once Home has painted
+  // (lib/startupGate) and be ready by the time the tab is.
+  const isFocused = useIsFocused();
+  const startedRef = useRef(false);
   useEffect(() => {
+    if (startedRef.current) return;
     let cancelled = false;
-    (async () => {
+    const start = async () => {
+      if (cancelled || startedRef.current) return;
+      startedRef.current = true;
       let p = permission;
       if (!p || !p.granted) p = await requestPermission();
-      if (cancelled || !p?.granted) return;
+      if (cancelled || !p?.granted) {
+        startedRef.current = false; // denied or dismissed — ask again next open
+        return;
+      }
       // Cached remount: keep painting the cached grid (list is at the top on a
       // fresh mount, so the refresh below can safely replace it) — only a truly
       // cold start wipes to empty first.
       if (!gridCache.has(cacheKey)) { setAssets([]); setEndCursor(undefined); setHasNext(true); }
       loadPage(undefined);
-    })();
+    };
+    if (isFocused) start();
+    else if (permission?.granted) afterHomePaint().then(start);
     return () => { cancelled = true; };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFocused, permission?.granted]);
 
   // Rebuilt only when the asset list actually changes — NOT on every render (a
   // scroll-driven parent re-render, a loading/resolving toggle), so FlashList

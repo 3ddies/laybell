@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { translate, isLang, DEFAULT_LANG, setActiveLang, type Lang } from '../lib/i18n';
+import { translate, isLang, DEFAULT_LANG, preloadLang, setActiveLang, type Lang } from '../lib/i18n';
 
 // App-wide language. Persisted locally (AsyncStorage) and applied live: every
 // screen that reads strings via `t()` re-renders when the language changes, so
@@ -46,7 +46,11 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((stored) => {
-      if (isLang(stored)) setLangState(stored);
+      if (!isLang(stored)) return;
+      // Build the dictionary before the switch, not during the render it causes:
+      // each language is its own module now (lib/locales), loaded on first use.
+      preloadLang(stored);
+      setLangState(stored);
     }).catch(() => {});
     AsyncStorage.getItem(AUTO_TRANSLATE_KEY).then((v) => {
       if (v != null) setAutoState(v === '1');
@@ -58,6 +62,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { setActiveLang(lang); }, [lang]);
 
   const setLang = useCallback((l: Lang) => {
+    preloadLang(l);
     setLangState(l);
     AsyncStorage.setItem(STORAGE_KEY, l).catch(() => {});
   }, []);

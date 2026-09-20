@@ -58,7 +58,9 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+    // getSession (on the phone), not getUser (a round trip) — see app/(tabs)/index.tsx.
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user ?? null;
     if (!user) { setProfile(null); setLoading(false); syncEntitlementsFromProfile(null); return; }
     // Cold start only (guarded): reap any of my own leftover "live" rows from a
     // session that was killed mid-broadcast, so I never reopen the app as a ghost

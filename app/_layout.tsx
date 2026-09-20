@@ -1,21 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Stack, useSegments, useRouter } from 'expo-router';
+import { Stack, useSegments, useRouter, useNavigationContainerRef } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, Platform, Alert } from 'react-native';
 import { FullWindowOverlay } from 'react-native-screens';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabase';
 import AuthHandoff, { SuspendMediaWhile } from '../components/AuthHandoff';
 import { markInteraction } from '../lib/playbackPresence';
 import { handleAuthLink } from '../lib/authLink';
 import Toast from '../components/Toast';
-import { initMonitoring, wrapRoot, reportError } from '../lib/monitoring';
+import { initMonitoring, wrapRoot, reportError, registerNavigationContainer } from '../lib/monitoring';
 import { useTranslation } from '../contexts/LanguageContext';
 import { ensureProfileForSession } from '../lib/socialAuth';
 import { sweepAbandonedStreamUploads } from '../lib/streamUpload';
 import { clearAgeCache } from '../lib/minors';
+import { clearScreenCaches } from '../lib/screenCache';
 import { Session } from '@supabase/supabase-js';
 import { COLORS } from '../constants/theme';
 import { tg } from '../lib/i18n';
@@ -538,6 +540,9 @@ function RootLayout() {
   }, [handoff]);
   const segments = useSegments();
   const router = useRouter();
+  // Screen-by-screen timings for performance tracing (lib/monitoring).
+  const navRef = useNavigationContainerRef();
+  useEffect(() => { registerNavigationContainer(navRef); }, [navRef]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -560,7 +565,7 @@ function RootLayout() {
       // Drop the cached age on any identity change so a second account signing in
       // on this device can't inherit the first one's adult status and unlock the
       // 18+ gates. Token refreshes deliberately keep the cache.
-      if (event === 'SIGNED_OUT' || event === 'SIGNED_IN') clearAgeCache();
+      if (event === 'SIGNED_OUT' || event === 'SIGNED_IN') { clearAgeCache(); clearScreenCaches(); }
     });
 
     return () => subscription.unsubscribe();
@@ -757,6 +762,10 @@ function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+    {/* Tracks the keyboard's own animation and hands it to the screens that move
+        with it (comments, DMs) — frame by frame on the UI thread, instead of
+        each screen animating on a guessed duration after the event lands. */}
+    <KeyboardProvider>
     <ThemeProvider>
     {/* Language sits beside Theme — both are DEVICE preferences (persisted locally),
         so they live above the per-user remount and survive account switches. */}
@@ -845,6 +854,7 @@ function RootLayout() {
     <AuthHandoff visible={handoff} />
     </LanguageProvider>
     </ThemeProvider>
+    </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }

@@ -1,8 +1,13 @@
 import {
   View, Text, StyleSheet, FlatList, TextInput, Image,
-  TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator,
-  Keyboard, Animated, Modal, Pressable, Alert, Dimensions,
+  TouchableOpacity, Platform, ActivityIndicator,
+  Keyboard, Animated, Modal, Pressable, Alert,
 } from 'react-native';
+// Keyboard-synced, not keyboard-event-driven: this KeyboardAvoidingView moves
+// with the keyboard frame by frame on the UI thread, where React Native's own
+// animates on a guessed duration once the event lands. Same props (1.0.4).
+import { KeyboardAvoidingView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
+import Reanimated, { runOnJS, useAnimatedReaction, useAnimatedStyle } from 'react-native-reanimated';
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,6 +38,8 @@ type Reaction = { message_id: string; user_id: string; emoji: string };
 type Conversation = { id: string; title: string | null; avatar_url: string | null; created_by: string | null };
 
 const TAPBACKS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
+// Captured by the compose bar's UI-thread style worklet, so it has to be a plain value.
+const IOS = Platform.OS === 'ios';
 const RUN_GAP_MS = 15 * 60 * 1000; // separator + re-show sender after a 15-min gap
 
 export default function GroupChatScreen() {
@@ -99,39 +106,26 @@ export default function GroupChatScreen() {
     scheduleFade(msgId);
   };
 
-  // Compose bar slides with the keyboard (iOS) — same approach as the DM screen.
-  const kbShift = useRef(new Animated.Value(0)).current;
+  // Compose bar rides the keyboard (iOS) — same approach as the DM screen.
+  // The compose bar is absolutely positioned (so messages scroll under its
+  // blur), which means the KAV's padding never moves it — it rides the keyboard
+  // itself. Its height comes from the keyboard's own animation, frame by frame
+  // on the UI thread, so there is no longer anything to race: this replaced five
+  // listeners and a guessed duration, all of which existed to survive the stray
+  // off-screen frame iOS emits after a show ("slides up then glitches back
+  // down"). iOS only, as before — Android resizes the window, so the bar already
+  // rides up for free.
+  const { height: kbHeight, progress: kbProgress } = useReanimatedKeyboardAnimation();
+  const barSlide = useAnimatedStyle(() => ({
+    transform: [{ translateY: IOS ? kbHeight.value : 0 }],
+  }));
+  // Just the up/down fact, for the bar's resting padding.
   const [kbUp, setKbUp] = useState(false);
-  useEffect(() => {
-    if (Platform.OS !== 'ios') return;
-    // RAISE on willShow OR willChangeFrame (iOS skips willShow during rapid focus),
-    // but only for an ON-SCREEN frame; LOWER only on an explicit willHide. Fixes
-    // "slides up then glitches back down": iOS emits a stray off-screen frame after
-    // the show, which the old code misread as a hide and dropped the bar.
-    const raise = (e: any) => {
-      const kb = e.endCoordinates;
-      if (!kb || kb.height <= 0) return;
-      if (kb.screenY >= Dimensions.get('screen').height - 10) return; // off-screen → let willHide handle
-      setKbUp(true);
-      Animated.timing(kbShift, { toValue: -kb.height, duration: e.duration ?? 250, useNativeDriver: true }).start();
-    };
-    const lower = (e: any) => {
-      setKbUp(false);
-      Animated.timing(kbShift, { toValue: 0, duration: e?.duration ?? 220, useNativeDriver: true }).start();
-    };
-    // The DID events fire LAST (after the keyboard settles), so they authoritatively
-    // correct the resting position — this keeps re-triggers (2nd+ open) from ending
-    // up glitched under the keyboard when events interleave across cycles.
-    const subs = [
-      Keyboard.addListener('keyboardWillShow', raise),
-      Keyboard.addListener('keyboardWillChangeFrame', raise),
-      Keyboard.addListener('keyboardDidShow', raise),
-      Keyboard.addListener('keyboardWillHide', lower),
-      Keyboard.addListener('keyboardDidHide', lower),
-    ];
-    return () => subs.forEach((s) => s.remove());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useAnimatedReaction(
+    () => kbProgress.value > 0.5,
+    (up, was) => { if (up !== was) runOnJS(setKbUp)(up); },
+    [],
+  );
 
   useEffect(() => { setup(); }, [id]);
 
@@ -516,7 +510,7 @@ export default function GroupChatScreen() {
         />
       </KeyboardAvoidingView>
 
-      <Animated.View style={[styles.inputBarWrap, { transform: [{ translateY: kbShift }] }]}>
+      <Reanimated.View style={[styles.inputBarWrap, barSlide]}>
         {pendingAttachment && (
           // Full-width row is a keyboard-dismiss zone; the box hugs the GIF only, so
           // tapping the space beside it exits typing rather than doing nothing.
@@ -551,7 +545,7 @@ export default function GroupChatScreen() {
             </View>
           </TouchableOpacity>
         </View>
-      </Animated.View>
+      </Reanimated.View>
 
       <GifPickerModal visible={gifOpen} userId={currentUserId} onClose={() => setGifOpen(false)} onSelect={(g) => setPendingAttachment({ type: 'gif', url: g.url, w: g.w, h: g.h, src: g.src })} />
       <ImageViewerModal state={viewerUrl ? { url: viewerUrl } : null} onClose={() => setViewerUrl(null)} />

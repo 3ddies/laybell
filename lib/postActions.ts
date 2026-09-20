@@ -20,13 +20,13 @@ export async function deletePostById(postId: string): Promise<boolean> {
     // hasn't run yet, retry without it rather than skipping cleanup entirely.
     let { data } = await supabase
       .from('posts')
-      .select('media_url, thumbnail_url, cover_url, slides, video_uid, legacy_media_url')
+      .select('media_url, thumbnail_url, cover_url, thumb_url, slides, video_uid, legacy_media_url')
       .eq('id', postId)
       .single();
     if (!data) {
       ({ data } = await supabase
         .from('posts')
-        .select('media_url, thumbnail_url, cover_url, slides, video_uid')
+        .select('media_url, thumbnail_url, cover_url, thumb_url, slides, video_uid')
         .eq('id', postId)
         .single() as any);
     }

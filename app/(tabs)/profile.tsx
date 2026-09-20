@@ -6,7 +6,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, RefreshControl, PanResponder,
+  ScrollView, RefreshControl, PanResponder, type RefreshControlProps,
   Animated, Easing, Dimensions, Platform,
 } from 'react-native';
 // Content thumbnails use expo-image: memory+disk cached, so re-renders and
@@ -15,7 +15,8 @@ import {
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef, type ReactElement } from 'react';
+import { FlashList } from '@shopify/flash-list';
 import { orderProfileTabs, tabContent } from '../../lib/profileTabOrder';
 import { supabase } from '../../lib/supabase';
 import { tabTick } from '../../lib/haptics';
@@ -39,10 +40,9 @@ import { useLinkGuard } from '../../contexts/LinkGuardContext';
 import { activeLayout, usedPostIds } from '../../lib/pageLayout';
 import ProfileLayoutGrid from '../../components/ProfileLayoutGrid';
 import { isAudioPost } from '../../lib/genres';
-import { slideshowThumb, isSlideshow } from '../../lib/slideshow';
+import { isSlideshow } from '../../lib/slideshow';
 import VideoThumb from '../../components/VideoThumb';
-import ThumbStat from '../../components/ThumbStat';
-import SpotlightThumbBadge from '../../components/SpotlightThumbBadge';
+import ProfileGridTile, { gridGeometry } from '../../components/ProfileGridTile';
 import TrackRow from '../../components/TrackRow';
 import SpotlightButton from '../../components/SpotlightButton';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
@@ -75,6 +75,20 @@ const SCREEN_W = Dimensions.get('window').width;
 const FILM_GAP = 8;
 const FILM_W = (SCREEN_W - SPACING.md * 2 - FILM_GAP) / 2;
 const FILM_H = Math.round(FILM_W * (9 / 16));
+
+// The grid pages' squares (components/ProfileGridTile). Posts and Reposts run
+// edge to edge with 2pt gutters — a contact sheet. Clips under a films shelf are
+// inset to the page margin the labels and posters use, share the shelf's gap
+// (so the two read as one tab rather than two stacked grids), and round their
+// corners to match the posters: sharp corners belong to a grid that runs edge to
+// edge; once it is inset and gapped they read as unfinished.
+const GRID_BLEED = gridGeometry(0, 2);
+const GRID_INSET = gridGeometry(SPACING.md, FILM_GAP, RADIUS.sm);
+// The page's non-square first row (custom layout, films shelf) — see renderGridPage.
+const GRID_HEADER = { id: '__header', __header: true };
+const gridKey = (item: any) => item.id;
+const gridItemType = (item: any) => (item.__header ? 'header' : 'tile');
+const spanGridHeader = (layout: { span?: number }, item: any) => { if (item.__header) layout.span = 3; };
 
 
 // Black or white, whichever reads on a given background — so a SOLID accent pill
@@ -133,6 +147,15 @@ export default function ProfileScreen() {
 
   // Per-thumbnail nodes so opening a post/reel can expand out of the tapped cell.
   const gridRefs = useRef<Record<string, any>>({});
+
+  // Handlers for the grid squares (components/ProfileGridTile). The squares are
+  // memoized, so they get functions that never change and reach the latest
+  // render's code through these refs. Up here with the other hooks: below the
+  // loading return, a hook would run on some renders and not on others.
+  const gridPressRef = useRef<(post: any, tabKey: string, node: any) => void>(() => {});
+  const onGridPress = useCallback((post: any, tabKey: string, node: any) => gridPressRef.current(post, tabKey, node), []);
+  const gridLongPressRef = useRef<(post: any, tabKey: string) => void>(() => {});
+  const onGridLongPress = useCallback((post: any, tabKey: string) => gridLongPressRef.current(post, tabKey), []);
 
   // ── Sub-tab navigation: Music-page pattern, NO pager ──────────────────────
   // One fling PanResponder on the page ROOT steps the sub-tabs (with the same
@@ -688,15 +711,46 @@ export default function ProfileScreen() {
     });
   }
 
-  // The Posts tab: a custom feature layout (when active) above the normal grid of
-  // any leftover posts, or just the normal grid.
-  function renderPostsTab() {
-    const data = dataForTab('posts');
-    if (!pageLayout) return renderGrid(orderPostsForGrid(data), 'posts');
-    const used = usedPostIds(pageLayout.blocks);
-    const leftovers = data.filter(p => !used.has(p.id));
-    return (
-      <>
+  // ── The grid pages: Posts, Videos, Reposts ──────────────────────────────────
+  // FlashLists since 1.0.4 (components/ProfileGridTile): only the rows near the
+  // screen exist. What is not a square — the custom page layout on Posts, the
+  // films shelf on Videos — is the list's first ROW, spanning all three columns.
+  // Not ListHeaderComponent: FlashList v2 + Fabric detaches a header natively
+  // when it scrolls out and re-attaches it wrong (Home's stories tray — see
+  // feedData in app/(tabs)/index.tsx). Rows are recycled, never detached.
+
+  // A grid page's squares, and whether they sit inset under a films shelf.
+  //
+  // Posts: the custom feature layout (when active) takes its posts and the grid
+  // gets the leftovers; otherwise the whole grid, ordered.
+  //
+  // Videos: split the way the Music tab splits albums from singles. A film is a
+  // horizontal video over 9 minutes (lib/tv isFilm — the same predicate Laybell
+  // TV ranks its shelf with, so a video cannot be a film in one place and a clip
+  // in another). They are the long things somebody sits down for; mixing them
+  // into the same grid as a 20-second clip loses both.
+  function gridPageData(key: string): { data: any[]; inset: boolean } {
+    if (key === 'posts') {
+      const data = dataForTab('posts');
+      if (!pageLayout) return { data: orderPostsForGrid(data), inset: false };
+      const used = usedPostIds(pageLayout.blocks);
+      return { data: data.filter((p: any) => !used.has(p.id)), inset: false };
+    }
+    if (key === 'videos') {
+      const all = dataForTab('videos');
+      if (!all.some((p: any) => isFilm(p))) return { data: all, inset: false };
+      return { data: all.filter((p: any) => !isFilm(p)), inset: true };
+    }
+    return { data: dataForTab(key), inset: false };
+  }
+
+  // The page's full-width first row, or null. On Videos the labels appear ONLY
+  // when both kinds exist: a lone "FILMS" heading over the whole tab is a
+  // category padded to look fuller than it is, which is the one thing the films
+  // catalogue was explicitly built not to do.
+  function renderGridHeader(key: string) {
+    if (key === 'posts' && pageLayout) {
+      return (
         <ProfileLayoutGrid
           layout={pageLayout}
           posts={userPosts}
@@ -711,36 +765,35 @@ export default function ProfileScreen() {
           onPlaySongs={(queue, idx) => playQueue(queue, idx)}
           onLongPressPost={showPostOptions}
         />
-        {leftovers.length > 0 && renderGrid(leftovers, 'posts')}
-      </>
-    );
+      );
+    }
+    if (key === 'videos') {
+      const all = dataForTab('videos');
+      const films = all.filter((p: any) => isFilm(p));
+      if (films.length === 0) return null;
+      const hasClips = films.length < all.length;
+      return (
+        <View style={styles.videosTab}>
+          {hasClips && <Text style={[styles.sectionLabel, styles.videosLabel]}>{t('profile.sectionFilms')}</Text>}
+          {renderFilmShelf(films)}
+          {hasClips && <Text style={[styles.sectionLabel, styles.videosLabel, styles.sectionLabelStacked]}>{t('profile.sectionVideos')}</Text>}
+        </View>
+      );
+    }
+    return null;
   }
 
-  // The Videos tab, split the way the Music tab splits albums from singles.
-  //
-  // A film is a horizontal video over 9 minutes (lib/tv isFilm — the same
-  // predicate Laybell TV ranks its shelf with, so a video cannot be a film in
-  // one place and a clip in another). They are thelong things somebody sits down
-  // for; mixing them into the same grid as a 20-second clip loses both.
-  //
-  // Labels appear ONLY when both kinds exist. A lone "FILMS" heading over the
-  // whole tab is a category padded to look fuller than it is, which is the one
-  // thing the films catalogue was explicitly built not to do.
-  function renderVideosTab() {
-    const all = dataForTab('videos');
-    const films = all.filter((p: any) => isFilm(p));
-    if (films.length === 0) return renderGrid(all, 'videos');
-    const clips = all.filter((p: any) => !isFilm(p));
+  function renderGridEmpty(key: string) {
     return (
-      <View style={styles.videosTab}>
-        {clips.length > 0 && <Text style={[styles.sectionLabel, styles.videosLabel]}>{t('profile.sectionFilms')}</Text>}
-        {renderFilmShelf(films)}
-        {clips.length > 0 && (
-          <>
-            <Text style={[styles.sectionLabel, styles.videosLabel, styles.sectionLabelStacked]}>{t('profile.sectionVideos')}</Text>
-            {renderGrid(clips, 'videos', true)}
-          </>
-        )}
+      <View style={styles.emptyGrid}>
+        <Ionicons
+          name={key === 'reposts' ? 'repeat-outline' : 'images-outline'}
+          size={40}
+          color={colors.textTertiary}
+        />
+        <Text style={styles.emptyGridText}>
+          {t(`profile.empty.${key}`)}
+        </Text>
       </View>
     );
   }
@@ -748,7 +801,7 @@ export default function ProfileScreen() {
   // The grid's tap, hoisted so the films shelf opens a film exactly the way the
   // grid opens a video — measured rect and all, so the shared-element expand is
   // the same motion from either shelf.
-  function openFromGrid(post: any, data: any[]) {
+  function openFromGrid(post: any, data: any[], tile?: any) {
     if (isAudioPost(post.type)) {
       const songs = data.filter((s: any) => isAudioPost(s.type));
       const idx = songs.findIndex((s: any) => s.id === post.id);
@@ -758,7 +811,7 @@ export default function ProfileScreen() {
       );
       return;
     }
-    const node = gridRefs.current[post.id];
+    const node = tile ?? gridRefs.current[post.id];
     const immersive = post.type === 'video' || isSlideshow(post.type);
     const pathname = immersive ? '/reel/[id]' : '/post/[id]';
     const seed = JSON.stringify(post);
@@ -803,106 +856,55 @@ export default function ProfileScreen() {
     );
   }
 
-  function renderGrid(data: any[], tabKey: string, inset = false) {
-    if (data.length === 0) {
-      return (
-        <View style={styles.emptyGrid}>
-          <Ionicons
-            name={tabKey === 'reposts' ? 'repeat-outline' : 'images-outline'}
-            size={40}
-            color={colors.textTertiary}
-          />
-          <Text style={styles.emptyGridText}>
-            {t(`profile.empty.${tabKey}`)}
-          </Text>
-        </View>
-      );
-    }
+  function renderGridPage(key: string, refreshControl: ReactElement<RefreshControlProps>) {
+    const { data, inset } = gridPageData(key);
+    const header = renderGridHeader(key);
+    const rows = header ? [GRID_HEADER, ...data] : data;
+    const first = header ? 1 : 0;
+    const geo = inset ? GRID_INSET : GRID_BLEED;
     return (
-      <View style={[styles.postsGrid, inset && styles.postsGridInset]}>
-        {data.map((post: any) => (
-          <TouchableOpacity
-            key={post.id}
-            ref={(n) => { if (n) gridRefs.current[post.id] = n; }}
-            style={[styles.gridItem, inset && styles.gridItemInset]}
-            // Own content (Posts / Music / Videos) — long-press for edit/delete.
-            // Reposts — long-press to remove the repost (via the options sheet).
-            onLongPress={
-              (tabKey === 'posts' || tabKey === 'music' || tabKey === 'videos')
-                ? () => showOptions({
-                    postId: post.id,
-                    isOwn: true,
-                    mediaType: post.type,
-                    aspect: post.aspect_ratio,
-                    caption: post.caption,
-                    thumbnail: post.thumbnail_url,
-                    hideFromGrid: !!post.hide_from_grid,
-                    canHideFromGrid: canHide(post.id),
-                    onGridVisibilityChanged: (hidden) => setUserPosts(prev =>
-                      prev.map(p => (p.id === post.id ? { ...p, hide_from_grid: hidden } : p))),
-                    onEdit: () => router.push(`/edit-post/${post.id}`),
-                    onDeleted: () => {
-                      setUserPosts(prev => prev.filter(p => p.id !== post.id));
-                      setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) }));
-                    },
-                    onArchived: () => {
-                      setUserPosts(prev => prev.filter(p => p.id !== post.id));
-                      setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) }));
-                    },
-                  })
-                : tabKey === 'reposts'
-                ? () => showOptions({
-                    postId: post.id,
-                    isOwn: false,
-                    onRepostChanged: (reposted) => {
-                      if (!reposted) setRepostedPosts(prev => prev.filter(p => p.id !== post.id));
-                    },
-                  })
-                : undefined
-            }
-            onPress={() => openFromGrid(post, data)}
-          >
-            {post.type === 'slideshow' ? (
-              <>
-                {/* Slide 1's screenshot (video) or slide 1 itself (image) */}
-                <Image source={{ uri: slideshowThumb(post) ?? undefined }} style={styles.gridImage} contentFit="cover" />
-                <View style={styles.gridPlayOverlay}>
-                  <Ionicons name="copy" size={13} color="#fff" />
-                </View>
-              </>
-            ) : post.type === 'video' ? (
-              <>
-                <VideoThumb thumbnailUrl={post.thumbnail_url} mediaUrl={post.media_url} style={styles.gridImage} />
-                <View style={styles.gridPlayOverlay}>
-                  <Ionicons name="play" size={14} color="#fff" />
-                </View>
-              </>
-            ) : post.type === 'image' ? (
-              <Image source={{ uri: post.media_url }} style={styles.gridImage} contentFit="cover" />
-            ) : isAudioPost(post.type) && post.cover_url ? (
-              <>
-                <Image source={{ uri: post.cover_url }} style={styles.gridImage} contentFit="cover" />
-                <View style={styles.gridPlayOverlay}>
-                  <Ionicons name="musical-notes" size={13} color="#fff" />
-                </View>
-              </>
-            ) : (
-              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridPlaceholder}>
-                <Ionicons
-                  name={isAudioPost(post.type) ? 'musical-notes' : 'videocam'}
-                  size={28} color={colors.primary}
-                />
-              </LinearGradient>
-            )}
-            {/* Subtle yellow sparkle when this post has a live spotlight. */}
-            {spotlightIds.has(post.id) && <SpotlightThumbBadge />}
-            {/* View count (video) / listen count (audio) */}
-            <ThumbStat type={post.type} viewCount={post.view_count} streamCount={post.stream_count} />
-          </TouchableOpacity>
+      <FlashList
+        data={rows}
+        numColumns={3}
+        keyExtractor={gridKey}
+        getItemType={gridItemType}
+        overrideItemLayout={spanGridHeader}
+        renderItem={({ item, index }) => (item.__header ? header : (
+          <ProfileGridTile
+            post={item}
+            tabKey={key}
+            col={(index - first) % 3}
+            geo={geo}
+            spotlighted={spotlightIds.has(item.id)}
+            onPress={onGridPress}
+            onLongPress={onGridLongPress}
+          />
         ))}
-      </View>
+        // Only a page with nothing at all: under a custom layout or a films
+        // shelf, that first row is the content.
+        ListEmptyComponent={renderGridEmpty(key)}
+        contentContainerStyle={styles.pageContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={refreshControl}
+        // Behave like the ScrollView this replaced: nothing anchors when the
+        // first row or the posts above the screen change.
+        maintainVisibleContentPosition={{ disabled: true }}
+      />
     );
   }
+
+  gridPressRef.current = (post, tabKey, node) => openFromGrid(post, gridPageData(tabKey).data, node);
+  // Your own content (Posts / Videos): edit, delete, archive. A repost: remove it.
+  gridLongPressRef.current = (post, tabKey) => {
+    if (tabKey !== 'reposts') { showPostOptions(post); return; }
+    showOptions({
+      postId: post.id,
+      isOwn: false,
+      onRepostChanged: (reposted) => {
+        if (!reposted) setRepostedPosts(prev => prev.filter(p => p.id !== post.id));
+      },
+    });
+  };
 
   return (
     // pageSwipePan lives on the ROOT: flings anywhere — header, grid, empty
@@ -1091,19 +1093,24 @@ export default function ProfileScreen() {
           made non-Posts swipes feel slow). The visible page slides in from the
           travel direction (same pattern as the Music pills). */}
       <Animated.View style={[styles.pager, { transform: [{ translateX: tabAnimX }] }]}>
-        {TAB_KEYS.map((key) => (
-          <View key={key} style={key === activeTab ? styles.pager : styles.pageHidden}>
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.pageContent}
-              refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile().catch(() => { setLoading(false); setRefreshing(false); }); }} tintColor={tabAccent} colors={[tabAccent]} />
-              }
-            >
-              {key === 'playlists' ? renderPlaylists() : key === 'music' ? renderMusicList(dataForTab('music')) : key === 'posts' ? renderPostsTab() : key === 'videos' ? renderVideosTab() : renderGrid(dataForTab(key), key)}
-            </ScrollView>
-          </View>
-        ))}
+        {TAB_KEYS.map((key) => {
+          const refresh = (
+            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile().catch(() => { setLoading(false); setRefreshing(false); }); }} tintColor={tabAccent} colors={[tabAccent]} />
+          );
+          return (
+            <View key={key} style={key === activeTab ? styles.pager : styles.pageHidden}>
+              {key === 'playlists' || key === 'music' ? (
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.pageContent}
+                  refreshControl={refresh}
+                >
+                  {key === 'playlists' ? renderPlaylists() : renderMusicList(dataForTab('music'))}
+                </ScrollView>
+              ) : renderGridPage(key, refresh)}
+            </View>
+          );
+        })}
       </Animated.View>
     </View>
   );
@@ -1225,8 +1232,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   pageHidden: { display: 'none' },
   pageContent: { paddingBottom: SPACING.xxl + 80 },
 
-  // 2px gutters between cells (gap needs pixel-sized items — thirds would overflow the row).
-  postsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
   // ── Album shelf ─────────────────────────────────────────────────────────────
   // Identical to the visited profile's, on purpose — see renderAlbumShelf.
   // Section headings inside musicList, which already supplies the horizontal
@@ -1243,19 +1248,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // the grid under it is edge-to-edge, so without this the heading sat flush in
   // the corner. That was the "cut off" look.
   videosLabel: { paddingHorizontal: SPACING.md, marginBottom: SPACING.sm },
-  // The square grid, inset to the same margin as the labels and the film
-  // posters. Without it the VIDEOS heading sat 16pt in while the grid it labels
-  // ran to the bezel — a heading that does not line up with its own content.
-  // Shares the film shelf's gap, so the two read as one tab rather than two
-  // grids that happen to be stacked. The 2pt gutter this overrides is right for
-  // a full-bleed contact sheet and wrong once the grid has margins.
-  postsGridInset: { paddingHorizontal: SPACING.md, gap: FILM_GAP },
-  gridItemInset: {
-    width: (SCREEN_W - SPACING.md * 2 - FILM_GAP * 2) / 3,
-    // Rounded to match the posters above. Sharp corners belong to a grid that
-    // runs edge to edge; once it is inset and gapped, they read as unfinished.
-    borderRadius: RADIUS.sm, overflow: 'hidden',
-  },
   filmGrid: {
     flexDirection: 'row', flexWrap: 'wrap', gap: FILM_GAP,
     paddingHorizontal: SPACING.md,
@@ -1300,26 +1292,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   albumCardMeta: { color: quietText(colors), fontSize: 12, marginTop: 1 },
 
   musicList: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: SPACING.sm },
-  gridItem: { width: (SCREEN_W - 4) / 3, aspectRatio: 1, position: 'relative' },
-  gridImage: { width: '100%', height: '100%' },
-  gridPlaceholder: {
-    width: '100%', height: '100%',
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 0.5, borderColor: colors.border,
-  },
-  // (kept for reposts overlay parity if needed later)
-  gridBadge: {
-    position: 'absolute', top: 6, right: 6,
-    width: 18, height: 18, borderRadius: 9,
-    backgroundColor: colors.primary,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  gridPlayOverlay: {
-    position: 'absolute', top: 6, left: 6,
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center', justifyContent: 'center',
-  },
   emptyGrid: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.sm },
   emptyGridText: { color: colors.textTertiary, fontSize: 14 },
 

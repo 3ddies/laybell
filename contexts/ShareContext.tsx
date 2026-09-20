@@ -1,9 +1,13 @@
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal, View, Text, StyleSheet, TouchableOpacity, Pressable,
-  Animated, PanResponder, Easing, ScrollView, Image, Share, ActivityIndicator,
+  ScrollView, Image, Share, ActivityIndicator,
   Linking, Platform,
 } from 'react-native';
+import Reanimated, {
+  Easing as REasing, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -77,7 +81,9 @@ export function ShareProvider({ children }: { children: React.ReactNode }) {
 
 const DISMISS_DIST = 600;
 
+// Called from the drag worklet (UI thread), so it is one itself.
 function rubber(drag: number, max = 32): number {
+  'worklet';
   return max * (1 - Math.exp(-drag / max));
 }
 
@@ -188,9 +194,22 @@ export const ShareSheet = memo(function ShareSheet({ visible, payload, onClose, 
   // slides up as a light menu instead of a mismatched dark one.
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const translateY = useRef(new Animated.Value(DISMISS_DIST)).current;
-  const backdrop = useRef(new Animated.Value(0)).current;
+  // Same construction as the 3-dot sheet (contexts/PostOptionsContext): the
+  // sheet's position is a shared value so the drag runs on the UI thread, and
+  // the backdrop is derived FROM that position rather than animated beside it.
+  const ty = useSharedValue(DISMISS_DIST);
+  // Measured, because the exit aims at it — a fixed distance can be shorter than
+  // the sheet, and then a long drag is answered by an exit that moves the sheet
+  // back UP before it unmounts (that was a real bug on the 3-dot sheet).
+  const sheetH = useSharedValue(DISMISS_DIST);
+  const sheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: ty.value }] }));
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: 1 - Math.min(1, Math.max(0, ty.value) / DISMISS_DIST),
+  }));
   const closeRef = useRef(onClose); closeRef.current = onClose;
+  // One frame after the animation lands, so the host's re-render and this
+  // sheet's teardown can't be seen happening (see PostOptionsContext).
+  const finishClose = useCallback(() => { requestAnimationFrame(() => closeRef.current()); }, []);
 
   const [people, setPeople] = useState<Person[]>([]);
   const [loadingPeople, setLoadingPeople] = useState(false);
@@ -200,15 +219,11 @@ export const ShareSheet = memo(function ShareSheet({ visible, payload, onClose, 
 
   useEffect(() => {
     if (visible) {
-      translateY.setValue(DISMISS_DIST);
-      backdrop.setValue(0);
+      ty.value = DISMISS_DIST;
       setSelected(new Set());
       setSent(false);
       setSending(false);
-      Animated.parallel([
-        Animated.timing(translateY, { toValue: 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(backdrop, { toValue: 1, duration: 220, useNativeDriver: true }),
-      ]).start();
+      ty.value = withTiming(0, { duration: 260, easing: REasing.out(REasing.cubic) });
       loadPeople();
     }
   }, [visible]);
@@ -261,38 +276,36 @@ export const ShareSheet = memo(function ShareSheet({ visible, payload, onClose, 
   }
 
   function dismiss() {
-    Animated.parallel([
-      Animated.timing(translateY, { toValue: DISMISS_DIST, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(backdrop, { toValue: 0, duration: 200, useNativeDriver: true }),
-    ]).start(() => closeRef.current());
+    ty.value = withTiming(Math.max(sheetH.value, DISMISS_DIST), { duration: 220, easing: REasing.in(REasing.cubic) }, (done) => {
+      'worklet';
+      if (done) runOnJS(finishClose)();
+    });
   }
 
-  const pan = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 3,
-    onPanResponderMove: (_e, g) => {
-      if (g.dy < 0) {
-        translateY.setValue(-rubber(Math.abs(g.dy)));
-        backdrop.setValue(1);
+  // Drag to dismiss on the UI thread, the pattern the 3-dot sheet proved on
+  // device: the finger goes straight into the shared value, the release is
+  // judged by where the motion would come to REST (position + a slice of
+  // velocity, as iOS does), and the exit leaves at the speed the finger was
+  // already going instead of easing in from a standstill.
+  const drag = useMemo(() => Gesture.Pan()
+    // The same 3pt of slop the PanResponder waited for before claiming a drag.
+    .activeOffsetY([-3, 3])
+    .onUpdate((e) => {
+      'worklet';
+      // Upward drags rubber-band instead of lifting the sheet off the bottom.
+      ty.value = e.translationY < 0 ? -rubber(-e.translationY) : e.translationY;
+    })
+    .onEnd((e) => {
+      'worklet';
+      if (e.translationY + e.velocityY * 0.12 > 60) {
+        ty.value = withTiming(Math.max(sheetH.value, DISMISS_DIST), { duration: 220, easing: REasing.out(REasing.quad) }, (done) => {
+          'worklet';
+          if (done) runOnJS(finishClose)();
+        });
       } else {
-        translateY.setValue(g.dy);
-        backdrop.setValue(Math.max(0, 1 - g.dy / DISMISS_DIST));
+        ty.value = withSpring(0, { damping: 15, stiffness: 240, mass: 0.7 });
       }
-    },
-    onPanResponderRelease: (_e, g) => {
-      if (g.dy > 60 || g.vy > 1.2) {
-        Animated.parallel([
-          Animated.timing(translateY, { toValue: DISMISS_DIST, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-          Animated.timing(backdrop, { toValue: 0, duration: 200, useNativeDriver: true }),
-        ]).start(() => closeRef.current());
-      } else {
-        Animated.parallel([
-          Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 5, speed: 16 }),
-          Animated.timing(backdrop, { toValue: 1, duration: 150, useNativeDriver: true }),
-        ]).start();
-      }
-    },
-  })).current;
+    }), [finishClose, ty, sheetH]);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -355,14 +368,19 @@ export const ShareSheet = memo(function ShareSheet({ visible, payload, onClose, 
 
   const content = (
       <View style={styles.overlay}>
-        <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
+        <Reanimated.View style={[styles.backdrop, backdropStyle]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
-        </Animated.View>
-        <Animated.View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.md, transform: [{ translateY }] }]}>
-          <View style={styles.grab} {...pan.panHandlers}>
-            <View style={styles.handle} />
-            <Text style={styles.title}>{t('share.title')}</Text>
-          </View>
+        </Reanimated.View>
+        <Reanimated.View
+          style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.md }, sheetStyle]}
+          onLayout={(e) => { sheetH.value = e.nativeEvent.layout.height; }}
+        >
+          <GestureDetector gesture={drag}>
+            <View style={styles.grab}>
+              <View style={styles.handle} />
+              <Text style={styles.title}>{t('share.title')}</Text>
+            </View>
+          </GestureDetector>
 
           {/* Content preview */}
           {payload && (
@@ -449,7 +467,7 @@ export const ShareSheet = memo(function ShareSheet({ visible, payload, onClose, 
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </Animated.View>
+        </Reanimated.View>
       </View>
   );
 
@@ -458,12 +476,17 @@ export const ShareSheet = memo(function ShareSheet({ visible, payload, onClose, 
   // neither present from the overlay window (deadlock) nor from the main
   // window over the native-modal /tv route (never appears). Everywhere else
   // (and on Android) keeps the real Modal.
+  //
+  // Either host is a window of its OWN — the overlay, or a real Modal — outside
+  // the app's root gesture handler, where a GestureDetector silently does
+  // nothing. So each gets its own root (as app/_layout.tsx does for the player
+  // chrome, and ReportContext for this same sheet shape).
   if (inOverlay && Platform.OS === 'ios') {
-    return visible ? <View style={[StyleSheet.absoluteFill, styles.overlayHost]}>{content}</View> : null;
+    return visible ? <GestureHandlerRootView style={[StyleSheet.absoluteFill, styles.overlayHost]}>{content}</GestureHandlerRootView> : null;
   }
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent supportedOrientations={['portrait', 'landscape']}>
-      {content}
+      <GestureHandlerRootView style={styles.overlay}>{content}</GestureHandlerRootView>
     </Modal>
   );
 });

@@ -8,7 +8,7 @@ import { Image as ExpoImage } from 'expo-image';
 import { coverFade } from '../../lib/coverFade';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { chromeScrollProps } from '../../lib/feedChrome';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -31,6 +31,7 @@ import { useTabSwipeControl, isSwipeTap, useSearchSwipeLock } from '../../contex
 import { useListenMode } from '../../contexts/ListenModeContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchBlockedIds } from '../../lib/blocks';
+import { afterHomePaint } from '../../lib/startupGate';
 import { countLabel } from '../../lib/i18n';
 import { rawTier, publicPlaylistLimit, tierLabel, tierRank } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
@@ -328,7 +329,23 @@ export default function MusicScreen() {
   const blockedIdsRef   = useRef<Set<string>>(new Set()); // hide blocked artists from discover/search
   const discoverRefreshedAt = useRef(0); // epoch ms of the last 4-day refresh cycle
 
-  useEffect(() => { setup(); }, []);
+  // Music mounts at launch with the other tabs but isn't on screen, so its first
+  // load — playlists, saved, liked, the whole Discover page — waits for Home's
+  // first paint (lib/startupGate), unless it's the tab being opened. Same
+  // deferral as Explore.
+  const isFocused = useIsFocused();
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (startedRef.current) return;
+    let cancelled = false;
+    const start = () => {
+      if (cancelled || startedRef.current) return;
+      startedRef.current = true;
+      setup();
+    };
+    if (isFocused) start(); else afterHomePaint().then(start);
+    return () => { cancelled = true; };
+  }, [isFocused]);
 
   // Debounced song search — matches song names (captions), usernames and display
   // names, ranked by relevancy like the explore page.

@@ -1,7 +1,11 @@
 import {
   View, Text, StyleSheet, FlatList, TextInput,
-  TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator,
+  TouchableOpacity, Platform, ActivityIndicator,
 } from 'react-native';
+// Keyboard-synced, not keyboard-event-driven: this KeyboardAvoidingView moves
+// with the keyboard frame by frame on the UI thread, where React Native's own
+// animates on a guessed duration once the event lands. Same props (1.0.4).
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useEffect, useState, useRef } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';

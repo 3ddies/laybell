@@ -23,6 +23,7 @@ import { isSwipeTap } from '../contexts/PagerContext';
 import { isAudioPost } from '../lib/genres';
 import { isHorizontalVideo } from '../lib/tv';
 import { cfStreamThumbnail } from '../lib/cast';
+import { previewImageProps } from '../lib/mediaPreview';
 import ThumbStat from './ThumbStat';
 import VideoThumb from './VideoThumb';
 import { isSlideshow, slideshowThumb } from '../lib/slideshow';
@@ -31,6 +32,8 @@ type GridPost = {
   id: string; type: string; media_url: string; caption: string;
   thumbnail_url?: string | null; aspect_ratio?: string | null; cover_url?: string | null;
   slides?: any; // slideshow media list (drives the still cover via slideshowThumb)
+  // Small copy + thumbhash of the post's picture (1.0.4, lib/mediaPreview).
+  thumb_url?: string | null; placeholder?: string | null;
   // Drive which moments a moving-stills preview shows (components/PreviewStills).
   duration_seconds?: number | null; trim_start?: number | null; trim_end?: number | null;
   stream_count?: number; view_count?: number; user_id?: string;
@@ -53,6 +56,11 @@ const MUSIC_HEADER_H = 30;
 // Never move more than this many previews at once on the grid — only the ones
 // nearest the viewport center move, so motion never clumps on screen.
 const MAX_CONCURRENT_VIDEOS = 2;
+// How far beyond the screen a tile is still built: a screen either way, rounded
+// out to half-screens so scrolling re-renders the grid a few times per screen
+// instead of on every scroll event. See the paint window below.
+const PAINT_MARGIN = SCREEN_H;
+const PAINT_STEP = SCREEN_H / 2;
 
 // Layered black outline for the yellow header word — RN has no text stroke, so we
 // stack offset black copies behind the fill (crisp, unlike a blurry text shadow).
@@ -62,9 +70,11 @@ const HEADER_OUTLINE: ReadonlyArray<readonly [number, number]> = [
   [-HEADER_STROKE, -HEADER_STROKE], [HEADER_STROKE, -HEADER_STROKE],
   [-HEADER_STROKE, HEADER_STROKE], [HEADER_STROKE, HEADER_STROKE],
 ];
+// `y` is where the packing put the cell inside its section — see the paint
+// window in the component.
 type Cell =
-  | { kind: 'media'; key: string; post: GridPost; height: number }
-  | { kind: 'music'; key: string; title: string; songs: GridPost[]; height: number };
+  | { kind: 'media'; key: string; post: GridPost; height: number; y: number }
+  | { kind: 'music'; key: string; title: string; songs: GridPost[]; height: number; y: number };
 
 function groupSongs(songs: GridPost[]): GridPost[][] {
   const groups: GridPost[][] = [];
@@ -216,6 +226,23 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
   // sectionOffset + column-relative y (which section from bottomVideoIds below).
   const sectionOffsets = useRef({ top: 0, bottom: 0 });
   const videoPos = useRef<Record<string, { y: number; h: number }>>({});
+  // WHICH TILES EXIST. The grid used to build every tile the moment it had posts
+  // and start every image loading — 30 on Explore, everything you have ever
+  // saved on the Saved screen — including the ones several screens down, at the
+  // exact moment Home was still loading its own pictures. Now a tile outside
+  // this window is an empty card of exactly its own size, so nothing moves when
+  // it fills in. In scroll-content coordinates, like videoPos above.
+  const [paint, setPaint] = useState({ top: -PAINT_MARGIN, bottom: PAINT_MARGIN });
+  // The same offsets as STATE, because the render below needs them to place
+  // cells in the window: a ref read during render is a value React doesn't know
+  // the output depends on, so the first measurement (0 → its real y) would not
+  // repaint. They settle after one layout pass and never change again.
+  const [sectionY, setSectionY] = useState({ top: 0, bottom: 0 });
+  const noteSectionOffset = (which: 'top' | 'bottom', y: number) => {
+    if (sectionOffsets.current[which] === y) return;
+    sectionOffsets.current[which] = y;
+    setSectionY(prev => ({ ...prev, [which]: y }));
+  };
 
   const recomputeActive = () => {
     const top = scrollY.current;
@@ -245,16 +272,20 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     const bp = bannerPos.current;
     const liveNow = bp.h > 0 && bp.y < bottom + SCREEN_H && bp.y + bp.h > top - SCREEN_H;
     setBannerLive(prev => (prev === liveNow ? prev : liveNow));
+    // The paint window, snapped outward to half-screens.
+    const from = Math.floor((top - PAINT_MARGIN) / PAINT_STEP) * PAINT_STEP;
+    const to = Math.ceil((bottom + PAINT_MARGIN) / PAINT_STEP) * PAINT_STEP;
+    setPaint(prev => (prev.top === from && prev.bottom === to ? prev : { top: from, bottom: to }));
   };
 
   // The masonry layout depends only on the posts and the songTiles mode, not on
   // playback state — so memoize it. Without this the whole filter/sort/group/pack
   // recomputed on every render, including each 250ms audio progress tick.
-  const { topCols, bottomCols, bannerPost, playableSet, bottomVideoIds, topShortCol, topPadTop } = useMemo(() => {
+  const { topCols, bottomCols, bannerPost, playableSet, bottomVideoIds, topShortCol, topPadTop, bottomBase } = useMemo(() => {
     const EMPTY = {
       topCols: [[], []] as Cell[][], bottomCols: [[], []] as Cell[][],
       bannerPost: null as GridPost | null, playableSet: new Set<string>(),
-      bottomVideoIds: new Set<string>(), topShortCol: -1, topPadTop: 0,
+      bottomVideoIds: new Set<string>(), topShortCol: -1, topPadTop: 0, bottomBase: 0,
     };
     if (!posts || posts.length === 0) return EMPTY;
 
@@ -305,13 +336,13 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     //      stack the SAME variety back-to-back in a column when the other column
     //      can take it without opening a big height gap. So varieties stay mixed
     //      vertically too, and song stacks in particular never touch.
-    const cellFor = (p: GridPost): Cell => ({ kind: 'media', key: p.id, post: p, height: mediaHeight(p) });
+    const cellFor = (p: GridPost): Cell => ({ kind: 'media', key: p.id, post: p, height: mediaHeight(p), y: 0 });
     const varietyQueues: Cell[][] = [
       videos.map(cellFor),                                        // videos
       tileMedia.filter(p => p.type !== 'video').map(cellFor),     // still tiles (image/slideshow)
       musicGroups.map((g, i): Cell => ({                          // song stacks
         kind: 'music', key: `music-${i}`, title: g.title, songs: g.songs,
-        height: MUSIC_HEADER_H + g.songs.length * ROW_H,
+        height: MUSIC_HEADER_H + g.songs.length * ROW_H, y: 0,
       })),
     ].filter(q => q.length > 0);
 
@@ -353,6 +384,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           if (endsWith(cols[c], v) && !endsWith(cols[c ^ 1], v) && colH[c ^ 1] - colH[c] <= COL_W) c ^= 1;
         }
         const yTop = colH[c];
+        cell.y = yTop;
         cols[c].push(cell);
         colH[c] += cell.height + GAP;
         if (cell.kind === 'media' && cell.post.type === 'video') centers.push({ id: cell.post.id, yc: yTop + cell.height / 2 });
@@ -395,6 +427,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
         if (bestIdx < 0) break; // nothing left can level it further
         const [cell] = rest.splice(bestIdx, 1) as (Cell & { kind: 'media' })[];
         const yTop = top.colH[short];
+        cell.y = yTop;
         top.cols[short].push(cell);
         top.colH[short] += cell.height + GAP;
         if (cell.post.type === 'video') top.centers.push({ id: cell.post.id, yc: yTop + cell.height / 2 });
@@ -437,7 +470,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       if (yc - lastPlayableY >= PLAYABLE_GAP) { playableSet.add(id); lastPlayableY = yc; }
     }
 
-    return { topCols: top.cols, bottomCols: bottom.cols, bannerPost: usedBanner, playableSet, bottomVideoIds, topShortCol, topPadTop };
+    return { topCols: top.cols, bottomCols: bottom.cols, bannerPost: usedBanner, playableSet, bottomVideoIds, topShortCol, topPadTop, bottomBase };
   }, [posts, songTiles, songClusters, t]);
 
   // GHOST-ENTRY PRUNE: ids that leave the list (refresh, relevance reorder,
@@ -481,7 +514,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           {/* Still tile. A Stream post with no stored thumbnail gets Cloudflare's
               poster frame: VideoThumb's own fallback grabs a frame on-device,
               which cannot seek HLS. */}
-          <VideoThumb thumbnailUrl={p.thumbnail_url || cfStreamThumbnail(p.media_url)} mediaUrl={p.media_url} style={styles.mediaImage} />
+          <VideoThumb thumbnailUrl={p.thumb_url || p.thumbnail_url || cfStreamThumbnail(p.media_url)} placeholder={p.placeholder} mediaUrl={p.media_url} style={styles.mediaImage} />
           <View style={styles.playBadge}><Ionicons name="play" size={12} color="#fff" /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
@@ -505,7 +538,8 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
               longer count as views. See components/PreviewStills. */}
           <PreviewStills
             uri={p.media_url}
-            thumbnailUrl={p.thumbnail_url}
+            thumbnailUrl={p.thumb_url || p.thumbnail_url}
+            placeholder={p.placeholder}
             durationSec={p.duration_seconds}
             trimStartSec={p.trim_start}
             trimEndSec={p.trim_end}
@@ -532,7 +566,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           onLongPress={longPressFor(p)}
         >
           {p.cover_url ? (
-            <ExpoImage source={{ uri: p.cover_url }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} />
+            <ExpoImage source={{ uri: p.thumb_url || p.cover_url }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} {...previewImageProps(p)} />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.mediaImage}>
               <Ionicons name="musical-notes" size={28} color={colors.primary} />
@@ -548,7 +582,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     if (isSlideshow(p.type)) {
       // Slideshow: ALWAYS a still cover (slide 1's image / video poster), never a
       // live loop. Tap opens the post detail (carousel) like any image post.
-      const thumb = slideshowThumb(p);
+      const thumb = p.thumb_url || slideshowThumb(p);
       return (
         <TouchableOpacity
           key={cell.key}
@@ -557,7 +591,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           onPress={(e: any) => openMedia(p, e)}
         >
           {thumb ? (
-            <ExpoImage source={{ uri: thumb }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} />
+            <ExpoImage source={{ uri: thumb }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} {...previewImageProps(p)} />
           ) : (
             <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaImage}>
               <Ionicons name="copy" size={28} color={colors.primary} />
@@ -577,7 +611,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
         activeOpacity={0.9}
         onPress={(e: any) => openMedia(p, e)}
       >
-        <ExpoImage source={{ uri: p.media_url }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} />
+        <ExpoImage source={{ uri: p.thumb_url || p.media_url }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} {...previewImageProps(p)} />
         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
           <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
         </LinearGradient>
@@ -585,7 +619,18 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     );
   };
 
-  const renderCell = (cell: Cell, padTop = 0) => {
+  // An empty card of the cell's exact size, for a cell outside the paint window.
+  const renderBlank = (cell: Cell, padTop = 0) => (
+    <View
+      key={cell.key}
+      style={[cell.kind === 'music' ? styles.musicCard : styles.mediaCard, { height: cell.height }, padTop ? { marginTop: padTop } : null]}
+    />
+  );
+
+  // `base` is where this cell's section starts in the scroll content.
+  const renderCell = (cell: Cell, base: number, padTop = 0) => {
+    const y = base + cell.y + padTop;
+    if (y >= paint.bottom || y + cell.height <= paint.top) return renderBlank(cell, padTop);
     if (cell.kind === 'music') {
       return (
         <View key={cell.key} style={[styles.musicCard, { height: cell.height }, padTop ? { marginTop: padTop } : null]}>
@@ -620,7 +665,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
               >
                 {s.cover_url ? (
                   <View style={styles.songIcon}>
-                    <ExpoImage source={{ uri: s.cover_url }} style={styles.songCoverImg} contentFit="cover" cachePolicy="memory-disk" recyclingKey={s.id} />
+                    <ExpoImage source={{ uri: s.thumb_url || s.cover_url }} style={styles.songCoverImg} contentFit="cover" cachePolicy="memory-disk" recyclingKey={s.id} {...previewImageProps(s)} />
                     {active && (
                       <View style={styles.songCoverOverlay}>
                         <Ionicons name="stop" size={15} color={colors.text} />
@@ -666,6 +711,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
         <PreviewStills
           uri={p.media_url}
           thumbnailUrl={p.thumbnail_url}
+          placeholder={p.placeholder}
           durationSec={p.duration_seconds}
           trimStartSec={p.trim_start}
           trimEndSec={p.trim_end}
@@ -684,7 +730,11 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
   );
 
   // Genre view: a uniform 3-up square grid.
-  const renderSquare = (p: GridPost) => {
+  const renderSquare = (p: GridPost, i: number) => {
+    // Same paint window as the masonry grid — three squares to a row, all the
+    // same size, so a row's position is arithmetic.
+    const y = sectionY.top + Math.floor(i / 3) * (COL3_W + GAP);
+    if (y >= paint.bottom || y + COL3_W <= paint.top) return <View key={p.id} style={styles.square} />;
     if (isAudioPost(p.type)) {
       const active = playingTrackId === p.id && isPlaying;
       return (
@@ -696,7 +746,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           onLongPress={longPressFor(p)}
         >
           {p.cover_url ? (
-            <ExpoImage source={{ uri: p.cover_url }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} />
+            <ExpoImage source={{ uri: p.thumb_url || p.cover_url }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} {...previewImageProps(p)} />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.mediaImage}>
               <Ionicons name="musical-notes" size={24} color={colors.primary} />
@@ -712,17 +762,17 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     if (p.type === 'video') {
       return (
         <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.play')} key={p.id} style={styles.square} activeOpacity={0.9} onPress={(e: any) => openMedia(p, e)}>
-          <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.mediaImage} />
+          <VideoThumb thumbnailUrl={p.thumb_url || p.thumbnail_url} placeholder={p.placeholder} mediaUrl={p.media_url} style={styles.mediaImage} />
           <View style={styles.squareBadge}><Ionicons name="play" size={11} color="#fff" /></View>
         </TouchableOpacity>
       );
     }
     if (isSlideshow(p.type)) {
-      const thumb = slideshowThumb(p);
+      const thumb = p.thumb_url || slideshowThumb(p);
       return (
         <TouchableOpacity key={p.id} style={styles.square} activeOpacity={0.9} onPress={(e: any) => openMedia(p, e)}>
           {thumb ? (
-            <ExpoImage source={{ uri: thumb }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} />
+            <ExpoImage source={{ uri: thumb }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} {...previewImageProps(p)} />
           ) : (
             <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaImage}>
               <Ionicons name="copy" size={24} color={colors.primary} />
@@ -734,7 +784,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     }
     return (
       <TouchableOpacity key={p.id} style={styles.square} activeOpacity={0.9} onPress={(e: any) => openMedia(p, e)}>
-        <ExpoImage source={{ uri: p.media_url }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} />
+        <ExpoImage source={{ uri: p.thumb_url || p.media_url }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} {...previewImageProps(p)} />
       </TouchableOpacity>
     );
   };
@@ -762,12 +812,17 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     >
       {header}
       {songTiles ? (
-        <View style={styles.grid3}>{posts.map(renderSquare)}</View>
+        <View
+          style={styles.grid3}
+          onLayout={e => { noteSectionOffset('top', e.nativeEvent.layout.y); recomputeActive(); }}
+        >
+          {posts.map(renderSquare)}
+        </View>
       ) : (
         <>
           <View
             style={styles.row}
-            onLayout={e => { sectionOffsets.current.top = e.nativeEvent.layout.y; recomputeActive(); }}
+            onLayout={e => { noteSectionOffset('top', e.nativeEvent.layout.y); recomputeActive(); }}
           >
             {topCols.map((col, ci) => (
               <View key={ci} style={styles.col}>
@@ -777,7 +832,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
                   // the cell itself as a margin — a wrapper View re-parented
                   // onLayout, so a video here reported y=0 and corrupted
                   // videoPos (phantom off-screen autoplay + frozen on-screen).
-                  renderCell(cell, ci === topShortCol && ri === col.length - 1 ? topPadTop : 0)
+                  renderCell(cell, sectionY.top, ci === topShortCol && ri === col.length - 1 ? topPadTop : 0)
                 )}
               </View>
             ))}
@@ -786,10 +841,14 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           {(bottomCols[0].length > 0 || bottomCols[1].length > 0) && (
             <View
               style={styles.row}
-              onLayout={e => { sectionOffsets.current.bottom = e.nativeEvent.layout.y; recomputeActive(); }}
+              onLayout={e => { noteSectionOffset('bottom', e.nativeEvent.layout.y); recomputeActive(); }}
             >
+              {/* Before the section has been measured its start is still known:
+                  the top section's height plus the banner (bottomBase). */}
               {bottomCols.map((col, ci) => (
-                <View key={ci} style={styles.col}>{col.map(renderCell)}</View>
+                <View key={ci} style={styles.col}>
+                  {col.map(cell => renderCell(cell, sectionY.bottom || sectionY.top + bottomBase))}
+                </View>
               ))}
             </View>
           )}

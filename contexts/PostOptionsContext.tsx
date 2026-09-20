@@ -1,8 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView, useWindowDimensions,
-  Pressable, Animated, PanResponder, Easing, Platform, ActivityIndicator, Alert,
+  Pressable, Platform, ActivityIndicator, Alert,
 } from 'react-native';
+import Reanimated, {
+  Easing as REasing, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -182,7 +186,9 @@ export function PostOptionsProvider({ children }: { children: React.ReactNode })
 
 const DISMISS_DIST = 300;
 
+// Called from the drag worklet (UI thread), so it is one itself.
 function rubber(drag: number, max = 32): number {
+  'worklet';
   return max * (1 - Math.exp(-drag / max));
 }
 
@@ -220,9 +226,38 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
   const { profile } = useProfile();
   const { t } = useTranslation();
   const { download, confirmRemove, isPinned, isDownloading } = useDownloadAction();
-  const translateY = useRef(new Animated.Value(DISMISS_DIST)).current;
-  const backdrop = useRef(new Animated.Value(0)).current;
+  // Where the sheet sits, with the backdrop derived FROM it rather than animated
+  // beside it — one value drives both, so there is no second animation to keep
+  // in step (the construction components/SlideUpSheet explains at length). A
+  // shared value, so the drag below moves it on the UI thread instead of
+  // crossing to JS for every finger move.
+  const ty = useSharedValue(DISMISS_DIST);
+  // How tall the sheet actually is, measured on layout. The exit used to aim at
+  // a flat DISMISS_DIST, which is SHORTER than this sheet with a normal number
+  // of options — so a slow drag that travelled further than 300pt was answered
+  // by an exit that moved the sheet back UP to 300 before unmounting it. That
+  // was the pop-and-hitch on release. Aiming at the sheet's own height means the
+  // exit is always downward, always clears the screen, and travels a distance
+  // that matches the sheet instead of a constant.
+  const sheetH = useSharedValue(DISMISS_DIST);
+  const sheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: ty.value }] }));
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: 1 - Math.min(1, Math.max(0, ty.value) / DISMISS_DIST),
+  }));
   const closeRef = useRef(onClose); closeRef.current = onClose;
+  // Tear down on the NEXT frame, not on the animation's final one.
+  //
+  // closeRef flips the host's state, which re-renders the whole host (in the
+  // reel viewer: the screen, its list and every sheet) AND unmounts this
+  // sheet's entire subtree — ScrollView, every option row, every icon; on
+  // Android a real native Modal window. Running all of that in the same frame
+  // the animation lands is what made the collapse end with a visible stutter.
+  // One frame later the sheet is already invisible (opacity 0, translated off),
+  // so nothing about the teardown can be seen — it just stops being felt. The
+  // drag-release dismissal goes through here too now; it used to close on the
+  // spot, which is the same stutter by another door.
+  const finishClose = useCallback(() => { requestAnimationFrame(() => closeRef.current()); }, []);
+  const closeNow = useCallback(() => closeRef.current(), []);
   const optsRef = useRef(opts); optsRef.current = opts;
   const [reposted, setReposted] = useState(false);
   const [blocked, setBlocked] = useState(false);
@@ -251,12 +286,8 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
 
   useEffect(() => {
     if (visible) {
-      translateY.setValue(DISMISS_DIST);
-      backdrop.setValue(0);
-      Animated.parallel([
-        Animated.timing(translateY, { toValue: 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(backdrop, { toValue: 1, duration: 220, useNativeDriver: true }),
-      ]).start();
+      ty.value = DISMISS_DIST;
+      ty.value = withTiming(0, { duration: 260, easing: REasing.out(REasing.cubic) });
 
       // Resolve the dynamic option states for this post/user.
       setReposted(false); setBlocked(false);
@@ -326,22 +357,10 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
   }, [visible]);
 
   function dismiss() {
-    Animated.parallel([
-      Animated.timing(translateY, { toValue: DISMISS_DIST, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(backdrop, { toValue: 0, duration: 200, useNativeDriver: true }),
-    ]).start(({ finished }) => {
-      // Tear down on the NEXT frame, not on the animation's final one.
-      //
-      // closeRef flips the host's state, which re-renders the whole host (in the
-      // reel viewer: the screen, its list and every sheet) AND unmounts this
-      // sheet's entire subtree — ScrollView, every option row, every icon; on
-      // Android a real native Modal window. Running all of that in the same
-      // frame the animation lands is what made the collapse end with a visible
-      // stutter. One frame later the sheet is already invisible (opacity 0,
-      // translated off), so nothing about the teardown can be seen — it just
-      // stops being felt.
-      if (!finished) { closeRef.current(); return; }
-      requestAnimationFrame(() => closeRef.current());
+    ty.value = withTiming(Math.max(sheetH.value, DISMISS_DIST), { duration: 220, easing: REasing.in(REasing.cubic) }, (done) => {
+      'worklet';
+      if (done) runOnJS(finishClose)();
+      else runOnJS(closeNow)();
     });
   }
 
@@ -419,42 +438,40 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
   // no false positives (authorId is always the post's owner).
   const isOwn = (opts?.isOwn ?? false) ||
     (!!opts?.authorId && !!profile?.id && opts.authorId === profile.id);
+  // Drag to dismiss, ON THE UI THREAD: Gesture Handler feeds the finger straight
+  // into the shared value above, so the sheet tracks it even while the JS thread
+  // is busy. It was a PanResponder, which meant a JS round trip per move.
+  //
   // Hoisted ABOVE the option-list build so every hook in this component runs
-  // before the visibility guard below. Its closure only touches values defined
-  // further up (translateY / backdrop / closeRef / rubber / DISMISS_DIST), so
-  // moving it is behaviour-neutral.
-  const pan = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 3,
-    onPanResponderMove: (_e, g) => {
-      if (g.dy < 0) {
-        translateY.setValue(-rubber(Math.abs(g.dy)));
-        backdrop.setValue(1);
+  // before the visibility guard below.
+  const drag = useMemo(() => Gesture.Pan()
+    // The same 3pt of slop the PanResponder waited for before claiming a drag.
+    .activeOffsetY([-3, 3])
+    .onUpdate((e) => {
+      'worklet';
+      // Upward drags rubber-band instead of lifting the sheet off the bottom.
+      ty.value = e.translationY < 0 ? -rubber(-e.translationY) : e.translationY;
+    })
+    .onEnd((e) => {
+      'worklet';
+      // Where the sheet would COME TO REST if the finger's motion carried on —
+      // position plus a slice of velocity, the projection iOS uses. One rule
+      // instead of the old "long pull OR hard flick" pair: a short drag released
+      // while still moving down dismisses, and the same drag released dead still
+      // springs back, which is what the hand means in both cases. An upward
+      // flick has negative velocity, so it counts AGAINST dismissing.
+      if (e.translationY + e.velocityY * 0.12 > 48) {
+        // Out, not in: the finger was already moving, so the exit carries that
+        // speed and decelerates. Easing IN from a standstill is what made a
+        // released drag stall for a beat before it left.
+        ty.value = withTiming(Math.max(sheetH.value, DISMISS_DIST), { duration: 220, easing: REasing.out(REasing.quad) }, (done) => {
+          'worklet';
+          if (done) runOnJS(finishClose)();
+        });
       } else {
-        const dy = g.dy;
-        translateY.setValue(dy);
-        backdrop.setValue(Math.max(0, 1 - dy / DISMISS_DIST));
+        ty.value = withSpring(0, { damping: 15, stiffness: 240, mass: 0.7 });
       }
-    },
-    onPanResponderRelease: (_e, g) => {
-      // Softened from (60, 1.2). The gesture can only start on the grab strip,
-      // where there is nothing else to do, so any downward drag that gets here
-      // is already a dismiss attempt — holding it to a long pull or a hard flick
-      // just made the sheet feel sticky. A short pull or an ordinary flick now
-      // counts.
-      if (g.dy > 48 || g.vy > 0.85) {
-        Animated.parallel([
-          Animated.timing(translateY, { toValue: DISMISS_DIST, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-          Animated.timing(backdrop, { toValue: 0, duration: 200, useNativeDriver: true }),
-        ]).start(() => closeRef.current());
-      } else {
-        Animated.parallel([
-          Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 5, speed: 16 }),
-          Animated.timing(backdrop, { toValue: 1, duration: 150, useNativeDriver: true }),
-        ]).start();
-      }
-    },
-  })).current;
+    }), [finishClose, ty]);
 
   // NOTHING below this line is built while the sheet is closed.
   //
@@ -637,13 +654,18 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
 
   const content = (
     <View style={styles.overlay}>
-      <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
+      <Reanimated.View style={[styles.backdrop, backdropStyle]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
-      </Animated.View>
-      <Animated.View style={[styles.sheet, { maxHeight: sheetMaxHeight, paddingBottom: insets.bottom + SPACING.sm, transform: [{ translateY }] }]}>
-        <View style={styles.grab} {...pan.panHandlers}>
-          <View style={styles.handle} />
-        </View>
+      </Reanimated.View>
+      <Reanimated.View
+        style={[styles.sheet, { maxHeight: sheetMaxHeight, paddingBottom: insets.bottom + SPACING.sm }, sheetStyle]}
+        onLayout={(e) => { sheetH.value = e.nativeEvent.layout.height; }}
+      >
+        <GestureDetector gesture={drag}>
+          <View style={styles.grab}>
+            <View style={styles.handle} />
+          </View>
+        </GestureDetector>
         <View style={styles.divider} />
         {/* flexShrink lets the list scroll within the sheet's maxHeight instead
             of overflowing the top when there are many options (landscape). */}
@@ -675,7 +697,7 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
             </TouchableOpacity>
           ))}
         </ScrollView>
-      </Animated.View>
+      </Reanimated.View>
     </View>
   );
 
@@ -683,12 +705,17 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
   // already floats above EVERYTHING (native-modal screens included). A real
   // <Modal> in there tries to present from the overlay's window and DEADLOCKS
   // the app — so on iOS the overlay itself is the presentation layer.
+  //
+  // Either way the sheet ends up in a window of its OWN — the overlay on iOS, a
+  // real Modal on Android — outside the app's root gesture handler, where a
+  // GestureDetector silently does nothing. So each host gets its own root, the
+  // same reason the player chrome has one in app/_layout.tsx.
   if (Platform.OS === 'ios') {
-    return visible ? <View style={StyleSheet.absoluteFill}>{content}</View> : null;
+    return visible ? <GestureHandlerRootView style={StyleSheet.absoluteFill}>{content}</GestureHandlerRootView> : null;
   }
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent supportedOrientations={['portrait', 'landscape']}>
-      {content}
+      <GestureHandlerRootView style={styles.overlay}>{content}</GestureHandlerRootView>
     </Modal>
   );
 }

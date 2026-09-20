@@ -7,6 +7,7 @@ import { FullWindowOverlay } from 'react-native-screens';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { usePreventRemove } from '@react-navigation/native';
 import { Image as ExpoImage } from 'expo-image';
+import { removePublicUrls } from '../../lib/storageCleanup';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../../lib/supabase';
@@ -282,9 +283,12 @@ export default function EditPostScreen() {
           u.timed_captions = timed.length ? timed : null;
         }
       }
-      if (cover && cover !== s.cover) u.thumbnail_url = cover;
+      // A new cover retires the small copy + placeholder made from the old one
+      // (lib/mediaPreview) — left alone they would keep showing the OLD cover on
+      // every grid. Surfaces fall back to the cover itself.
+      if (cover && cover !== s.cover) { u.thumbnail_url = cover; u.thumb_url = null; u.placeholder = null; }
     }
-    if (isAudio && cover && cover !== s.cover) u.cover_url = cover;
+    if (isAudio && cover && cover !== s.cover) { u.cover_url = cover; u.thumb_url = null; u.placeholder = null; }
     if (wasScheduled && publishAt !== s.publishAt) u.publish_at = new Date(publishAt ?? Date.now()).toISOString();
     return u;
   }
@@ -337,6 +341,9 @@ export default function EditPostScreen() {
         setSaving(false);
         return;
       }
+      // The retired small copy's file goes too — best effort, like every cleanup.
+      const oldThumb = (row as any)?.thumb_url;
+      if ('thumb_url' in u && oldThumb) removePublicUrls([oldThumb]);
 
       // The people this edit newly involves, told once — only on a post already
       // live. A scheduled post is announced from its row when it goes up.

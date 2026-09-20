@@ -44,7 +44,9 @@ export function FollowProvider({ children }: { children: React.ReactNode }) {
   const followersRef = useRef(followers); followersRef.current = followers;
 
   const load = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+    // getSession (on the phone), not getUser (a round trip) — see app/(tabs)/index.tsx.
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user ?? null;
     setCurrentUserId(user?.id ?? null);
     if (!user) { setFollowing(new Set()); setFollowers(new Set()); return; }
     // Who I follow + who follows me, so we can derive friends (mutual).

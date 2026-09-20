@@ -43,6 +43,7 @@ import { openShareGlobal } from '../../contexts/ShareContext';
 import { formatSchedule, scheduleProblem } from '../../lib/schedule';
 import { scheduleLiveReminder } from '../../lib/scheduleNotify';
 import { mixColumns, type SongMix } from '../../lib/songMix';
+import { makeMediaPreview, NO_PREVIEW, type MediaPreview } from '../../lib/mediaPreview';
 import type { Sticker } from '../../components/StickerLayer';
 import { splitForPublish, timingForPublish } from '../../lib/stickerTiming';
 import { bandStickersFromLegacy, isBandSticker, legacyBandCaption } from '../../lib/bandCaptions';
@@ -1560,6 +1561,8 @@ export default function PostScreen() {
       let thumbnailUrl: string | null = null;
       let coverUrl: string | null = null;
       let slidesPayload: Slide[] | null = null;
+      // The post picture's small copy + blurred placeholder (lib/mediaPreview).
+      let preview: MediaPreview = NO_PREVIEW;
 
       if (postType === 'slideshow') {
         // Upload every slide, then mirror slide 1 onto media_url/thumbnail_url so
@@ -1579,6 +1582,7 @@ export default function PostScreen() {
           // crop away. Slides from before shapes existed carry no shape and are
           // read the old way: not-contain meant cropped to the post's format.
           const cropped = s.type === 'image' && !isAutoFormat(shape);
+          let slidePrev: MediaPreview = NO_PREVIEW;
           if (s.type === 'image') {
             let outUri = s.uri;
             try {
@@ -1599,7 +1603,11 @@ export default function PostScreen() {
               const out = await manipulateAsync(s.uri, ops, { compress: 0.9, format: SaveFormat.JPEG });
               outUri = out.uri;
             } catch {}
-            url = await uploadToStorage(user.id, outUri, 'jpg', 'image/jpeg');
+            // Its small copy + placeholder go up alongside it (lib/mediaPreview).
+            [url, slidePrev] = await Promise.all([
+              uploadToStorage(user.id, outUri, 'jpg', 'image/jpeg'),
+              makeMediaPreview(outUri, user.id),
+            ]);
           } else {
             const upUri = await compressVideoIfPossible(s.uri, setUploadPct);
             setUploadPct(null);
@@ -1608,9 +1616,15 @@ export default function PostScreen() {
             setUploadPct(null);
           }
           let thumb: string | null = s.type === 'image' ? url : null;
-          if (s.type === 'video' && s.thumbnailUri) thumb = await uploadToStorage(user.id, s.thumbnailUri, 'jpg', 'image/jpeg');
+          if (s.type === 'video' && s.thumbnailUri) {
+            [thumb, slidePrev] = await Promise.all([
+              uploadToStorage(user.id, s.thumbnailUri, 'jpg', 'image/jpeg'),
+              makeMediaPreview(s.thumbnailUri, user.id),
+            ]);
+          }
           built.push({
             type: s.type, url, thumbnail_url: thumb,
+            thumb_url: slidePrev.thumbUrl, placeholder: slidePrev.placeholder,
             // This slide's OWN ratio, which after baking is the shape it was
             // cropped to. It used to record the post format on every slide,
             // which is now wrong by construction — slides differ.
@@ -1630,12 +1644,18 @@ export default function PostScreen() {
         slidesPayload = built;
         mediaUrl = built[0].url;
         thumbnailUrl = built[0].thumbnail_url ?? null;
+        preview = { thumbUrl: built[0].thumb_url ?? null, placeholder: built[0].placeholder ?? null };
       } else if (postType === 'audio') {
         const a = audioFile;
         const ext = a.name ? a.name.split('.').pop() : (a.uri.split('.').pop() || 'mp3');
         mediaUrl = await uploadToStorageWithProgress('posts', user.id, a.uri, ext, a.mimeType || 'audio/mpeg', setUploadPct);
         setUploadPct(null);
-        if (coverUri) coverUrl = await uploadToStorage(user.id, coverUri, 'jpg', 'image/jpeg');
+        if (coverUri) {
+          [coverUrl, preview] = await Promise.all([
+            uploadToStorage(user.id, coverUri, 'jpg', 'image/jpeg'),
+            makeMediaPreview(coverUri, user.id),
+          ]);
+        }
       } else if (postType === 'image') {
         // Bake the user's pan/pinch crop into the uploaded image.
         let outUri = media!.uri;
@@ -1650,7 +1670,10 @@ export default function PostScreen() {
           );
           outUri = out.uri;
         }
-        mediaUrl = await uploadToStorage(user.id, outUri, 'jpg', 'image/jpeg');
+        [mediaUrl, preview] = await Promise.all([
+          uploadToStorage(user.id, outUri, 'jpg', 'image/jpeg'),
+          makeMediaPreview(outUri, user.id),
+        ]);
       }
       // (video is handled earlier via the background upload queue and returns.)
 
@@ -1687,6 +1710,9 @@ export default function PostScreen() {
         ...(mature ? { mature: true } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         ...(coverUrl ? { cover_url: coverUrl } : {}),
+        // Small copy + blurred placeholder for grids and loading (lib/mediaPreview).
+        ...(preview.thumbUrl ? { thumb_url: preview.thumbUrl } : {}),
+        ...(preview.placeholder ? { placeholder: preview.placeholder } : {}),
         ...(song && postType !== 'audio'
           ? { song_id: song.id, song_title: song.title, song_artist: song.artist, song_artist_id: song.artistId }
           : {}),

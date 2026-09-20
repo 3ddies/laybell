@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -30,12 +31,14 @@ import { useNowPlaying, useAudioControls } from '../../contexts/AudioContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { GENRES as MUSIC_GENRES, GENRE_FILTERS, CONTENT_TAGS, isAudioPost, genreLabel } from '../../lib/genres';
 import {
-  buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost,
+  loadAffinityProfileFast, loadSeenPostIds, recordSeenPostIds, scorePost,
   sortRailByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
 } from '../../lib/feedScorer';
 import { GridSkeleton, ListRowsSkeleton } from '../../components/Skeleton';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { chromeScrollProps } from '../../lib/feedChrome';
+import { createScreenCache } from '../../lib/screenCache';
+import { afterHomePaint } from '../../lib/startupGate';
 
 // Genre clusters for the All grid: 4-song stacks titled by genre, cached per
 // user. Refreshes every 24h — or every 3h when the user is actively consuming
@@ -45,6 +48,10 @@ const CLUSTERS_TTL_IDLE_MS = 24 * 60 * 60 * 1000;
 const CLUSTERS_TTL_ACTIVE_MS = 3 * 60 * 60 * 1000;
 const CLUSTERS_ACTIVE_PLAYS = 2;
 const CLUSTERS_MAX = 14;
+
+// Each genre's grid, kept for the session so switching back to one paints at once
+// and refreshes behind it (lib/screenCache).
+const genreCache = createScreenCache<any[]>(16);
 
 type SongCluster = { title: string; songs: any[] };
 
@@ -92,6 +99,10 @@ export default function ExploreScreen() {
   // to leave the screen (and it would throw the query away).
   useSearchSwipeLock(searchFocused || searchQuery.length > 0);
   const [selectedGenre, setSelectedGenre] = useState('All');
+  // The genre most recently asked for. A slow response for a genre the user has
+  // already switched away from is cached, but must not repaint the grid.
+  const latestGenreRef = useRef('All');
+  const isFocused = useIsFocused();
   const [posts, setPosts] = useState<Post[]>([]);
   // An edit saved on app/edit-post shows here at once (lib/postEdits).
   useEffect(() => subscribePostEdited((id, patch) => setPosts((prev) => patchPostList(prev, id, patch))), []);
@@ -155,7 +166,21 @@ export default function ExploreScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGenre]);
 
-  useEffect(() => { setup().catch(() => setLoading(false)); }, []);
+  // Explore mounts at launch with the other tabs but isn't on screen, so its first
+  // load waits for Home's first paint (lib/startupGate) — unless it's opened first,
+  // which starts it at once.
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (startedRef.current) return;
+    let cancelled = false;
+    const start = () => {
+      if (cancelled || startedRef.current) return;
+      startedRef.current = true;
+      setup().catch(() => setLoading(false));
+    };
+    if (isFocused) start(); else afterHomePaint().then(start);
+    return () => { cancelled = true; };
+  }, [isFocused]);
 
   useEffect(() => {
     if (searchQuery.trim().length > 0) {
@@ -175,14 +200,15 @@ export default function ExploreScreen() {
   }, [searchQuery]);
 
   async function setup() {
-    // Auth + seen-posts (AsyncStorage) in parallel — both fast
-    const [{ data: { user } }, seen] = await Promise.all([
-      supabase.auth.getUser(),
-      loadSeenPostIds(),
-    ]);
-    const userId = user?.id ?? null;
+    // The session is already on the phone; getUser() would first ask the auth
+    // server to confirm it.
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id ?? null;
     if (userId) setCurrentUserId(userId);
-    setSeenPostIds(seen);
+    const seenP = loadSeenPostIds();
+    // The grid's request goes out now; ranking waits below for the taste profile,
+    // follows and blocks, instead of the request waiting for them.
+    const trendingP = queryTrending();
 
     // Quietly refresh the coarse location if it's on and stale (>1 day) — keeps the
     // "people near you" suggestions current without blocking the feed.
@@ -195,10 +221,11 @@ export default function ExploreScreen() {
       })();
     }
 
-    // Affinity profile (AsyncStorage cache) + following list + blocks in parallel
+    // Affinity profile (the phone's copy, refreshed behind) + following list +
+    // blocks in parallel
     if (userId) {
       const [profile, followingResult, blocked] = await Promise.all([
-        buildAffinityProfile(userId),
+        loadAffinityProfileFast(userId, (fresh) => { affinityProfile.current = fresh; }),
         supabase.from('follows').select('following_id').eq('follower_id', userId),
         fetchBlockedIds(),
       ]);
@@ -214,8 +241,10 @@ export default function ExploreScreen() {
     // category (genre or content type) leads the scroll bar.
     setOrderedGenres(['All', ...sortRailByAffinity([...MUSIC_GENRES, ...CONTENT_TAGS], affinityProfile.current)]);
 
+    const seen = await seenP;
+    setSeenPostIds(seen);
     loadGenreClusters(userId, seen); // cached — TTL-checked, non-blocking
-    await fetchTrending(seen);
+    await fetchTrending(seen, trendingP);
   }
 
   // Display name for a stored (lowercase) genre tag; untagged songs pool
@@ -272,7 +301,7 @@ export default function ExploreScreen() {
 
     const { data } = await supabase
       .from('posts')
-      .select('id, type, media_url, caption, cover_url, stream_count, genre, created_at, user_id, profiles!posts_user_id_fkey(id, username, display_name, badge_tier), likes(count), comments(count)')
+      .select('id, type, media_url, caption, cover_url, thumb_url, placeholder, stream_count, genre, created_at, user_id, profiles!posts_user_id_fkey(id, username, display_name, badge_tier), likes(count), comments(count)')
       .eq('is_public', true)
       .is('archived_at', null) // archived songs are hidden from browse/stream (visiblePosts can't catch it — archived_at isn't in this select)
       .is('publish_at', null)
@@ -333,14 +362,20 @@ export default function ExploreScreen() {
     }).catch(() => {});
   }
 
-  // `overrideSeen` is passed from setup() before the seenPostIds state update applies.
-  async function fetchTrending(overrideSeen?: Set<string>) {
-    const { data } = await supabase
+  // The All grid's request, as a started promise. setup() starts it early so it
+  // runs alongside the taste profile instead of after it.
+  function queryTrending() {
+    return Promise.resolve(supabase
       .from('posts')
       .select('*, profiles!posts_user_id_fkey (username, display_name, badge_tier, badge_show, profile_theme), likes(count), comments(count)')
       .eq('is_public', true).is('publish_at', null)
       .order('created_at', { ascending: false })
-      .limit(30);
+      .limit(30));
+  }
+
+  // `overrideSeen` is passed from setup() before the seenPostIds state update applies.
+  async function fetchTrending(overrideSeen?: Set<string>, pending?: ReturnType<typeof queryTrending>) {
+    const { data } = await (pending ?? queryTrending());
     if (data) {
       const seen = overrideSeen ?? seenPostIds;
       const now  = Date.now();
@@ -348,16 +383,24 @@ export default function ExploreScreen() {
         scorePost(b, affinityProfile.current, followingSetRef.current, seen, now) -
         scorePost(a, affinityProfile.current, followingSetRef.current, seen, now),
       );
-      setTrendingPosts(sorted as any);
-      recordSeenPostIds(sorted.map((p: any) => p.id));
+      genreCache.set('All', sorted);
+      if (latestGenreRef.current === 'All') {
+        setTrendingPosts(sorted as any);
+        recordSeenPostIds(sorted.map((p: any) => p.id));
+      }
     }
     setLoading(false);
   }
 
   async function fetchByGenre(genre: string, silent = false, overrideSeen?: Set<string>) {
-    if (!silent) setLoading(true);
+    latestGenreRef.current = genre;
+    // A genre already seen this session paints at once and refreshes behind it.
+    const cached = genreCache.get(genre);
+    if (cached) setTrendingPosts(cached as any);
+    const quiet = silent || !!cached;
+    if (!quiet) setLoading(true);
     setSelectedGenre(genre);
-    if (genre === 'All') { await fetchTrending(overrideSeen); if (!silent) setLoading(false); return; }
+    if (genre === 'All') { await fetchTrending(overrideSeen); if (!quiet) setLoading(false); return; }
 
     let q = supabase
       .from('posts')
@@ -383,10 +426,13 @@ export default function ExploreScreen() {
         scorePost(b, affinityProfile.current, followingSetRef.current, seen, now) -
         scorePost(a, affinityProfile.current, followingSetRef.current, seen, now),
       );
-      setTrendingPosts(sorted as any);
-      recordSeenPostIds(sorted.map((p: any) => p.id));
+      genreCache.set(genre, sorted);
+      if (latestGenreRef.current === genre) {
+        setTrendingPosts(sorted as any);
+        recordSeenPostIds(sorted.map((p: any) => p.id));
+      }
     }
-    if (!silent) setLoading(false);
+    if (!quiet) setLoading(false);
   }
 
   async function onRefresh() {

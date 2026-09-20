@@ -20,6 +20,7 @@
         "webcredentials:laybell.app"
       ],
       "infoPlist": {
+        "CADisableMinimumFrameDurationOnPhone": true,
         "UIBackgroundModes": [
           "audio"
         ],

@@ -18,6 +18,7 @@ import { activateCampaign } from '../lib/spotlight';
 // processing badge; when Cloudflare finishes, the card hands off to the real post.
 //
 import { scheduleLiveReminder } from '../lib/scheduleNotify';
+import { makeMediaPreview } from '../lib/mediaPreview';
 
 // The whole video publish (upload → Stream → insert row → mentions/badges/
 // notifications/spotlight) lives here so it survives navigating away from the
@@ -413,10 +414,13 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
       // minimum so the "Processing" reveal is actually visible.
       const processingStart = Date.now();
 
-      // Poster: prefer the local thumbnail already generated at pick time.
+      // Poster: prefer the local thumbnail already generated at pick time. Its small
+      // copy + blurred placeholder are made alongside (lib/mediaPreview).
+      const previewPromise = makeMediaPreview(job.thumbnailUri, job.userId);
       let thumbnailUrl: string | null = null;
       try { thumbnailUrl = job.thumbnailUri ? await uploadPoster(job.userId, job.thumbnailUri) : streamPosterUrl(subdomain, uid); }
       catch { thumbnailUrl = streamPosterUrl(subdomain, uid); }
+      const preview = await previewPromise;
 
       // The file is up — insert the real, persisted post now.
       const row: Record<string, any> = {
@@ -441,6 +445,8 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         ...(job.trim && !trimmedFile ? { trim_start: job.trim.start, trim_end: job.trim.end } : {}),
         ...(job.filmTitle ? { film_title: job.filmTitle } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
+        ...(preview.thumbUrl ? { thumb_url: preview.thumbUrl } : {}),
+        ...(preview.placeholder ? { placeholder: preview.placeholder } : {}),
         video_uid: uid, video_status: 'processing', video_hls_url: hls,
         ...(job.song ? { song_id: job.song.id, song_title: job.song.title, song_artist: job.song.artist, song_artist_id: job.song.artistId, song_link_only: !!job.song.linkOnly } : {}),
         // A music video's song never plays, so there is no mix to keep for it.
