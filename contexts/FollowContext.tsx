@@ -19,6 +19,8 @@ type FollowContextValue = {
   friends: Set<string>;
   isFriend: (userId: string) => boolean;
   toggleFollow: (userId: string) => void;
+  /** Report a follow row that was written elsewhere — see syncFollow below. */
+  syncFollow: (userId: string, isFollowing: boolean) => void;
 };
 
 const FollowContext = createContext<FollowContextValue>({
@@ -28,6 +30,7 @@ const FollowContext = createContext<FollowContextValue>({
   friends: new Set(),
   isFriend: () => false,
   toggleFollow: () => {},
+  syncFollow: () => {},
 });
 
 export function useFollow() {
@@ -91,6 +94,28 @@ export function FollowProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // For the two screens that write the follow row THEMSELVES: the visited
+  // profile (it keeps its own follower count and private-post visibility, both
+  // seeded from its own query) and onboarding's suggestions.
+  //
+  // Without this the row lands in the database and NOTHING else in the app
+  // notices — this context loads once at startup, so every other Follow button
+  // for that person keeps its old label for the rest of the session. That was a
+  // real bug: follow someone from their profile, go back to the feed, and their
+  // post's top bar still said "Follow back".
+  //
+  // It writes nothing and notifies nobody. It is the caller saying what it has
+  // already done.
+  const syncFollow = useCallback((userId: string, isFollowing: boolean) => {
+    setFollowing(prev => {
+      // Same answer → same Set, so consumers don't re-render for nothing.
+      if (prev.has(userId) === isFollowing) return prev;
+      const next = new Set(prev);
+      if (isFollowing) next.add(userId); else next.delete(userId);
+      return next;
+    });
+  }, []);
+
   const friends = useMemo(() => {
     const out = new Set<string>();
     following.forEach(id => { if (followers.has(id)) out.add(id); });
@@ -100,8 +125,8 @@ export function FollowProvider({ children }: { children: React.ReactNode }) {
   const isFriend = useCallback((userId: string) => friends.has(userId), [friends]);
 
   const value = useMemo(
-    () => ({ currentUserId, following, followers, friends, isFriend, toggleFollow }),
-    [currentUserId, following, followers, friends, isFriend, toggleFollow],
+    () => ({ currentUserId, following, followers, friends, isFriend, toggleFollow, syncFollow }),
+    [currentUserId, following, followers, friends, isFriend, toggleFollow, syncFollow],
   );
 
   return <FollowContext.Provider value={value}>{children}</FollowContext.Provider>;

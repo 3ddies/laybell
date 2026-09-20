@@ -47,6 +47,7 @@ import { isSlideshow } from '../../lib/slideshow';
 import { createNotification } from '../../lib/createNotification';
 import { hasOpenShop } from '../../lib/shop';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
+import { useFollow } from '../../contexts/FollowContext';
 import { ProfileSkeleton } from '../../components/Skeleton';
 import { createScreenCache } from '../../lib/screenCache';
 
@@ -126,6 +127,12 @@ export default function PublicProfileScreen() {
   const [followLoading, setFollowLoading] = useState(false);
   // This user's ACTIVE public playlists (locked over-limit ones stay hidden).
   const [publicPlaylists, setPublicPlaylists] = useState<any[]>([]);
+
+  // This screen writes its own follow row (it owns the follower count and the
+  // private-post visibility that depend on it), so it has to tell the shared
+  // context — otherwise every Follow button outside this screen keeps its old
+  // label until the app restarts.
+  const { syncFollow } = useFollow();
 
   // Per-thumbnail nodes so opening a post/reel can expand out of the tapped cell.
   const gridRefs = useRef<Record<string, any>>({});
@@ -370,12 +377,14 @@ export default function PublicProfileScreen() {
     if (isFollowing) {
       await supabase.from('follows').delete().eq('follower_id', currentUserId).eq('following_id', id);
       setIsFollowing(false);
+      syncFollow(String(id), false);
       setStats(prev => ({ ...prev, followers: prev.followers - 1 }));
     } else {
       await supabase.from('follows').insert({ follower_id: currentUserId, following_id: id });
       // If they already follow me, following back makes us friends → notify as such.
       createNotification({ userId: id as string, actorId: currentUserId, type: followsMe ? 'friend' : 'follow' });
       setIsFollowing(true);
+      syncFollow(String(id), true);
       setStats(prev => ({ ...prev, followers: prev.followers + 1 }));
     }
     setFollowLoading(false);

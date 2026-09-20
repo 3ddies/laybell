@@ -22,6 +22,7 @@ import { fetchSuggestedAccounts, reasonLabel } from '../lib/suggestions';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useProfile } from '../contexts/ProfileContext';
+import { useFollow } from '../contexts/FollowContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { LANGUAGES } from '../lib/i18n';
 import { GENRES as APP_GENRES, genreLabel } from '../lib/genres';
@@ -54,6 +55,9 @@ export default function OnboardingScreen() {
   const { t, lang, setLang } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const { update: updateProfile, refresh: refreshProfile } = useProfile();
+  // Suggestions are followed by writing the row here, so the shared context has
+  // to be told (see syncFollow) or the feed after onboarding shows them unfollowed.
+  const { syncFollow } = useFollow();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
@@ -341,7 +345,11 @@ export default function OnboardingScreen() {
       return next;
     });
 
-    if (followed.has(userId)) {
+    const wasFollowing = followed.has(userId);
+    // Tell the shared context too, or the feed this lands on shows "Follow" for
+    // people who were just followed here (see syncFollow in FollowContext).
+    syncFollow(userId, !wasFollowing);
+    if (wasFollowing) {
       await supabase.from('follows').delete()
         .eq('follower_id', user.id).eq('following_id', userId);
     } else {

@@ -50,6 +50,9 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       // Build the dictionary before the switch, not during the render it causes:
       // each language is its own module now (lib/locales), loaded on first use.
       preloadLang(stored);
+      // And point the module-level singleton at it BEFORE the re-render — see
+      // setLang below for why the effect alone is not enough.
+      setActiveLang(stored);
       setLangState(stored);
     }).catch(() => {});
     AsyncStorage.getItem(AUTO_TRANSLATE_KEY).then((v) => {
@@ -63,6 +66,14 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   const setLang = useCallback((l: Lang) => {
     preloadLang(l);
+    // Synchronously, BEFORE the state change that re-renders the app. The
+    // effect below used to be the only place this happened, which left the
+    // singleton one render behind: every tg()-derived string (timeAgo,
+    // countLabel, the genre/gender/reason labels) rendered in the OLD language
+    // for that pass and only corrected on the component's NEXT render. A
+    // component that doesn't re-render never got one — which is every memoized
+    // component, and since React Compiler that is effectively all of them.
+    setActiveLang(l);
     setLangState(l);
     AsyncStorage.setItem(STORAGE_KEY, l).catch(() => {});
   }, []);
