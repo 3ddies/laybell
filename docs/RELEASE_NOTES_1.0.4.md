@@ -241,8 +241,20 @@ this is the one kind of change that cannot be judged by reading it.
 - **The report sheet needed nothing** — `contexts/ReportContext` was already on
       `PanGestureHandler` with a native-driven `Animated.event`. That was the pattern; the 3-dot
       sheet had just never been given it.
-- [ ] `components/StickerLayer` (the studio's drag/pinch/rotate) — still `PanResponder`. Multi-
-      touch, so it wants its own pass and a video-editing session to test.
+- [ ] `components/StickerLayer` (the studio's drag/pinch/rotate) — still `PanResponder`.
+      **Assessed 2026-09-20 and deliberately left**, with reasons, because it is not the same
+      kind of change as the sheets:
+      - It is one full-screen RAW multi-touch layer, not a drag: it routes each gesture to the
+        NEAREST sticker, re-baselines on every finger-count change (so fingers can be swapped
+        mid-pinch without a jump), and derives pinch and rotation from touch coordinates.
+        Porting it means `Gesture.Manual` and hand-written touch bookkeeping.
+      - Two host-owned things would have to cross to the UI thread with it: `constrain` (a
+        function prop, applied live during the drag — `VideoStudio` passes `keepInBand`, which
+        reads studio state) and `onDragMove` (per frame, driving the trash-zone highlight,
+        which is React state). Both mean turning host state into shared values.
+      - So it lands inside `VideoStudio` and `app/(tabs)/story-camera` — the newest screens in
+        the app — for a win that only applies while editing stickers.
+      **Do it when the studio is being worked on anyway, with an editing session to test.**
 
 **A bug the device found, worth keeping:** the first conversion popped the sheet back UP for a
 moment before it left, if you dragged slowly and released while still moving. The exit aimed at

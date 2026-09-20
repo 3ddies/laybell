@@ -1,5 +1,8 @@
 {
   "expo": {
+    "experiments": {
+      "reactCompiler": true
+    },
     "name": "Laybell",
     "slug": "laybell",
     "scheme": "laybell",
