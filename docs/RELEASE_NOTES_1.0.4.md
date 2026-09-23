@@ -12,7 +12,12 @@ node scripts/check-release-notes.mjs docs/RELEASE_NOTES_1.0.4.md
 ## Google Play — "What's new" (≤500 chars)
 
 ```
-TBD
+• Post analytics: tap ⋯ on your post to see views, engagement, views over time, and how it compares to your average.
+• A faster, smoother app: quicker startup, snappier screens and scrolling.
+• Cleaner sound: no more overlapping song and video audio; songs on posts start faster.
+• Livelier Explore previews.
+• A complete-your-profile checklist and new badges to earn.
+• Polish and bug fixes.
 ```
 
 ---
@@ -20,7 +25,16 @@ TBD
 ## App Store — "What's New in This Version" (≤4000 chars)
 
 ```
-TBD
+What's new in 1.0.4
+
+• Post analytics — tap ⋯ on any of your posts to see how it's doing: views, likes, comments, shares and saves, an engagement rate, views over time, and how the post stacks up against your average.
+• A faster, smoother app — quicker startup, snappier screens, smoother scrolling and lists, and animations that keep up with your finger.
+• Cleaner sound — only one thing plays at a time now, so a song and a video's audio never talk over each other, and songs on posts start faster.
+• Livelier Explore previews.
+• A complete-your-profile checklist and new badges to earn.
+• Plenty of polish and bug fixes.
+
+Thanks for using Laybell!
 ```
 
 ---
