@@ -3,6 +3,7 @@ import { StyleSheet } from 'react-native';
 import { VideoView, type VideoPlayer } from 'expo-video';
 import { reelPool } from '../lib/feedVideoPool';
 import { useMediaSuspend } from '../contexts/MediaSuspendContext';
+import { useSongAudible } from '../contexts/AudioContext';
 import { useVideoStall } from '../hooks/useVideoStall';
 import VideoStallIndicator from './VideoStallIndicator';
 import { useIdleAwareLoop } from '../hooks/useIdleAwareLoop';
@@ -24,6 +25,13 @@ type Props = {
   uri: string;
   play: boolean;
   muted: boolean;
+  /**
+   * This video's audio survives a playing song — see AppVideo's `ownsAudio`.
+   * Only the ad page uses it: a paid creative is never the thing that goes
+   * quiet. The reel viewer stops the song when it opens, so it changes nothing
+   * in ordinary use.
+   */
+  ownsAudio?: boolean;
   /** The video's own level, 0..1 — below full only on a post with a sound mix (lib/songMix). */
   volume?: number;
   loop: boolean;
@@ -34,7 +42,7 @@ type Props = {
 };
 
 const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
-  { id, uri, play, muted, volume = 1, loop, contentFit, trimStartSec, trimEndSec, onProgress }: Props,
+  { id, uri, play, muted, ownsAudio = false, volume = 1, loop, contentFit, trimStartSec, trimEndSec, onProgress }: Props,
   ref,
 ) {
   const [player, setPlayer] = useState<VideoPlayer | null>(null);
@@ -57,8 +65,14 @@ const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
   const { idleRef, markEnded } = useIdleAwareLoop(player, { loop, shouldPlay, restartSec: trimStartSec ?? null, leanBack: true });
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
-  const mutedRef = useRef(muted);
-  mutedRef.current = muted;
+  // A playing song silences every video in the app (contexts/AudioContext).
+  // The reel viewer already stops the song when it opens, so in normal use this
+  // never bites; it catches the one path that used to — a play pressed on the
+  // lock screen while a reel is on screen.
+  const songAudible = useSongAudible();
+  const silent = muted || (songAudible && !ownsAudio);
+  const mutedRef = useRef(silent);
+  mutedRef.current = silent;
   const volumeRef = useRef(volume);
   volumeRef.current = volume;
   const trimStartRef = useRef(trimStartSec ?? null);
@@ -141,8 +155,8 @@ const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
 
   useEffect(() => {
     if (!player) return;
-    try { player.muted = muted; player.volume = volume; } catch {}
-  }, [muted, volume, player]);
+    try { player.muted = silent; player.volume = volume; } catch {}
+  }, [silent, volume, player]);
 
   useEffect(() => {
     if (!player) return;

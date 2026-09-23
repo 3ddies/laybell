@@ -1105,7 +1105,7 @@ export default function ReelScreen() {
     // songPlaysFor, not song_id: a music video credits its OWN song, so
     // starting the ambient track would play it over itself.
     const songId = songPlaysFor(visibleItem) ? visibleItem?.song_id : null;
-    if (songId) prefetchSong(songId); // URL resolves in the background NOW
+    if (songId) prefetchSong(songId, null, ambientMixFor(visibleItem)); // bytes stage NOW, at the song's part
     // ALL player mutation lives in this ONE deferred timer (past the snap
     // settle): start when the landed reel has a song, stop when it doesn't.
     // The old cleanup-stop ran native audio work at the 55% viewability commit

@@ -3,6 +3,7 @@ import { Image as ExpoImage } from 'expo-image';
 import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useMediaSuspend } from '../contexts/MediaSuspendContext';
+import { useSongAudible } from '../contexts/AudioContext';
 import { useVideoStall } from '../hooks/useVideoStall';
 import VideoStallIndicator from './VideoStallIndicator';
 import { useIdleAwareLoop, type IdleMode } from '../hooks/useIdleAwareLoop';
@@ -39,6 +40,16 @@ export type AppVideoProps = {
   active?: boolean;
   loop?: boolean;
   muted?: boolean;
+  /**
+   * This video's audio survives a playing song. OFF by default: while the music
+   * player is playing, every video in the app is silent (contexts/AudioContext,
+   * useSongAudible) — two audio streams at once is always a bug.
+   *
+   * Only for surfaces whose own sound is the whole point — a live broadcast, the
+   * studio preview, a clip you just recorded. Those must ALSO stop the song when
+   * they open, or this just re-creates the collision it opts out of.
+   */
+  ownsAudio?: boolean;
   /** The video's own level, 0..1 — expo-video keeps it separate from `muted`. Default 1. */
   volume?: number;
   /** Show the OS video controls. Default false. */
@@ -89,6 +100,14 @@ export type AppVideoProps = {
   retryLoadErrors?: boolean;
   /** A source that has never loaded reported an error. */
   onLoadError?: (message: string) => void;
+  /**
+   * Keep the downloaded file on the phone (expo-video's own LRU cache) so later
+   * passes cost no network at all. For SMALL, IMMUTABLE files — Explore's preview
+   * clips (lib/videoPreview) are the reason this exists. Not for HLS: expo-video
+   * cannot cache an HLS source on iOS, which is exactly why a looping Stream
+   * preview re-billed on every pass.
+   */
+  useCaching?: boolean;
 };
 
 /** Imperative handle for scrubbing/seeking from a parent (e.g. a progress bar). */
@@ -101,6 +120,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   active = true,
   loop = false,
   muted = false,
+  ownsAudio = false,
   volume = 1,
   nativeControls = false,
   poster,
@@ -118,6 +138,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   leanBack = false,
   retryLoadErrors = true,
   onLoadError,
+  useCaching = false,
 }: AppVideoProps, ref) {
   const uri = typeof source === 'string' ? source : source.uri;
   // A full-screen takeover (e.g. the GIF maker) can globally pause background
@@ -173,9 +194,14 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   // beneath simply becomes motion.
   const [surfaceReady, setSurfaceReady] = useState(false);
 
-  const player = useVideoPlayer({ uri }, (p) => {
+  // The caller's own mute, OR the app-wide rule: a song is playing, so this is
+  // not heard. Computed once and used everywhere `muted` used to be.
+  const songAudible = useSongAudible();
+  const silent = muted || (songAudible && !ownsAudio);
+
+  const player = useVideoPlayer({ uri, ...(useCaching ? { useCaching: true } : null) }, (p) => {
     p.loop = loop;
-    p.muted = muted;
+    p.muted = silent;
     p.volume = volume;
     p.timeUpdateEventInterval = intervalSec;
     // Bounded forward buffer (same cap as the pools): unbounded raw-MP4
@@ -195,7 +221,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   const { idleRef, markEnded } = useIdleAwareLoop(player, { loop, shouldPlay, restartSec: trimStartSec ?? null, whenIdle: idleBehavior, leanBack });
 
   // Keep mutable player props in sync with React props.
-  useEffect(() => { player.muted = muted; }, [muted, player]);
+  useEffect(() => { player.muted = silent; }, [silent, player]);
   useEffect(() => { player.volume = volume; }, [volume, player]);
   useEffect(() => { player.timeUpdateEventInterval = intervalSec; }, [intervalSec, player]);
   useEffect(() => {
@@ -260,7 +286,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
         if (!hasLoadedRef.current && retryLoadErrorsRef.current && retriesRef.current < MAX_LOAD_RETRIES) {
           retriesRef.current += 1;
           const delay = Math.min(5000, 1500 + retriesRef.current * 400);
-          setTimeout(() => { try { player.replace({ uri }); } catch {} }, delay);
+          setTimeout(() => { try { player.replace({ uri, ...(useCaching ? { useCaching: true } : null) }); } catch {} }, delay);
         }
       }
     });

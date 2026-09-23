@@ -1,5 +1,7 @@
 import { type ViewStyle } from 'react-native';
 import { supabase } from './supabase';
+import { profileProgress } from './profileCompletion';
+import { hasRatedApp } from './appRating';
 import { COLORS, GRADIENTS } from '../constants/theme';
 
 // Profile Badges / Gamification — single source of truth.
@@ -21,6 +23,7 @@ import { COLORS, GRADIENTS } from '../constants/theme';
 
 export type Tier = 'bronze' | 'silver' | 'gold' | 'diamond';
 export type BadgeCategory =
+  | 'profile' | 'app_rating'
   | 'login' | 'daily_like' | 'posts' | 'music_streaming' | 'comments' | 'curator'
   | 'community' | 'ads' | 'app_sharing';
 
@@ -57,6 +60,27 @@ export function tierLabel(tier: Tier | null | undefined): string {
 // Mirrors the user's notes. Community / Ads / App-sharing were once `locked: true`
 // stubs; all three now have backing systems and every badge here is earnable.
 export const BADGES: BadgeDef[] = [
+  // Profile — the first badge a new account can earn, and the only one that asks
+  // for nothing but setting yourself up: a picture, a bio, a post, a shop
+  // (lib/profileCompletion owns the rules, and the card on the profile page
+  // reads the SAME ones, so the two can never disagree). Not permanent: the
+  // tasks describe what the profile IS, so emptying your bio genuinely
+  // un-completes it and the card comes back.
+  { key: 'profile_bronze', category: 'profile', tier: 'bronze', title: 'Bronze Profile', criteria: 'Add a picture, a bio, a post and a shop', permanent: false, locked: false },
+
+  // Rating — PERMANENT bronze for rating Laybell five stars (owner,
+  // 2026-09-20). Permanent in the sense this catalog means it: the badge and
+  // its points are kept for good, which is NOT the same as pinning the user's
+  // emblem to bronze — the emblem is still computed from total points
+  // (computeEmblemTier), so this adds bronze's weight and nothing else.
+  //
+  // BRONZE, not silver, and deliberately: neither store tells an app whether a
+  // review was actually left (lib/appRating), so the only signal available is
+  // that the user opened the review page. A badge earned on an unverifiable
+  // action should be worth the least the catalog has — then there is nothing
+  // much to win by gaming it.
+  { key: 'app_rating_bronze', category: 'app_rating', tier: 'bronze', title: 'Bronze Supporter', criteria: 'Rate Laybell 5 stars', permanent: true, locked: false },
+
   // Login (streak; TWO diamonds — temporary at 30 days, permanent at 90. The only
   // category with two badges of the same tier; see qualifyingKeys for the special
   // handling. Both weigh diamond=8, so holding one or both rolls up identically.)
@@ -112,6 +136,8 @@ export const BADGES: BadgeDef[] = [
 export const BADGES_BY_KEY: Record<string, BadgeDef> = Object.fromEntries(BADGES.map(b => [b.key, b]));
 
 export const CATEGORY_META: Record<BadgeCategory, { label: string; icon: string }> = {
+  profile:         { label: 'Profile',          icon: 'person-circle-outline' },
+  app_rating:      { label: 'Rating',           icon: 'star-outline' },
   login:           { label: 'Login',           icon: 'log-in-outline' },
   daily_like:      { label: 'Daily Likes',      icon: 'heart-outline' },
   posts:           { label: 'Posts',            icon: 'images-outline' },
@@ -125,6 +151,8 @@ export const CATEGORY_META: Record<BadgeCategory, { label: string; icon: string 
 
 // Order the Badges page lists categories in.
 export const CATEGORY_ORDER: BadgeCategory[] = [
+  // First, because they are the two a brand-new account can finish today.
+  'profile', 'app_rating',
   'login', 'daily_like', 'posts', 'music_streaming', 'comments', 'curator', 'community', 'ads', 'app_sharing',
 ];
 
@@ -350,6 +378,13 @@ export type BadgeState = {
   communities_joined: number; communities_owned: number;
   // Lifetime app-share count (profiles.app_shares) — drives the App-sharing badges.
   app_shares: number;
+  // Whether the profile is set up: picture, bio, a post, a shop
+  // (lib/profileCompletion). Read live, like communities and shares.
+  profile_complete: boolean;
+  // Whether this phone has been sent to the store to rate the app
+  // (lib/appRating). The badge it earns is permanent, so the flag only has to
+  // outlive the next evaluation.
+  rated_app: boolean;
 };
 
 // Add `delta` UTC days to a 'YYYY-MM-DD' string. Pure UTC math anchored to the
@@ -476,6 +511,12 @@ function qualifyingTiersAt(state: BadgeState, today: string): CategoryTiers {
 
   const out: CategoryTiers = {};
 
+  // profile — set up, or not. One tier: there is nothing above "done".
+  if (state.profile_complete) out.profile = 'bronze';
+
+  // rating — done once, kept for good (the badge is permanent).
+  if (state.rated_app) out.app_rating = 'bronze';
+
   // login
   if (loginStreak >= 30) out.login = 'diamond';
   else if (loginStreak >= 14) out.login = 'gold';
@@ -576,7 +617,7 @@ export async function fetchBadgeState(): Promise<BadgeState | null> {
     // Only PUBLIC playlists count and only the single best one (max, not sum):
     // a privated playlist drops out of this query immediately, so the curator
     // badge revokes on the next evaluation and re-awards if it goes public again.
-    const [stateRes, playsRes, commRes] = await Promise.all([
+    const [stateRes, playsRes, commRes, profileCompleteRes, ratedRes] = await Promise.all([
       supabase.rpc('get_badge_state'),
       (async () => {
         try {
@@ -610,6 +651,28 @@ export async function fetchBadgeState(): Promise<BadgeState | null> {
           };
         } catch { return { joined: 0, owned: 0, shares: 0 }; }
       })(),
+      // Profile completeness, by the same rules the card on the profile page
+      // shows (lib/profileCompletion). Graceful like the two above: a failed
+      // read is simply "not complete", never a thrown evaluation.
+      (async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return false;
+          const [profRes, shopRes, postRes] = await Promise.all([
+            supabase.from('profiles').select('avatar_url, bio').eq('id', user.id).maybeSingle(),
+            supabase.from('shops').select('user_id').eq('user_id', user.id).maybeSingle(),
+            supabase.from('posts').select('id', { count: 'exact', head: true })
+              .eq('user_id', user.id).eq('is_public', true).is('archived_at', null).is('publish_at', null),
+          ]);
+          return profileProgress({
+            avatarUrl: (profRes.data as any)?.avatar_url,
+            bio: (profRes.data as any)?.bio,
+            hasShop: !!shopRes.data,
+            posts: postRes.count ?? 0,
+          }).complete;
+        } catch { return false; }
+      })(),
+      hasRatedApp((await supabase.auth.getSession()).data.session?.user?.id ?? null).catch(() => false),
     ]);
     if (stateRes.error || !stateRes.data) return null;
     const d: any = stateRes.data;
@@ -621,6 +684,8 @@ export async function fetchBadgeState(): Promise<BadgeState | null> {
       communities_joined: commRes.joined,
       communities_owned: commRes.owned,
       app_shares: commRes.shares,
+      profile_complete: profileCompleteRes,
+      rated_app: ratedRes,
     };
   } catch {
     return null;

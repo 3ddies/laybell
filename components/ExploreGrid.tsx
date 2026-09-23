@@ -27,6 +27,9 @@ import { previewImageProps } from '../lib/mediaPreview';
 import ThumbStat from './ThumbStat';
 import VideoThumb from './VideoThumb';
 import { isSlideshow, slideshowThumb } from '../lib/slideshow';
+import { postStickers } from '../lib/stickerTiming';
+import { isBandSticker } from '../lib/bandCaptions';
+import TimedStickers from './TimedStickers';
 
 type GridPost = {
   id: string; type: string; media_url: string; caption: string;
@@ -34,8 +37,12 @@ type GridPost = {
   slides?: any; // slideshow media list (drives the still cover via slideshowThumb)
   // Small copy + thumbhash of the post's picture (1.0.4, lib/mediaPreview).
   thumb_url?: string | null; placeholder?: string | null;
+  // A few cached seconds of the video, looped as the preview (1.0.4, lib/videoPreview).
+  preview_url?: string | null;
   // Drive which moments a moving-stills preview shows (components/PreviewStills).
   duration_seconds?: number | null; trim_start?: number | null; trim_end?: number | null;
+  // A horizontal video's band captions, drawn in the hero slot's letterbox bands.
+  captions?: unknown; timed_captions?: unknown;
   stream_count?: number; view_count?: number; user_id?: string;
   profiles?: { username: string; display_name: string } | null;
 };
@@ -56,6 +63,33 @@ const MUSIC_HEADER_H = 30;
 // Never move more than this many previews at once on the grid — only the ones
 // nearest the viewport center move, so motion never clumps on screen.
 const MAX_CONCURRENT_VIDEOS = 2;
+// WHICH TILES PLAY REAL VIDEO (owner, 2026-09-20): the top-left tile and the
+// Laybell-TV banner — the top of Explore, where attention is — loop their cached
+// preview clip (lib/videoPreview). Every other moving tile stays moving stills.
+// It keeps the most engaging thing where people look first, and it also keeps
+// the bill flat: two clips per visit, each downloaded once per phone, instead of
+// one per tile.
+//
+// Only posts made from 1.0.4 on carry a clip, so each of those two slots may
+// reach a little way down the relevance order for a video that HAS one —
+// otherwise an older top post would leave the slot on stills. A short reach, so
+// relevance still decides: if nothing near the top has a clip, the most
+// relevant video takes the slot as before and moves as stills.
+const HERO_CLIP_REACH = 4;
+const BANNER_CLIP_REACH = 3;
+// The top-left slot is a TALLER, upright frame (owner, 2026-09-20) — the most
+// engaging thing on Explore, shown bigger. Still ONE column wide, so the
+// masonry packs around it exactly as it always has; only this cell's height
+// changes, and the shortest-first pack absorbs that like any other tile.
+const HERO_H = Math.round(COL_W * 1.6);
+
+// WHO MAY TAKE THAT SLOT. An upright video always. A horizontal one only if it
+// carries band captions: shown upright it keeps its black bands, and bands with
+// nothing in them are just empty black. With captions they read as the reel does.
+function heroEligible(p: GridPost): boolean {
+  if (!isHorizontalVideo(p)) return true;
+  return postStickers<any>(p.captions, p.timed_captions).some(isBandSticker);
+}
 // How far beyond the screen a tile is still built: a screen either way, rounded
 // out to half-screens so scrolling re-renders the grid a few times per screen
 // instead of on every scroll event. See the paint window below.
@@ -281,11 +315,12 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
   // The masonry layout depends only on the posts and the songTiles mode, not on
   // playback state — so memoize it. Without this the whole filter/sort/group/pack
   // recomputed on every render, including each 250ms audio progress tick.
-  const { topCols, bottomCols, bannerPost, playableSet, bottomVideoIds, topShortCol, topPadTop, bottomBase } = useMemo(() => {
+  const { topCols, bottomCols, bannerPost, playableSet, bottomVideoIds, topShortCol, topPadTop, bottomBase, heroVideoId } = useMemo(() => {
     const EMPTY = {
       topCols: [[], []] as Cell[][], bottomCols: [[], []] as Cell[][],
       bannerPost: null as GridPost | null, playableSet: new Set<string>(),
       bottomVideoIds: new Set<string>(), topShortCol: -1, topPadTop: 0, bottomBase: 0,
+      heroVideoId: null as string | null,
     };
     if (!posts || posts.length === 0) return EMPTY;
 
@@ -293,7 +328,12 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     // relevance-ordered, so the first landscape one is the top pick). It's featured
     // full-width under the first song card, so exclude it from the grid tiles. Only
     // in the masonry ("All") view — the genre square grid doesn't use it.
-    const bannerPost: GridPost | null = songTiles ? null : (posts.find(isHorizontalVideo) ?? null);
+    //
+    // Among the most relevant few, one that has a preview clip wins the slot (see
+    // BANNER_CLIP_REACH): this banner is one of the two places Explore plays video.
+    const horizontals = songTiles ? [] : posts.filter(isHorizontalVideo);
+    const bannerPost: GridPost | null =
+      horizontals.slice(0, BANNER_CLIP_REACH).find(p => !!p.preview_url) ?? horizontals[0] ?? null;
     const allVideos = posts.filter(p => p.type === 'video' && p.id !== bannerPost?.id);
     // Spread HORIZONTAL (16:9) tiles evenly among the vertical reels — several
     // landscape clips arriving consecutively would otherwise occupy consecutive
@@ -352,9 +392,29 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     // Top-left slot is always a looping preview video: pull the first video to the
     // front so ordered[0] packs into column 0 (top-left) and — being the topmost
     // video — is always autoplay-eligible.
-    const firstVideoIdx = ordered.findIndex(c => c.kind === 'media' && c.post.type === 'video');
-    if (firstVideoIdx > 0) ordered.unshift(...ordered.splice(firstVideoIdx, 1));
-    const heroVideoId = ordered[0]?.kind === 'media' && ordered[0].post.type === 'video' ? ordered[0].post.id : null;
+    //
+    // The first few videos in relevance order are the candidates; one with a
+    // preview clip takes the slot if there is one (HERO_CLIP_REACH), because this
+    // tile is where Explore plays real video.
+    const videoIdxs: number[] = [];
+    ordered.forEach((c, i) => { if (c.kind === 'media' && c.post.type === 'video') videoIdxs.push(i); });
+    // Eligible first (see heroEligible), then among the most relevant few of
+    // those, one that has a preview clip. The last resort is the most relevant
+    // video of any shape — better a bare horizontal tile than no video at all.
+    const eligible = videoIdxs.filter(i => {
+      const c = ordered[i];
+      return c.kind === 'media' && heroEligible(c.post);
+    });
+    const clipIdx = eligible.slice(0, HERO_CLIP_REACH).find(i => {
+      const c = ordered[i];
+      return c.kind === 'media' && !!c.post.preview_url;
+    });
+    const heroIdx = clipIdx ?? eligible[0] ?? videoIdxs[0] ?? -1;
+    if (heroIdx > 0) ordered.unshift(...ordered.splice(heroIdx, 1));
+    const heroCell = ordered[0]?.kind === 'media' && ordered[0].post.type === 'video' ? ordered[0] : null;
+    const heroVideoId = heroCell ? heroCell.post.id : null;
+    // The slot's frame, applied to the cell the pack is about to place.
+    if (heroCell) heroCell.height = HERO_H;
 
     const variety = (cell: Cell): string =>
       cell.kind === 'music' ? 'music' : cell.post.type === 'video' ? 'video' : 'still';
@@ -470,7 +530,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       if (yc - lastPlayableY >= PLAYABLE_GAP) { playableSet.add(id); lastPlayableY = yc; }
     }
 
-    return { topCols: top.cols, bottomCols: bottom.cols, bannerPost: usedBanner, playableSet, bottomVideoIds, topShortCol, topPadTop, bottomBase };
+    return { topCols: top.cols, bottomCols: bottom.cols, bannerPost: usedBanner, playableSet, bottomVideoIds, topShortCol, topPadTop, bottomBase, heroVideoId };
   }, [posts, songTiles, songClusters, t]);
 
   // GHOST-ENTRY PRUNE: ids that leave the list (refresh, relevance reorder,
@@ -528,16 +588,24 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       return (
         <TouchableOpacity
           key={cell.key}
-          style={[styles.mediaCard, { height: cell.height }, padTop ? { marginTop: padTop } : null]}
+          style={[
+            styles.mediaCard,
+            { height: cell.height },
+            p.id === heroVideoId && isHorizontalVideo(p) ? styles.heroLetterbox : null,
+            padTop ? { marginTop: padTop } : null,
+          ]}
           activeOpacity={0.9}
           onPress={(e: any) => openMedia(p, e)}
           onLayout={e => { videoPos.current[p.id] = { y: e.nativeEvent.layout.y, h: cell.height }; recomputeActive(); }}
         >
-          {/* Moving stills, not video: frames cost nothing on the Cloudflare bill,
-              so browsing Explore no longer does. No watch time, so previews no
-              longer count as views. See components/PreviewStills. */}
+          {/* The top-left tile loops its cached clip; every other tile moves as
+              stills, which cost nothing on the Cloudflare bill (see
+              HERO_CLIP_REACH). No watch time either way, so previews never count
+              as views. See components/PreviewStills. */}
           <PreviewStills
             uri={p.media_url}
+            previewUrl={p.id === heroVideoId ? p.preview_url : null}
+            contentFit={p.id === heroVideoId && isHorizontalVideo(p) ? 'contain' : 'cover'}
             thumbnailUrl={p.thumb_url || p.thumbnail_url}
             placeholder={p.placeholder}
             durationSec={p.duration_seconds}
@@ -546,6 +614,19 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
             play={playing}
             style={styles.mediaImage}
           />
+          {/* Shown whole, its captions in the bands around it — the same
+              placement the reel gives them (components/BandStickers), measured
+              against this tile instead of the screen. */}
+          {p.id === heroVideoId && isHorizontalVideo(p) && (
+            <TimedStickers
+              postId={p.id}
+              captions={p.captions}
+              timedCaptions={p.timed_captions}
+              frameW={COL_W}
+              frameH={cell.height}
+              bandRatio={aspectToNumber(p.aspect_ratio) ?? 16 / 9}
+            />
+          )}
           <View style={styles.playBadge}><Ionicons name="play" size={12} color="#fff" /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
@@ -710,6 +791,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
             view, so it is already moving when it arrives. */}
         <PreviewStills
           uri={p.media_url}
+          previewUrl={p.preview_url}
           thumbnailUrl={p.thumbnail_url}
           placeholder={p.placeholder}
           durationSec={p.duration_seconds}
@@ -876,6 +958,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   mediaCard: { width: COL_W, borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: colors.surfaceLight },
   mediaImage: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
+  // A wide video shown upright in the hero slot: the space above and below it is
+  // the reel's letterbox, so it is black rather than card grey.
+  heroLetterbox: { backgroundColor: '#000' },
 
   // Full-width Laybell-TV hero banner (spans both columns; content below restarts even).
   tvBannerWrap: { marginVertical: GAP },

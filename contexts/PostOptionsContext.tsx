@@ -598,6 +598,10 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
 
   // ── Ownership / general actions ────────────────────────────────────────────
   if (hasPost && isOwn) {
+    // Owner-only, and first: TikTok surfaces analytics at the top of a creator's
+    // own-post menu. Opens the per-post analytics screen.
+    options.push({ key: 'analytics', label: t('postOptions.viewAnalytics'), icon: 'stats-chart-outline',
+      onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) router.push(`/post-analytics/${o.postId}`); }); } });
     options.push({ key: 'edit', label: t('postOptions.editPost'), icon: 'pencil-outline',
       onPress: () => dismissThen(() => optsRef.current?.onEdit?.()) });
     // Grid visibility — songs and videos only, and only where a picture is left

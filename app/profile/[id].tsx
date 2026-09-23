@@ -47,6 +47,8 @@ import { isSlideshow } from '../../lib/slideshow';
 import { createNotification } from '../../lib/createNotification';
 import { hasOpenShop } from '../../lib/shop';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
+// The app's one celebratory gradient, shared rather than copied — see components/FollowButton.
+import { LISTEN_FILL } from '../../components/ListenButton';
 import { useFollow } from '../../contexts/FollowContext';
 import { ProfileSkeleton } from '../../components/Skeleton';
 import { createScreenCache } from '../../lib/screenCache';
@@ -99,7 +101,7 @@ const profileCache = createScreenCache<ProfileSnapshot>(24);
 
 export default function PublicProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const { t } = useTranslation();
   const linkGuard = useLinkGuard();
   const styles = useThemedStyles(makeStyles);
@@ -416,6 +418,16 @@ export default function PublicProfileScreen() {
   const isOwnProfile = currentUserId === id;
   const isFriend = isFollowing && followsMe;
   const followLabel = isFriend ? t('profile.friends') : isFollowing ? t('profile.followingBtn') : followsMe ? t('profile.followBack') : t('profile.follow');
+  // FOUR STATES, FOUR LOOKS — the same ones the pill in the feeds wears
+  // (components/FollowButton explains why each is what it is). This button used
+  // to paint Follow and Follow-back the same brand orange, so the rarest, most
+  // wanted tap in the app looked like the commonest one.
+  const isFollowBack = !isFollowing && followsMe;
+  const isFollowNew = !isFollowing && !followsMe;
+  // The solid state inverts on light: a white pill on off-white paper vanishes.
+  const followStops: readonly [string, string] = mode === 'light'
+    ? ['#2E2E36', '#16161A']
+    : ['#FFFFFF', '#E3E3E9'];
   const ownerTier = chosenTier(profile);
   const ringColors = resolveRingColors(profile, ownerTier);
   const bannerColors = resolveBannerColors(ownerTier, colors.background);
@@ -934,16 +946,37 @@ export default function PublicProfileScreen() {
       {!isOwnProfile && (
         <View style={styles.actionButtons}>
           <TouchableOpacity
-            style={[styles.followButton, isFollowing && styles.followingButton]}
+            style={[styles.followButton, !isFollowNew && !isFollowBack && styles.followingButton, isFriend && styles.friendsButton]}
             onPress={handleFollow}
             disabled={followLoading}
+            activeOpacity={0.85}
           >
+            {/* The two ACTION states carry a fill; the two connected states are
+                plain bordered buttons with quiet text, because there is nothing
+                left to do on them. Follow-back wears the gold-led gradient — it
+                is the highest-intent tap here, and it should not look like the
+                stranger's button. */}
+            {(isFollowNew || isFollowBack) && (
+              <LinearGradient
+                colors={(isFollowNew ? followStops : LISTEN_FILL) as any}
+                start={{ x: 0, y: 0 }}
+                end={isFollowNew ? { x: 0, y: 1 } : { x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+            )}
             {followLoading
-              ? <ActivityIndicator color={colors.text} size="small" />
+              ? <ActivityIndicator color={isFollowNew ? colors.background : colors.text} size="small" />
               : (
                 <View style={styles.followBtnInner}>
-                  {isFriend && <Ionicons name="people" size={15} color={colors.text} />}
-                  <Text style={styles.followButtonText}>{followLabel}</Text>
+                  {isFriend && <Ionicons name="people" size={15} color={colors.textSecondary} />}
+                  <Text
+                    style={[
+                      styles.followButtonText,
+                      isFollowNew ? { color: colors.background } : isFollowBack ? { color: '#fff' } : { color: colors.textSecondary },
+                    ]}
+                  >
+                    {followLabel}
+                  </Text>
                 </View>
               )
             }
@@ -1049,10 +1082,20 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   shopButton: { backgroundColor: colors.success, borderRadius: RADIUS.md, paddingVertical: SPACING.sm + 2, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
   shopButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   actionButtons: { flexDirection: 'row', paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: SPACING.sm },
-  followButton: { flex: 1, backgroundColor: colors.primary, borderRadius: RADIUS.md, paddingVertical: SPACING.sm + 2, alignItems: 'center' },
+  // justifyContent, and a lineHeight on the label: with padding alone the text
+  // sat a hair above centre, because a font's box carries more room under the
+  // baseline than over it. overflow hidden keeps the fill inside the radius.
+  followButton: {
+    flex: 1, borderRadius: RADIUS.md, overflow: 'hidden',
+    paddingVertical: SPACING.sm + 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
   followingButton: { backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border },
-  followBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  followButtonText: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  // Mutual: a stronger neutral edge, not a brand-tinted one — distinguished by
+  // weight rather than hue, exactly as the feed pill does it.
+  friendsButton: { borderColor: colors.borderStrong },
+  followBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  followButtonText: { fontSize: 14, fontWeight: '700', lineHeight: 18, includeFontPadding: false },
   messageButton: { flex: 1, backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.md, paddingVertical: SPACING.sm + 2, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
   messageButtonText: { color: colors.text, fontSize: 14, fontWeight: '600' },
 

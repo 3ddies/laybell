@@ -9,6 +9,7 @@ import { useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { adDestination, adSkipAfterMs, type AdMeta } from '../lib/ads';
 import AppVideo from './AppVideo';
+import { useAudioControls } from '../contexts/AudioContext';
 
 // A full-screen Laybell TV ad interstitial COVER in the landscape mode.
 // Honors the advertiser's skip mode: 'unskippable' plays fully (unlocks the
@@ -41,6 +42,13 @@ export default function TVAdOverlay({ item, active, insets, onDone, onSkip, onRe
   const progress = useRef(new Animated.Value(0)).current;
   const fade = useRef(new Animated.Value(0)).current; // gentle fade-in on appear
   useEffect(() => { Animated.timing(fade, { toValue: 1, duration: 200, useNativeDriver: true }).start(); }, []);
+
+  // A break owns the audio channel outright. The reel viewer has already
+  // stopped the song by the time an overlay appears, so this is belt and
+  // braces — but a paid creative must never be the thing that goes quiet.
+  // PAUSE, never stop, for exactly that reason (see useAudioControls).
+  const { pause: pauseMainSong } = useAudioControls();
+  useEffect(() => { pauseMainSong(); }, [pauseMainSong]);
   const doneRef = useRef(false);
   const lastPosRef = useRef(0);
   const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -168,6 +176,8 @@ export default function TVAdOverlay({ item, active, insets, onDone, onSkip, onRe
             contentFit="contain"
             loop
             active={active}
+            // See above: an ad is heard, or it should not have been charged for.
+            ownsAudio
             muted={false}
             poster={item.thumbnail_url ?? undefined}
             posterContentFit="contain"

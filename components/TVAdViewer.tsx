@@ -13,6 +13,7 @@ import { openAdOptions } from '../contexts/AdOptionsContext';
 import { adDestination, type AdMeta } from '../lib/ads';
 import { openAdCta } from '../contexts/AdCtaContext';
 import AppVideo from './AppVideo';
+import { useAudioControls } from '../contexts/AudioContext';
 
 // Fullscreen, DISMISSABLE viewer for a Laybell TV ad — opened by tapping a
 // sponsored card on the TV landing grid. Unlike the woven ads (landscape pager /
@@ -38,6 +39,17 @@ export default function TVAdViewer({ item, uid, onClose }: {
   const insets = useSafeAreaInsets();
 
   const meta = item?.__ad;
+
+  // Showing an ad pauses the user's music. Laybell TV has no such pause of its
+  // own, so this is the one that matters: a creative opened from the grid while
+  // a song plays would otherwise be muted by the app-wide rule — a charged
+  // impression nobody heard. Keyed on the item, because this component stays
+  // mounted with item=null between ads.
+  //
+  // PAUSE, never stop — stop() deactivates the shared audio session and would
+  // mute the creative it is here to protect (see useAudioControls).
+  const { pause: pauseMainSong } = useAudioControls();
+  useEffect(() => { if (item) pauseMainSong(); }, [item, pauseMainSong]);
   const progress = useRef(new Animated.Value(0)).current;
 
   // ── Swipe-down to exit ──────────────────────────────────────────────────────
@@ -143,6 +155,9 @@ export default function TVAdViewer({ item, uid, onClose }: {
             contentFit="contain"
             active
             loop
+            // A paid creative is never silenced by the music player: it stops
+            // the song instead (above). A muted ad is still a charged one.
+            ownsAudio
             muted={false}
             poster={item.thumbnail_url ?? undefined}
             posterContentFit="contain"

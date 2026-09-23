@@ -40,12 +40,14 @@ function generateThumb(mediaUrl: string): Promise<string | null> {
 // the clip it was made from. It used to copy the props into state and sync them
 // in an effect, and a reused view then drew the previous post's picture for a
 // frame before the effect caught up.
-export default function VideoThumb({ thumbnailUrl, mediaUrl, style, placeholder }: {
+export default function VideoThumb({ thumbnailUrl, mediaUrl, style, placeholder, contentFit = 'cover' }: {
   thumbnailUrl?: string | null;
   mediaUrl: string;
   style?: any;
   /** The post's thumbhash (posts.placeholder), drawn blurred while the picture loads. */
   placeholder?: string | null;
+  /** 'contain' keeps a horizontal clip whole, with bands above and below it. */
+  contentFit?: 'cover' | 'contain';
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -63,7 +65,7 @@ export default function VideoThumb({ thumbnailUrl, mediaUrl, style, placeholder 
   const uri = thumbnailUrl || thumbCache.get(mediaUrl) || (generated?.src === mediaUrl ? generated.uri : null);
 
   if (uri || placeholder) {
-    return <ExpoImage source={uri ? { uri } : null} style={style} contentFit="cover" cachePolicy="memory-disk" recyclingKey={mediaUrl} {...previewImageProps({ placeholder })} />;
+    return <ExpoImage source={uri ? { uri } : null} style={style} contentFit={contentFit} cachePolicy="memory-disk" recyclingKey={mediaUrl} {...previewImageProps({ placeholder })} />;
   }
   return (
     <LinearGradient colors={['#1C0E06', '#120A04']} style={[style, styles.fallback]}>

@@ -49,9 +49,11 @@ export async function removePublicUrls(urls: (string | null | undefined)[]): Pro
 // (supabase/sql/stream_backfill.sql) — without it, deleting a migrated post
 // would orphan that MP4 (media_url points at cloudflarestream.com by then,
 // which bucketPathFromPublicUrl rightly ignores). thumb_url — the post's and each
-// slide's — is the small copy grids load (1.0.4, lib/mediaPreview).
+// slide's — is the small copy grids load (1.0.4, lib/mediaPreview), and
+// preview_url is a video's looping Explore clip (1.0.4, lib/videoPreview); both
+// live in the post's own folder, so they go with it.
 export function collectPostMediaUrls(post: any): string[] {
-  const urls: (string | null | undefined)[] = [post?.media_url, post?.thumbnail_url, post?.cover_url, post?.legacy_media_url, post?.thumb_url];
+  const urls: (string | null | undefined)[] = [post?.media_url, post?.thumbnail_url, post?.cover_url, post?.legacy_media_url, post?.thumb_url, post?.preview_url];
   const slides = Array.isArray(post?.slides) ? post.slides : [];
   for (const s of slides) { urls.push(s?.url); urls.push(s?.thumbnail_url); urls.push(s?.thumb_url); }
   return urls.filter(Boolean) as string[];

@@ -3,7 +3,7 @@ import {
   loadAffinityProfileFast, loadSeenPostIds, recordSeenPostIds, scorePost, arrangeFeed,
   EMPTY_PROFILE, type UserAffinityProfile, type ScoreOpts,
 } from '../../lib/feedScorer';
-import { loadFeedSnapshot, saveFeedSnapshot } from '../../lib/feedSnapshot';
+import { loadFeedSnapshot, saveFeedSnapshot, SNAPSHOT_AFTER_MS } from '../../lib/feedSnapshot';
 import { mergeFreshBelow } from '../../lib/feedMerge';
 import { markHomePainted } from '../../lib/startupGate';
 import { fullImagePreviewProps } from '../../lib/mediaPreview';
@@ -857,7 +857,10 @@ export default function HomeScreen() {
   // (lib/feedSnapshot), and whether the reader has started scrolling — which
   // decides whether the fresh feed replaces the saved one or continues below it.
   const snapshotShownRef = useRef(false);
+  // Pending snapshot paint — cancelled the moment the fresh feed paints.
+  const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedTouchedRef = useRef(false);
+  useEffect(() => () => { if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current); }, []);
 
   // While a background upload's optimistic card is showing, hide the real DB row
   // with the same id so the two never appear together — the card hands off to the
@@ -964,7 +967,7 @@ export default function HomeScreen() {
         if (avatar) stills.push(avatar);
         // Song URL resolution is the slow half of a song post's first play —
         // resolve the upcoming ones now (prefetchSong dedupes inflight).
-        if (songPlaysFor(p) && songWarms < (deep ? 8 : 4)) { songWarms++; try { musicCtl.current.prefetchSong(p.song_id); } catch {} }
+        if (songPlaysFor(p) && songWarms < (deep ? 8 : 4)) { songWarms++; try { musicCtl.current.prefetchSong(p.song_id, null, ambientMixFor(p)); } catch {} }
       }
       // Warm the disk/memory image cache for every upcoming still + avatar so
       // post-gate scrolling decodes from cache instead of the network.
@@ -1332,7 +1335,9 @@ export default function HomeScreen() {
       const wSong = byGeom.warmItem && songPlaysFor(byGeom.warmItem) ? byGeom.warmItem.song_id : null;
       if (wSong && wSong !== lastWarmSongRef.current) {
         lastWarmSongRef.current = wSong;
-        try { musicCtl.current.prefetchSong(wSong); } catch {}
+        // With the mix: a mixed post's bytes are staged AT its part, so landing
+        // on it needs no seek (that seek was the slow half of a video post).
+        try { musicCtl.current.prefetchSong(wSong, null, ambientMixFor(byGeom.warmItem)); } catch {}
       }
       return;
     }
@@ -1462,7 +1467,7 @@ export default function HomeScreen() {
     // The impression loop below stays live: it's cheap (in-memory dedupe +
     // fire-and-forget RPC) and impression semantics must not change.
     const firstMusic = viewableItems.find(v => songPlaysFor(v.item));
-    if (firstMusic) musicCtl.current.prefetchSong(firstMusic.item.song_id);
+    if (firstMusic) musicCtl.current.prefetchSong(firstMusic.item.song_id, null, ambientMixFor(firstMusic.item));
     // ALWAYS park + (at rest) arm the deferred flush — a direct apply here
     // could fire a second player create moments after the rest-flush one
     // (this pair has minimumViewTime 90ms, so it can land just after rest).
@@ -1885,17 +1890,30 @@ export default function HomeScreen() {
     const userId = session?.user?.id ?? null;
     if (userId) setCurrentUserId(userId);
 
-    // Last session's first screen, painted at once while the fresh feed loads
-    // (lib/feedSnapshot) — Instagram opens on what you last saw, not a skeleton.
+    // Last session's first screen (lib/feedSnapshot) — but only if the fresh
+    // feed is going to be SLOW.
+    //
+    // The feed's oldest rule is that it paints once, already in its final order,
+    // because a post seen moving after it lands reads as broken (see the single
+    // arranged paint in fetchPosts). A snapshot painted the instant it loads
+    // breaks that rule on every fast start: the reader gets last session's order
+    // for a moment and then watches today's order replace it.
+    //
+    // So it is a RACE. The fresh feed usually wins on a normal connection and
+    // the snapshot is never seen at all; when the network is slow enough that
+    // the alternative is a skeleton, the snapshot paints — and from then on
+    // nothing already on screen is allowed to move (see the merge below).
     if (userId) {
-      const snap = await loadFeedSnapshot<Post>(userId);
-      if (snap && fetchSeq.current === 0) {
+      const snapPromise = loadFeedSnapshot<Post>(userId);
+      snapshotTimerRef.current = setTimeout(async () => {
+        const snap = await snapPromise;
+        if (!snap || fetchSeq.current !== 0 || postsRef.current.length > 0) return;
         snapshotShownRef.current = true;
         setLikedPosts(new Set(snap.liked));
         setSavedPosts(new Set(snap.saved));
         setPosts(snap.posts);
         setLoading(false);
-      }
+      }, SNAPSHOT_AFTER_MS);
     }
 
     // The seen list and the taste profile load alongside the feed request instead
@@ -2170,12 +2188,17 @@ export default function HomeScreen() {
 
       // A newer fetch may have started while we built the promoted layer.
       if (fetchSeq.current !== seq) return;
-      // Last session's saved first screen may still be up (lib/feedSnapshot). Not
-      // scrolled yet: the fresh feed replaces it. Scrolled: what is on screen stays
-      // where it is and the fresh feed continues below it (lib/feedMerge).
+      // The snapshot lost the race and is on screen (lib/feedSnapshot). Whatever
+      // is up STAYS where it is and the fresh feed continues below it
+      // (lib/feedMerge) — scrolled or not. Replacing it would reorder posts the
+      // reader is looking at, which is the one thing this feed does not do.
+      //
+      // It cannot ossify: what gets SAVED below is the fresh order's head, never
+      // this merged view, so tomorrow opens on today's feed.
       const replacingSnapshot = snapshotShownRef.current;
       snapshotShownRef.current = false;
-      setPosts(replacingSnapshot && feedTouchedRef.current ? mergeFreshBelow(postsRef.current, woven) : woven);
+      if (snapshotTimerRef.current) { clearTimeout(snapshotTimerRef.current); snapshotTimerRef.current = null; }
+      setPosts(replacingSnapshot ? mergeFreshBelow(postsRef.current, woven) : woven);
       setLoading(false);
       setRefreshing(false);
       if (userId) saveFeedSnapshot(userId, organicList, likedNow, savedNow);

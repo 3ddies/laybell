@@ -29,6 +29,7 @@ import FloatingReactions from '../../components/FloatingReactions';
 import LiveDonationAlerts from '../../components/LiveDonationAlerts';
 import { WhepPlayer, getRTCView, webrtcAvailable } from '../../lib/whip';
 import AppVideo from '../../components/AppVideo';
+import { useAudioControls } from '../../contexts/AudioContext';
 import { Skeleton, SkeletonCircle } from '../../components/Skeleton';
 
 // The cycle behind the react button's long-press. Kept short and unambiguous —
@@ -208,6 +209,10 @@ function LiveCard({
             style={StyleSheet.absoluteFill}
             contentFit={letterbox ? 'contain' : 'cover'}
             active={active}
+            // Watching a broadcast IS the audio (see the stop-the-song effect in
+            // LiveScreen) — it keeps its sound rather than going quiet under a
+            // song the way an ordinary video does.
+            ownsAudio
             // A live edge is the most stall-prone surface in the app: there's no
             // buffer ahead to ride out a dip, so a weak signal freezes the frame.
             showStallIndicator
@@ -362,6 +367,17 @@ export default function LiveScreen() {
     else ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
   }, [isFocused, visibleHorizontal]);
   useEffect(() => () => { ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {}); }, []);
+
+  // Landing on a broadcast pauses your music. A live stream owns the audio
+  // channel while you watch it, and the WHEP player is a native view with no
+  // mute this side of it — so the song has to go quiet, or the two talk over
+  // each other with nothing able to stop it.
+  //
+  // PAUSE, never stop: this fires when a card becomes visible, by which time
+  // the stream is already playing, and stop() deactivates the shared audio
+  // session under it (see useAudioControls).
+  const { pause: pauseSong } = useAudioControls();
+  useEffect(() => { if (isFocused && visibleId) pauseSong(); }, [isFocused, visibleId, pauseSong]);
 
   // Rotating swaps the pager's page height while the scroll offset stays in
   // pixels — re-align the list to the card being watched so it never lands

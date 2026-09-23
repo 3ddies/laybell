@@ -49,7 +49,10 @@ import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import { SPACING, RADIUS, quietText, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
-import { unseenShopActivityCount } from '../../lib/shop';
+import { unseenShopActivityCount, hasOpenShop } from '../../lib/shop';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import ProfileCompletion from '../../components/ProfileCompletion';
+import { profileProgress, type ProfileTaskKey } from '../../lib/profileCompletion';
 import TranslatableText from '../../components/TranslatableText';
 import { ProfileSkeleton } from '../../components/Skeleton';
 
@@ -141,9 +144,36 @@ export default function ProfileScreen() {
   // or declined orders) → red alert dot on the Shop button, refreshed whenever
   // the profile regains focus (e.g. returning from the shop hub clears it).
   const [shopAlertCount, setShopAlertCount] = useState(0);
+  // For the "complete your profile" card (components/ProfileCompletion). null =
+  // not looked yet, which reads as "not done" without claiming it is done.
+  const [hasShop, setHasShop] = useState<boolean | null>(null);
+  const liveId = liveProfile?.id ?? null;
+  // Waved away for good, per account: somebody who will never open a shop should
+  // be able to say so once instead of being asked forever. The badge stays
+  // earnable either way — dismissing hides the ask, not the reward.
+  const [checklistHidden, setChecklistHidden] = useState(false);
+  const checklistKey = profile?.id ? `profile_checklist_hidden_v1_${profile.id}` : null;
+  useEffect(() => {
+    if (!checklistKey) return;
+    let live = true;
+    AsyncStorage.getItem(checklistKey)
+      .then((v) => { if (live) setChecklistHidden(v === '1'); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [checklistKey]);
+  const dismissChecklist = useCallback(() => {
+    setChecklistHidden(true);
+    if (checklistKey) AsyncStorage.setItem(checklistKey, '1').catch(() => {});
+  }, [checklistKey]);
   useFocusEffect(useCallback(() => {
     unseenShopActivityCount().then(setShopAlertCount).catch(() => {});
   }, []));
+  // Whether a shop exists at all — one of the four tasks, and re-checked on
+  // focus so opening one ticks it off when you come back.
+  useFocusEffect(useCallback(() => {
+    if (!liveId) return;
+    hasOpenShop(liveId).then(setHasShop).catch(() => {});
+  }, [liveId]));
 
   // Per-thumbnail nodes so opening a post/reel can expand out of the tapped cell.
   const gridRefs = useRef<Record<string, any>>({});
@@ -688,6 +718,20 @@ export default function ProfileScreen() {
     }
   }
 
+  // Where each unfinished task gets done. The composer is a TAB, not a route —
+  // the same navigate the sub-tab stepper uses to reach Music.
+  function openProfileTask(key: ProfileTaskKey) {
+    switch (key) {
+      case 'avatar':
+      case 'bio': router.push('/edit-profile'); return;
+      case 'post': (navigation as any).navigate('post'); return;
+      // The shop page is where a shop is opened (app/shop/index.tsx), so the
+      // task and the Shop button lead to the same place.
+      case 'shop': router.push('/shop?tab=mine'); return;
+      default: return;
+    }
+  }
+
   // Own-post options sheet (edit / delete / archive) — used by long-press in both
   // the normal grid and the custom layout blocks.
   function showPostOptions(post: any) {
@@ -749,8 +793,32 @@ export default function ProfileScreen() {
   // category padded to look fuller than it is, which is the one thing the films
   // catalogue was explicitly built not to do.
   function renderGridHeader(key: string) {
+    // The completion rail rides the POSTS grid's first row rather than the
+    // page's fixed header: everything above the pager costs its pixels on every
+    // screen, forever, and this rail was squeezing the very grid it points at.
+    // Here it scrolls away with the content and comes back when you scroll up.
+    // Asked here, not inside the component: an element that renders null is
+    // still an element, and the grid would carry an invisible first row for it.
+    const facts = { avatarUrl, bio: profile?.bio, posts: stats.posts, hasShop };
+    const showChecklist = key === 'posts' && !checklistHidden && !profileProgress(facts).complete;
+    const checklist = showChecklist ? (
+      <ProfileCompletion
+        facts={facts}
+        onTask={openProfileTask}
+        onDismiss={dismissChecklist}
+        // Two things own horizontal swipes on this screen and BOTH have to stand
+        // down while the row is being dragged: the page's own fling responder
+        // (hRailTouchRef, as the other rails do) and — because this row lives on
+        // Posts, where it is enabled — the tab navigator's swipe.
+        onGuardStart={() => { hRailTouchRef.current = true; setTabSwipe(false); }}
+        onGuardEnd={() => {
+          hRailTouchRef.current = false;
+          setTabSwipe(Platform.OS === 'android' || activeTabRef.current === 'posts');
+        }}
+      />
+    ) : null;
     if (key === 'posts' && pageLayout) {
-      return (
+      const layout = (
         <ProfileLayoutGrid
           layout={pageLayout}
           posts={userPosts}
@@ -766,7 +834,9 @@ export default function ProfileScreen() {
           onLongPressPost={showPostOptions}
         />
       );
+      return <>{checklist}{layout}</>;
     }
+    if (checklist) return checklist;
     if (key === 'videos') {
       const all = dataForTab('videos');
       const films = all.filter((p: any) => isFilm(p));

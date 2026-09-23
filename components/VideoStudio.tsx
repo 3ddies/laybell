@@ -10,6 +10,7 @@ import * as VideoThumbnails from 'expo-video-thumbnails';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../contexts/LanguageContext';
 import { usePostMusicActions, usePostMusicMuted } from '../contexts/PostMusicContext';
+import { useAudioControls } from '../contexts/AudioContext';
 import AppVideo, { type AppVideoHandle } from './AppVideo';
 import StickerTimeline, { TIMELINE_H } from './StickerTimeline';
 import StickerLayer, {
@@ -279,6 +280,16 @@ export default function VideoStudio({
     playSong(HOST, songId, songUrl, { startSec, volume: mix.songVolume, videoStartSec: windowStart });
   }, [songOn, songId, songUrl, startSec, mix.songVolume, windowStart, playSong, stopSong]);
   useEffect(() => () => stopSong(HOST), [stopSong]);
+
+  // Opening the studio pauses the user's own music. Everything on this screen
+  // is a judgement about sound — the clip's audio, the song under it, the
+  // balance between them — and none of it can be judged over a track that is
+  // also playing. The ambient player (above) is what the studio itself uses.
+  //
+  // PAUSE, never stop: stop() deactivates the shared audio session and takes
+  // this clip's own audio down with it (see useAudioControls).
+  const { pause: pauseMainSong } = useAudioControls();
+  useEffect(() => { pauseMainSong(); }, [pauseMainSong]);
 
   // Sound is only for a song that plays: removing the song, or making this a music
   // video, closes it.
@@ -574,6 +585,9 @@ export default function VideoStudio({
             active={playing}
             loop
             muted={videoMuted}
+            // The studio's own mix decides what is heard here; it stops the
+            // music player on open rather than going silent under it.
+            ownsAudio
             volume={videoVolume}
             ignoreSuspend
             poster={posterUri}

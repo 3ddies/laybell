@@ -448,6 +448,14 @@ export default function PostDetailScreen() {
               <AppVideo
                 source={{ uri: post.media_url }}
                 style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(post.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
+                // NO `ownsAudio` here, deliberately. The takeovers that exist to
+                // play video — the reel viewer, stories, a live broadcast, an ad —
+                // stop the user's music when they open. A post page is not one of
+                // those: it is opened to read a caption as often as to watch, and
+                // killing someone's music on every tap into a video post would be
+                // a worse trade than the video being quiet until they pause it.
+                // So this one follows the app-wide rule instead (AppVideo,
+                // useSongAudible) and goes silent while a song plays.
                 muted={songPlaysFor(post) ? videoSoundFor(post, songMuted).muted : false}
                 volume={songPlaysFor(post) ? videoSoundFor(post, songMuted).volume : 1}
                 nativeControls

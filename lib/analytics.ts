@@ -182,3 +182,181 @@ export async function fetchCreatorAnalytics(userId: string): Promise<CreatorAnal
     byHour, byDay, peakHour, peakDay, contentMix, topPosts,
   };
 }
+
+// ── Per-post analytics (TikTok-style "Video analysis", but only from REAL data) ──
+// Reached from the post's 3-dot menu, owner-only. Everything here is a genuine
+// count or a genuine event timeline — no fabricated demographics, retention,
+// geography or traffic sources, none of which the app collects.
+
+export type SeriesPoint = { label: string; value: number };
+export type SeriesUnit = 'hour' | 'day' | 'week';
+
+export type PostAnalytics = {
+  id: string;
+  type: string;
+  caption: string;
+  thumb: string | null;
+  createdAt: string;
+  durationSec: number | null;
+  isOwner: boolean;
+  // Raw counts.
+  views: number;   // video/photo views
+  plays: number;   // audio plays (stream_count)
+  likes: number;
+  comments: number;
+  saves: number;
+  shares: number;
+  reach: number;   // views + plays — the closest thing to "how many saw it"
+  engagements: number;   // likes + comments + saves + shares
+  engagementRate: number; // engagements / reach, as a percentage
+  // Views + plays over time, from the owner-gated RPC (continuous, zero-filled).
+  series: SeriesPoint[];
+  seriesUnit: SeriesUnit;
+  seriesTotal: number;
+  // Likes + comments over time (public data), same axis.
+  engagementSeries: SeriesPoint[];
+  // How this post sits among the creator's own posts.
+  vsAverage: number | null;  // engagements ÷ their average post (e.g. 1.4×)
+  percentile: number | null; // 0..100, higher is better
+  rank: number | null;       // 1 = best
+  totalPosts: number;
+};
+
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+const WEEK_MS = 7 * DAY_MS;
+
+// Truncate a timestamp to the start of its bucket, in UTC — matching Postgres
+// date_trunc(), which runs in the database's UTC session. If the client bucketed
+// in local time the keys wouldn't line up with the RPC's and counts would land
+// in the wrong bar.
+function utcTrunc(ms: number, unit: SeriesUnit): number {
+  const d = new Date(ms);
+  if (unit === 'hour') return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours());
+  const midnight = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  if (unit === 'day') return midnight;
+  // week: Postgres date_trunc('week') is the Monday. getUTCDay(): 0=Sun.
+  const backToMonday = (new Date(midnight).getUTCDay() + 6) % 7;
+  return midnight - backToMonday * DAY_MS;
+}
+function stepMs(unit: SeriesUnit): number {
+  return unit === 'hour' ? HOUR_MS : unit === 'day' ? DAY_MS : WEEK_MS;
+}
+// The continuous bucket axis from the post's creation to now (capped so a very
+// old post can't produce a runaway array).
+function axisFor(createdMs: number, unit: SeriesUnit): number[] {
+  const start = utcTrunc(createdMs, unit);
+  const end = utcTrunc(Date.now(), unit);
+  const step = stepMs(unit);
+  const out: number[] = [];
+  for (let t = start; t <= end && out.length < 400; t += step) out.push(t);
+  return out.length ? out : [start];
+}
+function labelFor(bucketMs: number, firstMs: number, unit: SeriesUnit): string {
+  if (unit === 'hour') return `${Math.round((bucketMs - firstMs) / HOUR_MS)}h`;
+  const d = new Date(bucketMs);
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+}
+// Pick a bucket size from the post's age: fresh posts read best by the hour, and
+// older ones would be an unreadable forest of hourly bars.
+function unitForAge(createdMs: number): SeriesUnit {
+  const days = (Date.now() - createdMs) / DAY_MS;
+  return days < 2 ? 'hour' : days <= 90 ? 'day' : 'week';
+}
+
+export async function fetchPostAnalytics(postId: string): Promise<PostAnalytics | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const uid = user?.id ?? null;
+
+  const { data: post } = await supabase
+    .from('posts')
+    .select('id, user_id, type, caption, created_at, view_count, stream_count, save_count, share_count, duration_seconds, cover_url, thumbnail_url, media_url, likes(count), comments(count)')
+    .eq('id', postId)
+    .maybeSingle();
+  if (!post) return null;
+  const p = post as any;
+  const isOwner = !!uid && p.user_id === uid;
+
+  const likes = p.likes?.[0]?.count || 0;
+  const comments = p.comments?.[0]?.count || 0;
+  const saves = p.save_count || 0;
+  const shares = p.share_count || 0;
+  const views = p.view_count || 0;
+  const plays = p.stream_count || 0;
+  const reach = views + plays;
+  const engagements = likes + comments + saves + shares;
+  const engagementRate = reach > 0 ? (engagements / reach) * 100 : 0;
+
+  const createdMs = new Date(p.created_at).getTime();
+  const unit = unitForAge(createdMs);
+
+  // Views/plays over time come from the owner-gated RPC (the raw rows are not
+  // client-readable). Likes/comments over time are public and read directly.
+  const [seriesRes, likeRows, commentRows] = await Promise.all([
+    isOwner
+      ? supabase.rpc('post_view_series', { p_post_id: postId, p_unit: unit })
+      : Promise.resolve({ data: [] as any[] }),
+    supabase.from('likes').select('created_at').eq('post_id', postId).order('created_at', { ascending: true }).limit(5000),
+    supabase.from('comments').select('created_at').eq('post_id', postId).order('created_at', { ascending: true }).limit(3000),
+  ]);
+
+  const axis = axisFor(createdMs, unit);
+  const first = axis[0];
+
+  const rpcRows = ((seriesRes as any).data ?? []) as { bucket: string; views: number; plays: number }[];
+  const reachByBucket = new Map<number, number>();
+  for (const r of rpcRows) {
+    const ms = new Date(r.bucket).getTime();
+    reachByBucket.set(ms, (reachByBucket.get(ms) || 0) + (r.views || 0) + (r.plays || 0));
+  }
+  let seriesTotal = 0;
+  const series: SeriesPoint[] = axis.map((ms) => {
+    const v = reachByBucket.get(ms) || 0;
+    seriesTotal += v;
+    return { label: labelFor(ms, first, unit), value: v };
+  });
+
+  const engByBucket = new Map<number, number>();
+  for (const row of [...(likeRows.data ?? []), ...(commentRows.data ?? [])] as any[]) {
+    const ms = utcTrunc(new Date(row.created_at).getTime(), unit);
+    engByBucket.set(ms, (engByBucket.get(ms) || 0) + 1);
+  }
+  const engagementSeries: SeriesPoint[] = axis.map((ms) => ({
+    label: labelFor(ms, first, unit),
+    value: engByBucket.get(ms) || 0,
+  }));
+
+  // Where this post ranks among the creator's own posts (engagement).
+  let vsAverage: number | null = null, percentile: number | null = null, rank: number | null = null, totalPosts = 0;
+  if (isOwner && uid) {
+    const { data: mine } = await supabase
+      .from('posts')
+      .select('id, save_count, share_count, likes(count), comments(count)')
+      .eq('user_id', uid)
+      .limit(1000);
+    const rows = (mine ?? []) as any[];
+    totalPosts = rows.length;
+    if (totalPosts > 1) {
+      const engOf = (r: any) => (r.likes?.[0]?.count || 0) + (r.comments?.[0]?.count || 0) + (r.save_count || 0) + (r.share_count || 0);
+      const engs = rows.map(engOf);
+      const avg = engs.reduce((a, b) => a + b, 0) / totalPosts;
+      vsAverage = avg > 0 ? engagements / avg : null;
+      const higher = engs.filter((e) => e > engagements).length;
+      rank = higher + 1;
+      percentile = Math.round(((totalPosts - rank) / (totalPosts - 1)) * 100);
+    }
+  }
+
+  return {
+    id: p.id,
+    type: p.type,
+    caption: p.caption || '',
+    thumb: p.cover_url ?? p.thumbnail_url ?? (p.type === 'image' ? p.media_url : null),
+    createdAt: p.created_at,
+    durationSec: p.duration_seconds ?? null,
+    isOwner,
+    views, plays, likes, comments, saves, shares, reach, engagements, engagementRate,
+    series, seriesUnit: unit, seriesTotal, engagementSeries,
+    vsAverage, percentile, rank, totalPosts,
+  };
+}

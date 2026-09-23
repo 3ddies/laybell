@@ -248,6 +248,9 @@ export default function ReelAd({ item, visible, paused, mountPlayer, insets, onS
           // isFocused: an ad's sound must not keep playing under a screen its
           // own CTA pushed (ReelPage gates its playback the same way).
           play={visible && !paused && isFocused}
+          // A paid creative is heard or it should not have been charged for; the
+          // reel viewer has already stopped the song by the time an ad page shows.
+          ownsAudio
           muted={false}
           loop
           contentFit={landscape ? 'contain' : 'cover'}

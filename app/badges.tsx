@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { openAppRating } from '../lib/appRating';
 import { useProfile } from '../contexts/ProfileContext';
 import BadgeEmblem from '../components/BadgeEmblem';
 import SwipeBackPager from '../components/SwipeBackPager';
@@ -134,6 +135,16 @@ export default function BadgesScreen() {
     setLoading(false);
     setRefreshing(false);
   }, []);
+
+  // The store's review page, and the badge that follows. Only a store that
+  // actually opened counts (lib/appRating), and the reload right after is what
+  // puts the newly earned badge on screen when the user comes back. The id is
+  // read from the session on the phone, not from the auth server.
+  const rateApp = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (await openAppRating(session?.user?.id ?? null)) load();
+  }, [load]);
+
   useEffect(() => { load(); }, [load]);
 
   const emblemTier = evalRes?.tier ?? rawTier(profile);
@@ -368,7 +379,7 @@ export default function BadgesScreen() {
               {/* Catalog grouped by category — most recently earned categories first. */}
               <Text style={styles.sectionTitle}>{t('badges.allBadges')}</Text>
               {orderedCats.map((cat) => (
-                <CategoryCard key={cat} category={cat} metrics={metrics} held={held} t={t} />
+                <CategoryCard key={cat} category={cat} metrics={metrics} held={held} t={t} onRate={rateApp} />
               ))}
 
               <Text style={styles.footnote}>{t('badges.footnote')}</Text>
@@ -454,7 +465,7 @@ export default function BadgesScreen() {
   );
 }
 
-function CategoryCard({ category, metrics, held, t }: { category: BadgeCategory; metrics: BadgeMetrics | null; held: Set<string>; t: (key: string, vars?: Record<string, string | number>) => string }) {
+function CategoryCard({ category, metrics, held, t, onRate }: { category: BadgeCategory; metrics: BadgeMetrics | null; held: Set<string>; t: (key: string, vars?: Record<string, string | number>) => string; onRate: () => void }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
@@ -507,6 +518,29 @@ function CategoryCard({ category, metrics, held, t }: { category: BadgeCategory;
           it needs a deliberate trip to the invite screen. Without a way through
           from here, the badge reads as a wall: you learn it exists and are told
           nothing about how to move it. */}
+      {/* Rating is the other one the app cannot advance on its own: it happens
+          in the store, not in here. The button opens the review page and, once
+          the store has actually taken the user, records it and re-evaluates —
+          so the badge lands on the way back. Hidden once earned: it is
+          permanent, and asking twice would be asking for a second review. */}
+      {category === 'app_rating' && !held.has('app_rating_bronze') && (
+        <TouchableOpacity
+          style={styles.catAction}
+          activeOpacity={0.85}
+          onPress={onRate}
+          accessibilityRole="button"
+          accessibilityLabel={t('badges.rateAction')}
+        >
+          <LinearGradient
+            colors={GRADIENTS.primary as any}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={styles.catActionInner}
+          >
+            <Ionicons name="star" size={15} color="#fff" />
+            <Text style={styles.catActionText}>{t('badges.rateAction')}</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      )}
       {category === 'app_sharing' && (
         <TouchableOpacity
           style={styles.catAction}

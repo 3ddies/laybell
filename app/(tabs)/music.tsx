@@ -24,7 +24,7 @@ import SlideUpSheet from '../../components/SlideUpSheet';
 import PlaylistEditor from '../../components/PlaylistEditor';
 import PlaylistOptionsSheet from '../../components/PlaylistOptionsSheet';
 import TrackRow from '../../components/TrackRow';
-import ListenButton from '../../components/ListenButton';
+import ListenButton, { LISTEN_FILL } from '../../components/ListenButton';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useTabSwipeControl, isSwipeTap, useSearchSwipeLock } from '../../contexts/PagerContext';
@@ -90,7 +90,7 @@ export default function MusicScreen() {
   // also seal ITS edge fall-throughs to other app pages, not just the pager's.
   const listenModeRef = useRef(listenMode);
   listenModeRef.current = listenMode;
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
@@ -1991,25 +1991,54 @@ export default function MusicScreen() {
 
             {/* Visibility — private (just for you) or public (discoverable in
                 the User Playlists tab; slots gated by earned badge tier). */}
+            {/* What a CHOSEN option is marked in (owner, 2026-09-20): the
+                INK of the theme — white on the dark ones, near-black on light —
+                for the ring, the fill, the label and the glyph, with the brand
+                orange kept for the CHECKMARK alone.
+                
+                So the choice reads as contrast rather than colour (orange on
+                black was the loudest thing in a sheet whose actual action is the
+                Create button), and the one orange mark is the thing that says
+                "this one". FollowButton's solid pill inverts across themes for
+                the same reason. */}
             <View style={styles.visRow}>
               {([
                 { pub: false, icon: 'lock-closed', label: t('music.private'), sub: t('music.privateSub') },
-                { pub: true, icon: 'globe-outline', label: t('post.public'), sub: t('music.publicSub') },
+                // Filled, like the padlock beside it: an outline globe next to a
+                // solid lock made the two options look like different controls.
+                { pub: true, icon: 'globe', label: t('post.public'), sub: t('music.publicSub') },
               ] as const).map(opt => {
                 const on = newPlaylistPublic === opt.pub;
+                // #0A0A0A, not pure black: the same near-black FollowButton
+                // inverts to on light, so the two never look like different blacks.
+                const chosen = mode === 'light' ? '#0A0A0A' : '#FFFFFF';
                 return (
                   <TouchableOpacity
                     key={opt.label}
-                    style={[styles.visBtn, on && styles.visBtnActive]}
+                    style={[styles.visBtn, on && { borderColor: chosen, backgroundColor: chosen + '14' }]}
                     activeOpacity={0.8}
                     onPress={() => setNewPlaylistPublic(opt.pub)}
                   >
-                    <Ionicons name={opt.icon as any} size={16} color={on ? colors.primary : colors.textSecondary} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.visLabel, on && styles.visLabelActive]}>{opt.label}</Text>
-                      <Text style={styles.visSub} numberOfLines={1}>{opt.sub}</Text>
+                    {/* Glyph, title, and the check at the far end — one row. The
+                        DESCRIPTION still gets its own line below, which is what
+                        lets it fit: beside an icon there was room for about half
+                        a sentence, and that is why it used to wrap. */}
+                    <View style={styles.visTop}>
+                      <Ionicons name={opt.icon as any} size={19} color={on ? chosen : colors.textSecondary} />
+                      <Text style={[styles.visLabel, on && { color: chosen }]} numberOfLines={1}>{opt.label}</Text>
+                      {on && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
                     </View>
-                    {on && <Ionicons name="checkmark-circle" size={18} color={colors.primary} />}
+                    {/* One line, always. A longer translation shrinks a little
+                        rather than wrapping or ending in an ellipsis — what iOS
+                        does with a label that will not fit. */}
+                    <Text
+                      style={styles.visSub}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
+                    >
+                      {opt.sub}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -2026,8 +2055,18 @@ export default function MusicScreen() {
               <TouchableOpacity style={styles.modalCancel} onPress={() => { setShowNewPlaylist(false); setNewPlaylistName(''); setNewPlaylistPublic(false); }}>
                 <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalCreate} onPress={createPlaylist}>
-                <Text style={styles.modalCreateText}>{t('music.create')}</Text>
+              {/* The app's ONE celebratory gradient — the same fill the
+                  Follow-back pill and the Listen button wear (LISTEN_FILL), so
+                  the button that finishes something looks like every other
+                  button that finishes something. */}
+              <TouchableOpacity style={styles.modalCreate} onPress={createPlaylist} activeOpacity={0.9}>
+                <LinearGradient
+                  colors={LISTEN_FILL as any}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                  style={styles.modalCreateFill}
+                >
+                  <Text style={styles.modalCreateText}>{t('music.create')}</Text>
+                </LinearGradient>
               </TouchableOpacity>
             </View>
       </SlideUpSheet>
@@ -2292,15 +2331,20 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   // New-playlist visibility selector + badge-slot hint.
   visRow: { flexDirection: 'row', gap: SPACING.sm },
+  // An iOS-style choice card: generous radius, a real 2pt ring when chosen
+  // rather than a hairline that changes colour, and text that starts at the top
+  // so a two-line description grows downward instead of re-centring the row.
   visBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border,
-    borderRadius: RADIUS.md, padding: SPACING.sm + 2,
+    flex: 1, gap: 4,
+    backgroundColor: colors.background, borderWidth: 2, borderColor: 'transparent',
+    borderRadius: RADIUS.lg, paddingVertical: SPACING.sm + 4, paddingHorizontal: SPACING.sm + 4,
   },
-  visBtnActive: { borderColor: colors.primary, backgroundColor: colors.primary + '0E' },
-  visLabel: { color: colors.textSecondary, fontSize: 13.5, fontWeight: '700' },
-  visLabelActive: { color: colors.text },
-  visSub: { color: colors.textTertiary, fontSize: 11, marginTop: 1 },
+  // Glyph and title together, check pushed to the end by the title's flex.
+  visTop: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 22 },
+  // The word being chosen between, so it carries the size and the weight. flex,
+  // so the check sits at the card's edge however short the word is.
+  visLabel: { flex: 1, color: colors.textSecondary, fontSize: 16.5, fontWeight: '800', letterSpacing: -0.3 },
+  visSub: { color: colors.textTertiary, fontSize: 12 },
   visHint: { color: colors.textSecondary, fontSize: 12, marginTop: -SPACING.xs },
 
 
@@ -2329,6 +2373,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   modalBtns: { flexDirection: 'row', gap: SPACING.sm },
   modalCancel: { flex: 1, backgroundColor: colors.background, borderRadius: RADIUS.md, padding: SPACING.md, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
   modalCancelText: { color: colors.textSecondary, fontSize: 15, fontWeight: '600' },
-  modalCreate: { flex: 1, backgroundColor: colors.primary, borderRadius: RADIUS.md, padding: SPACING.md, alignItems: 'center' },
-  modalCreateText: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  // Shell owns the shape, the gradient owns the padding — the same construction
+  // components/FollowButton uses, so the fill reaches the rounded edge with no seam.
+  modalCreate: { flex: 1, borderRadius: RADIUS.md, overflow: 'hidden' },
+  modalCreateFill: { paddingVertical: SPACING.md, alignItems: 'center', justifyContent: 'center' },
+  // White, not the theme's text colour: it sits on the brand fill in every theme.
+  modalCreateText: { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
 });

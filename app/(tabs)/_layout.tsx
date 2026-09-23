@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { withLayoutContext } from 'expo-router';
-import { View, StyleSheet, Keyboard, Animated, Dimensions, Image, Text, PanResponder, Platform, Pressable } from 'react-native';
+import { View, StyleSheet, Keyboard, Animated, Dimensions, Text, PanResponder, Platform, Pressable } from 'react-native';
+// expo-image, not RN's: this avatar is on screen at every launch, and RN's Image
+// keeps no disk cache — so it re-downloaded your own face on every cold start
+// and faded it in after the bar had already drawn. See [[ui-feel-fixes]].
+import { Image } from 'expo-image';
 import { tabTick } from '../../lib/haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -159,7 +163,13 @@ function TabSlot({
           <Animated.View pointerEvents="none" shouldRasterizeIOS style={[styles.chip, { opacity: chip, backgroundColor: chipBg }]} />
           <View style={styles.avatarRing}>
             {profile?.avatar_url ? (
-              <Image source={{ uri: profile.avatar_url }} style={styles.avatarImg} />
+              <Image
+                source={{ uri: profile.avatar_url }}
+                style={styles.avatarImg}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={0}
+              />
             ) : (
               <LinearGradient colors={GRADIENTS.avatar} style={styles.avatarImg}>
                 <Text style={styles.avatarInitial}>

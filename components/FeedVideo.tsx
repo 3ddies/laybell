@@ -4,6 +4,7 @@ import { VideoView, type VideoPlayer } from 'expo-video';
 import { acquireFeedPlayer, releaseFeedPlayer } from '../lib/feedVideoPool';
 import { useFeedFocused, useFeedAppActive } from '../lib/feedVideo';
 import { useMediaSuspend } from '../contexts/MediaSuspendContext';
+import { useSongAudible } from '../contexts/AudioContext';
 import { useIdleAwareLoop } from '../hooks/useIdleAwareLoop';
 
 // Pooled video surface for Home-feed post cards (see lib/feedVideoPool — no
@@ -75,8 +76,14 @@ const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, volume = 1, on
   const { idleRef } = useIdleAwareLoop(player, { loop: true, shouldPlay, whenIdle: 'pause' });
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
-  const mutedRef = useRef(muted);
-  mutedRef.current = muted;
+  // A playing song silences every video in the app (contexts/AudioContext).
+  // The feed has its own sticky videoMuted toggle on top of this, and the two
+  // agree: pressing play mutes the feed, and turning a video's sound on pauses
+  // the song. This is the floor under both.
+  const songAudible = useSongAudible();
+  const silent = muted || songAudible;
+  const mutedRef = useRef(silent);
+  mutedRef.current = silent;
   const volumeRef = useRef(volume);
   volumeRef.current = volume;
   // Set inside the acquire effect; lets the play effect force an immediate
@@ -214,8 +221,8 @@ const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, volume = 1, on
 
   useEffect(() => {
     if (!player) return;
-    try { player.muted = muted; player.volume = volume; } catch {}
-  }, [muted, volume, player]);
+    try { player.muted = silent; player.volume = volume; } catch {}
+  }, [silent, volume, player]);
 
   useEffect(() => {
     if (shouldPlay && !player) { acquireNowRef.current?.(); return; }

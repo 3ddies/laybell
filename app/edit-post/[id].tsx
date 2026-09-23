@@ -124,7 +124,7 @@ export default function EditPostScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const navigation = useNavigation();
-  const { stop: stopMainAudio } = useAudioControls();
+  const { pause: pauseMainAudio } = useAudioControls();
 
   const [row, setRow] = useState<PostRow | null>(null);
   const [snap, setSnap] = useState<Snapshot | null>(null);
@@ -233,7 +233,10 @@ export default function EditPostScreen() {
   const videoReady = isVideo && !!row?.media_url && (row?.video_status == null || row?.video_status === 'ready');
 
   // Stop the main player while the studio plays the clip and its song.
-  useEffect(() => { if (studio) stopMainAudio(); }, [studio, stopMainAudio]);
+  // PAUSE, not stop — see the composer's note. stop() deactivates the shared
+  // audio session as the studio's clip is starting, and the clip plays silent
+  // under its song for the rest of the edit.
+  useEffect(() => { if (studio) pauseMainAudio(); }, [studio, pauseMainAudio]);
 
   // ── What the edit changes ──────────────────────────────────────────────────
   function buildUpdate(): Record<string, unknown> {

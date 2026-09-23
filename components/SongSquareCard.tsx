@@ -9,6 +9,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import SongCardTitle from './SongCardTitle';
 import { type Feature } from '../lib/features';
 import FloatingComments from './FloatingComments';
+import { useLoopIdle } from '../lib/playbackPresence';
 
 // The square, poster-style rendering of a song post in the HOME FEED.
 //
@@ -23,6 +24,18 @@ import FloatingComments from './FloatingComments';
 
 const NOTE_COUNT = 3;
 const NOTE_MS = 5200;
+// THE ARTWORK DRIFTS. A song card is the one card in the feed with no motion of
+// its own — a photo has its subject and a video moves, while this was a still
+// square with a few notes over it. A push-in and back, out and back, so it never
+// snaps home.
+//
+// 9s each way and 1.14 of travel: enough that the card is visibly alive while
+// you are looking at it, and still slow enough to read as drift rather than a
+// slideshow. The pan stays inside the overscan the scale creates
+// ((1.14 − 1) / 2 of the card ≈ 27pt), so no edge of the artwork can show.
+const DRIFT_MS = 9_000;
+const DRIFT_SCALE = 1.14;
+const DRIFT_PAN = 16;
 // SongCardTitle flips title↔credits on floor(positionMs / 10s) % 2, so one tick
 // per 10s is all the cycling needs. A card is not a player: there is no position
 // to follow, so this drives it instead — and it costs one timer per visible song
@@ -105,6 +118,44 @@ export default function SongSquareCard({
     return () => clearInterval(id);
   }, [postId, features.length]);
 
+  // Nobody is here: hold still. The notes and this both stop on the same clock
+  // the previews use (lib/playbackPresence) — a phone on a table has no use for
+  // a drifting cover, and this is the app's rule for ambient motion.
+  const idle = useLoopIdle();
+  const drift = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (idle) return;
+    const leg = (toValue: number) => Animated.timing(drift, {
+      toValue, duration: DRIFT_MS, easing: Easing.inOut(Easing.sin), useNativeDriver: true,
+    });
+    // Out and back, so it never snaps home: a loop that only runs 0→1 would jump
+    // the artwork on every repeat.
+    const loop = Animated.loop(Animated.sequence([leg(1), leg(0)]));
+    loop.start();
+    return () => { loop.stop(); };
+  }, [idle, drift]);
+  const driftStyle = useMemo(() => ({
+    transform: [
+      { scale: drift.interpolate({ inputRange: [0, 1], outputRange: [1, DRIFT_SCALE] }) },
+      { translateX: drift.interpolate({ inputRange: [0, 1], outputRange: [0, -DRIFT_PAN] }) },
+      { translateY: drift.interpolate({ inputRange: [0, 1], outputRange: [0, DRIFT_PAN] }) },
+    ],
+  }), [drift]);
+
+  // THE TITLE IS SIZED BY ITS OWN LENGTH (owner, 2026-09-20). One fixed size
+  // cannot serve both "Halo" and a title with a parenthetical and a feature in
+  // it: the short one leaves the card looking empty, and the long one eats the
+  // artwork. So a short title comes in big and heavy — it has the room, and the
+  // weight is what fills the space it is not using — and a long one steps down
+  // until it fits without taking over the picture.
+  const titleSize = useMemo(() => {
+    const n = title.trim().length;
+    if (n <= 12) return { fontSize: 31, lineHeight: 35, fontWeight: '900' as const, letterSpacing: -0.9 };
+    if (n <= 20) return { fontSize: 27, lineHeight: 31, fontWeight: '900' as const, letterSpacing: -0.7 };
+    if (n <= 32) return { fontSize: 22, lineHeight: 26, fontWeight: '800' as const, letterSpacing: -0.4 };
+    return { fontSize: 18.5, lineHeight: 22, fontWeight: '800' as const, letterSpacing: -0.2 };
+  }, [title]);
+
   // Fixed per card, so the notes do not all rise in a column, and stable across
   // re-renders so they do not jump when the title cycles.
   const notes = useMemo(
@@ -119,17 +170,19 @@ export default function SongSquareCard({
 
   return (
     <TouchableOpacity style={styles.card} activeOpacity={0.94} onPress={onOpen}>
-      {cover ? (
-        <ExpoImage
-          source={{ uri: cover }}
-          recyclingKey={postId}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-        />
-      ) : (
-        <LinearGradient colors={GRADIENTS.primary} style={StyleSheet.absoluteFill} />
-      )}
+      <Animated.View style={[StyleSheet.absoluteFill, driftStyle]} pointerEvents="none">
+        {cover ? (
+          <ExpoImage
+            source={{ uri: cover }}
+            recyclingKey={postId}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+          />
+        ) : (
+          <LinearGradient colors={GRADIENTS.primary} style={StyleSheet.absoluteFill} />
+        )}
+      </Animated.View>
 
       {/* Notes ride over the artwork but UNDER the scrim, so they drift behind
           the text rather than across it. */}
@@ -171,7 +224,7 @@ export default function SongSquareCard({
           // playhead, and hiding a credit because the song is brief would just
           // lose information.
           durationMs={Math.max(CYCLE_MS * 6, 1)}
-          titleStyle={styles.title}
+          titleStyle={[styles.title, titleSize]}
           featStyle={styles.feat}
           onOpenProfile={onOpenProfile}
         />
@@ -225,13 +278,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     position: 'absolute', left: SPACING.md, right: SPACING.md,
     bottom: 74, height: 150, justifyContent: 'flex-end',
   },
-  scrimTop: { position: 'absolute', left: 0, right: 0, top: 0, height: '46%' },
+  // Taller, because the title below it is: the text needs ground under all of
+  // it, not just the first line.
+  scrimTop: { position: 'absolute', left: 0, right: 0, top: 0, height: '54%' },
   scrimBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '32%' },
   // Top-left, and the width is capped so a marqueeing title does not run the
   // full width of the artwork — the card should still read as a picture.
   header: {
-    paddingHorizontal: SPACING.md, paddingTop: SPACING.md,
-    maxWidth: '86%', minWidth: 0,
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.md + 2,
+    maxWidth: '90%', minWidth: 0,
   },
   footer: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end',
@@ -239,9 +294,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   // Always white on the scrim, never colors.text — this sits on artwork, not on
   // the theme.
-  title: { color: '#fff', fontSize: 19, fontWeight: '800', letterSpacing: -0.3 },
-  feat: { color: 'rgba(255,255,255,0.92)', fontSize: 15, fontWeight: '700' },
-  artist: { color: 'rgba(255,255,255,0.78)', fontSize: 13.5, marginTop: 2 },
+  // Colour and shadow only — the SIZE comes from titleSize above, which reads
+  // the title's length.
+  title: { color: '#fff' },
+  feat: { color: 'rgba(255,255,255,0.92)', fontSize: 16, fontWeight: '700', lineHeight: 20 },
+  artist: { color: 'rgba(255,255,255,0.8)', fontSize: 14.5, marginTop: 3 },
   playBtn: {
     width: 50, height: 50, borderRadius: RADIUS.full,
     alignItems: 'center', justifyContent: 'center',

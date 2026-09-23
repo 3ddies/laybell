@@ -31,6 +31,7 @@ import { captionStickerTextStyle, resolveSticker, StickerContent } from '../../c
 import { useStories } from '../../contexts/StoriesContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { usePostMusicActions, usePostMusicMuted } from '../../contexts/PostMusicContext';
+import { useAudioControls } from '../../contexts/AudioContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { StorySkeleton, Skeleton } from '../../components/Skeleton';
 import Spinner from '../../components/Spinner';
@@ -54,6 +55,16 @@ export default function StoryViewerScreen() {
   const { profile: myProfile } = useProfile();
   const { playSong, stop: stopSong, toggleMuted: toggleSongMuted } = usePostMusicActions();
   const songMuted = usePostMusicMuted();
+  // Watching stories pauses the user's music: a story is sound and motion for
+  // fifteen seconds at a time, and it either owns the channel or it is
+  // pointless. (A story with an attached song then plays it through the ambient
+  // player, same as everywhere else.)
+  //
+  // PAUSE, never stop. This effect fires on FOCUS, which can land after the
+  // story's video is already playing — and a stop() there deactivates the
+  // shared audio session and mutes it (see useAudioControls).
+  const { pause: pauseMainSong } = useAudioControls();
+  useEffect(() => { if (isFocused) pauseMainSong(); }, [isFocused, pauseMainSong]);
   const { userId, users, src, story: storyParam, archived: archivedParam } = useLocalSearchParams<{ userId: string; users?: string; src?: string; story?: string; archived?: string }>();
 
   // Archived replay (from Settings → Archive): play ONE expired story back like
@@ -735,6 +746,9 @@ export default function StoryViewerScreen() {
                 contentFit="cover"
                 active={!paused}
                 showStallIndicator
+                // Its own sound, or its attached song — never silenced by the
+                // music player, which this screen stops on the way in.
+                ownsAudio
                 muted={!!story.song_id}
                 poster={story.thumbnail_url}
                 posterContentFit="cover"

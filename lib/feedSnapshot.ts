@@ -17,6 +17,14 @@ const SAVE_DELAY_MS = 1500;
 
 export type FeedSnapshot<T> = { savedAt: number; posts: T[]; liked: string[]; saved: string[] };
 
+/**
+ * How long the fresh feed gets to arrive before last session's screen is shown
+ * instead of a skeleton. Long enough that a normal connection never shows a
+ * snapshot at all (and so never shows two orders in a row); short enough that a
+ * slow one is not left staring at placeholders.
+ */
+export const SNAPSHOT_AFTER_MS = 400;
+
 export async function loadFeedSnapshot<T>(userId: string): Promise<FeedSnapshot<T> | null> {
   try {
     const raw = await AsyncStorage.getItem(KEY(userId));

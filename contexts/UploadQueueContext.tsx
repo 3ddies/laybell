@@ -19,6 +19,7 @@ import { activateCampaign } from '../lib/spotlight';
 //
 import { scheduleLiveReminder } from '../lib/scheduleNotify';
 import { makeMediaPreview } from '../lib/mediaPreview';
+import { makeVideoPreview } from '../lib/videoPreview';
 
 // The whole video publish (upload → Stream → insert row → mentions/badges/
 // notifications/spotlight) lives here so it survives navigating away from the
@@ -347,6 +348,16 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
     try {
       update(tempId, { phase: 'uploading', progress: 0, errorMsg: undefined, errorCode: undefined });
 
+      // Explore's looping preview, cut from the same local file this upload is
+      // sending (lib/videoPreview). Started HERE, before the upload, because the
+      // upload takes seconds to minutes and this takes about two — by insert
+      // time it is long done, so it costs the post no waiting at all. It also
+      // has to happen before a film's mezzanine is released below.
+      //
+      // A virtual trim keeps the source's clock, so the preview starts at the
+      // trim; a physically cut file already starts there. Never throws.
+      const clipPromise = makeVideoPreview(job.localUri, job.userId, job.trim?.start ?? 0);
+
       // Reuse the speculative prewarm if the details step already started it —
       // otherwise start the upload now. Either way we get {uid, subdomain}.
       let result: { uid: string; subdomain: string; trimmedFile: boolean; stagedPath?: string | null } | null;
@@ -421,6 +432,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
       try { thumbnailUrl = job.thumbnailUri ? await uploadPoster(job.userId, job.thumbnailUri) : streamPosterUrl(subdomain, uid); }
       catch { thumbnailUrl = streamPosterUrl(subdomain, uid); }
       const preview = await previewPromise;
+      const previewClip = await clipPromise;
 
       // The file is up — insert the real, persisted post now.
       const row: Record<string, any> = {
@@ -447,6 +459,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         ...(preview.thumbUrl ? { thumb_url: preview.thumbUrl } : {}),
         ...(preview.placeholder ? { placeholder: preview.placeholder } : {}),
+        ...(previewClip ? { preview_url: previewClip } : {}),
         video_uid: uid, video_status: 'processing', video_hls_url: hls,
         ...(job.song ? { song_id: job.song.id, song_title: job.song.title, song_artist: job.song.artist, song_artist_id: job.song.artistId, song_link_only: !!job.song.linkOnly } : {}),
         // A music video's song never plays, so there is no mix to keep for it.

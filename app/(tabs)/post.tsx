@@ -561,7 +561,7 @@ export default function PostScreen() {
   // Controls only — this screen never renders audio state, so it must not
   // re-render on it. `stop` is also stable now, which means the effect below
   // fires when the STEP changes rather than on every provider commit.
-  const { stop } = useAudioControls();
+  const { stop, pause: pauseSong } = useAudioControls();
   const swiping = usePagerSwiping();
   const setTabSwipe = useTabSwipeControl();
   const router = useRouter();
@@ -571,7 +571,22 @@ export default function PostScreen() {
   // finishes their post in full focus.
   // The video studio counts too: its song preview runs through the ambient song
   // player, which stays silent while the main one plays.
-  useEffect(() => { if (step === 'studio' || step === 'details') stop(); }, [step, stop]);
+  //
+  // But the studio gets a PAUSE, not a stop, and the difference is audible.
+  // stop() ends in TrackPlayer.reset(), and RNTP's iOS side deactivates the
+  // app's SHARED audio session the moment the engine is left with no item —
+  // which silences every other player in the process. This effect fires on the
+  // very commit that mounts VideoStudio, whose clip has already been told to
+  // play, so the session went down underneath it: the clip ran with the song
+  // over it and none of its own audio. Pause leaves an item in the engine, so
+  // the session is never deactivated.
+  //
+  // Details still stops outright — the song is meant to EXIT there, and that
+  // step has no video of its own to take down with it.
+  useEffect(() => {
+    if (step === 'details') stop();
+    else if (step === 'studio') pauseSong();
+  }, [step, stop, pauseSong]);
 
   // Swiping to an adjacent tab is on only while browsing the Posts picker with
   // NOTHING selected yet — selecting any media (single or a slide) turns it off.

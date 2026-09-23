@@ -48,12 +48,14 @@ type PostMusicActions = {
   // plays at full volume and loops on its own, as every song always has.
   playSong: (hostId: string, songId: string, mediaUrl?: string | null, mix?: AmbientMix | null) => void;
   stop: (hostId?: string) => void;  // stop (optionally only if hostId is the active one)
-  // Resolve + cache the song's audio URL WITHOUT touching playback — feeds call
-  // this as a music post approaches so playSong at scroll-rest never waits on
-  // the network.
-  prefetchSong: (songId: string, mediaUrl?: string | null) => void;
-  // Pre-create the session's ONE ambient player at a safe idle moment (the
-  // feed gate) so the first song tap never pays a native player construction.
+  // Stage an upcoming song WITHOUT touching what is playing — feeds call this as
+  // a music post approaches so playSong at scroll-rest never waits on the
+  // network. Pass the host's mix (lib/songMix ambientMixFor) and the bytes are
+  // buffered AT the part the song will start from, which is what a mixed video
+  // post lands on.
+  prefetchSong: (songId: string, mediaUrl?: string | null, mix?: AmbientMix | null) => void;
+  // Pre-create the ambient players at a safe idle moment (the feed gate) so no
+  // song ever pays a native player construction mid-scroll.
   warmSongPlayer: () => void;
 };
 type PostMusicType = PostMusicActions & {
@@ -151,6 +153,24 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
 
   const soundRef = useRef<AudioPlayer | null>(null);
   const statusSubRef = useRef<{ remove: () => void } | null>(null);
+  // THE SECOND PLAYER — the one that is not being heard.
+  //
+  // Staging used to be skipped outright whenever a song was already playing,
+  // because with one player the only way to buffer the next song was replace(),
+  // which cuts off the current one. That left the most common case on a music
+  // app — scrolling from one song post to the next — paying a full network load
+  // on every landing, which is what "the songs are slow to play" was.
+  //
+  // So there are two: one plays, one buffers what is coming. Landing on a staged
+  // song is a pointer swap, not a load. They trade places on every handoff, so
+  // the one holding the PREVIOUS song becomes the stager — and scrolling back is
+  // instant for the same reason.
+  const stageRef = useRef<AudioPlayer | null>(null);
+  const stageSubRef = useRef<{ remove: () => void } | null>(null);
+  // What the staging player holds, mirroring stagedUriRef for the active one.
+  const stageUriRef = useRef<string | null>(null);
+  // The poll that seeks a staged source to its part once it has loaded.
+  const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tokenRef = useRef(0);
   const activeIdRef = useRef<string | null>(null);
   const activeSongRef = useRef<string | null>(null);
@@ -285,22 +305,24 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   // change is a replace() source swap and stop() is pause-only. The native
   // player is fully released only when the provider unmounts.
   const lastPosRef = useRef(0);
-  function ensurePlayer(): AudioPlayer {
-    let p = soundRef.current;
-    if (p) return p;
+  // Both players are built here, so either can be the one that plays.
+  function makePlayer(): { player: AudioPlayer; sub: { remove: () => void } } {
     // keepAudioSessionActive: expo-audio's native pause() otherwise DEACTIVATES
     // the app-wide AVAudioSession — and this player pauses exactly when the
     // main player takes over and when the app backgrounds, which killed the
     // main player's (track-player) audio mid-song / on background.
-    p = createAudioPlayer(null, { updateInterval: 500, keepAudioSessionActive: true });
+    const p = createAudioPlayer(null, { updateInterval: 500, keepAudioSessionActive: true });
     p.loop = true;
     p.muted = mutedRef.current;
-    soundRef.current = p;
     // ONE listener for the player's lifetime — which song it accrues toward
     // follows activeSongRef; lastPos resets on every source swap. The loop
     // seam reads as a negative/large jump and is ignored, as is muted or
     // background time.
-    statusSubRef.current = p.addListener('playbackStatusUpdate', (st: any) => {
+    const sub = p.addListener('playbackStatusUpdate', (st: any) => {
+      // Only the player currently being HEARD speaks for playback. The other one
+      // is staging the next song, and its updates are nobody's listening time,
+      // nobody's line-up and nobody's loop.
+      if (soundRef.current !== p) return;
       const sid = activeSongRef.current;
       if (!sid || !st.isLoaded) return;
       const pos = (st.currentTime ?? 0) * 1000;   // expo-audio reports SECONDS
@@ -313,14 +335,94 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
       // second): at its end it goes back to its part and plays on.
       if (st.didJustFinish && mixRef.current?.startSec != null) restartMixedSong();
     });
-    return p;
+    return { player: p, sub };
   }
-  function warmSongPlayer() { try { ensurePlayer(); } catch {} }
+
+  function ensurePlayer(): AudioPlayer {
+    const p = soundRef.current;
+    if (p) return p;
+    const made = makePlayer();
+    soundRef.current = made.player;
+    statusSubRef.current = made.sub;
+    return made.player;
+  }
+
+  // NEVER created mid-scroll — the audio version of the pool rule. The feed gate
+  // calls warmSongPlayer at a quiet moment and gets both; a prefetch that finds
+  // no stager simply does what it did before.
+  function ensureStagePlayer(): AudioPlayer {
+    const p = stageRef.current;
+    if (p) return p;
+    const made = makePlayer();
+    stageRef.current = made.player;
+    stageSubRef.current = made.sub;
+    return made.player;
+  }
+
+  function warmSongPlayer() {
+    try { ensurePlayer(); } catch {}
+    try { ensureStagePlayer(); } catch {}
+  }
+
+  // Put a source on a player and, for a mixed post, leave it sitting AT the part
+  // it will start from. Buffering from the top and seeking to 0:45 on landing is
+  // a second network round trip — the one a mixed video post was waiting out.
+  function stageInto(p: AudioPlayer, url: string, startSec: number | null) {
+    try { p.replace({ uri: url }); } catch { return; }
+    if (stageTimerRef.current) { clearInterval(stageTimerRef.current); stageTimerRef.current = null; }
+    if (startSec == null || startSec <= 0) return;
+    // Seeking before the source has loaded crashes on iOS, and a paused player's
+    // status events are not something to bet the timing on — so ask it.
+    let tries = 0;
+    const timer = setInterval(() => {
+      let loaded = false;
+      try { loaded = p.isLoaded; } catch {}
+      if (!loaded) {
+        if (++tries < 16) return;                 // ~4s, then leave it at the top
+      } else {
+        try { p.seekTo(startSec).catch(() => {}); } catch {}
+      }
+      clearInterval(timer);
+      if (stageTimerRef.current === timer) stageTimerRef.current = null;
+    }, 250);
+    stageTimerRef.current = timer;
+  }
+
+  /**
+   * Make the staging player the active one, when it is already holding these
+   * bytes. The player being replaced keeps ITS source and becomes the stager, so
+   * the post you just left is staged for scrolling back to.
+   */
+  function adoptStaged(url: string): boolean {
+    const staged = stageRef.current;
+    if (!staged || stageUriRef.current !== url) return false;
+    const old = soundRef.current;
+    const oldUri = stagedUriRef.current;
+    const oldSub = statusSubRef.current;
+    try { old?.pause(); } catch {}
+    soundRef.current = staged;
+    statusSubRef.current = stageSubRef.current;
+    stagedUriRef.current = url;
+    stageRef.current = old;
+    stageSubRef.current = oldSub;
+    stageUriRef.current = old ? oldUri : null;
+    if (__DEV__) console.log('[ambient] staged song adopted — no load');
+    return true;
+  }
+
   function destroyPlayer() {
+    if (stageTimerRef.current) { clearInterval(stageTimerRef.current); stageTimerRef.current = null; }
     statusSubRef.current?.remove(); statusSubRef.current = null;
+    stageSubRef.current?.remove(); stageSubRef.current = null;
     const s = soundRef.current;
+    const g = stageRef.current;
     soundRef.current = null;
-    if (s) { try { s.pause(); } catch {} try { s.remove(); } catch {} }
+    stageRef.current = null;
+    stagedUriRef.current = null;
+    stageUriRef.current = null;
+    for (const p of [s, g]) {
+      if (p) { try { p.pause(); } catch {} try { p.remove(); } catch {} }
+    }
   }
 
   function setActiveHost(v: string | null) {
@@ -390,34 +492,44 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   // disagree with the native player.
   const stagedUriRef = useRef<string | null>(null);
 
-  function prefetchSong(songId: string, mediaUrl?: string | null) {
+  function prefetchSong(songId: string, mediaUrl?: string | null, mix?: AmbientMix | null) {
     resolveSongUrl(songId, mediaUrl)
       .then((url) => {
-        // STAGE THE BYTES, not just the URL. The audible 1–2s gap on landing
-        // was never the URL lookup (cached by the time the scroll rests) — it
-        // was the native player only STARTING to fetch the audio file at
-        // rest+150ms. A paused replace() here begins that download during the
-        // approach instead, so the rest-flush's play() is a rate change on a
-        // buffered source.
-        //
-        // Guards, each of which degrades to today's behaviour when it trips:
-        //  · player must already EXIST — never create one mid-scroll (the
-        //    audio version of the pool rule; the feed gate pre-creates it via
-        //    warmSongPlayer, and it exists forever after the first song).
-        //  · no ambient song may be ACTIVE — replace() would cut it off. The
-        //    playing-song handoff keeps its existing rest-time behaviour.
-        //  · not while the user's own track has the mini-player — playSong
-        //    would defer in that state anyway, so the bytes would be wasted.
-        const p = soundRef.current;
-        if (!url || !p) return;
-        if (activeSongRef.current || mainPlayingRef.current) return;
-        if (stagedUriRef.current === url) return;
-        //  · no line-up seek in flight — see lineUpWithVideo.
-        if (seekRef.current) return;
-        try {
-          p.replace({ uri: url }); // paused: loads/buffers, plays nothing
+        // STAGE THE BYTES, not just the URL. The audible 1–2s gap on landing was
+        // never the URL lookup (cached by the time the scroll rests) — it was the
+        // native player only STARTING to fetch the audio file at rest+150ms. A
+        // paused replace() here begins that download during the approach instead,
+        // so the rest-flush's play() is a rate change on a buffered source.
+        if (!url) return;
+        // The user's own track owns the audio; playSong would defer anyway, so
+        // the bytes would be wasted.
+        if (mainPlayingRef.current) return;
+        const startSec = mix?.startSec ?? null;
+
+        // NOTHING PLAYING: stage into the player that will play it, so landing
+        // needs no swap at all.
+        if (!activeSongRef.current) {
+          const p = soundRef.current;
+          // Never create a player mid-scroll (the pool rule) — the feed gate
+          // pre-creates both via warmSongPlayer.
+          if (!p) return;
+          if (stagedUriRef.current === url) return;
+          // The OTHER player already holds it (the song just stopped, or we are
+          // scrolling back to it) — leave it there; playSong swaps it in.
+          if (stageUriRef.current === url) return;
+          // A line-up seek in flight is on this very player — see lineUpWithVideo.
+          if (seekRef.current) return;
+          stageInto(p, url, startSec);
           stagedUriRef.current = url;
-        } catch {}
+          return;
+        }
+
+        // A SONG IS PLAYING: stage into the other one. This is the case that was
+        // skipped entirely before, and on a music app it is the common one.
+        const stager = stageRef.current;
+        if (!stager || stageUriRef.current === url) return;
+        stageInto(stager, url, startSec);
+        stageUriRef.current = url;
       })
       .catch(() => {});
   }
@@ -604,14 +716,18 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
       // Persistent player: this path never creates, never disposes — replace()
       // is a native source swap, so a song tap over a playing video can't
       // stall the frame anymore.
+      // The other player may already hold these bytes, buffered at the right
+      // part — then this is a swap, not a load (see adoptStaged).
+      adoptStaged(url);
       const player = ensurePlayer();
       lastPosRef.current = 0;
       if (stagedUriRef.current !== url) {
+        if (__DEV__) console.log('[ambient] cold load — nothing staged for this song');
         player.replace({ uri: url });
         stagedUriRef.current = url;
       }
-      // else: prefetchSong already staged these bytes during the approach —
-      // play() on the buffered source is the instant start.
+      // else: the bytes were staged during the approach — play() on a buffered
+      // source is the instant start.
       player.muted = mutedRef.current;
       // The latest request for this song — a post it was handed to while loading
       // included: its level, loop and part. A part waits for the source to load.

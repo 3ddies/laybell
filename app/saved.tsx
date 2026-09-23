@@ -22,9 +22,12 @@ import { ListRowsSkeleton } from '../components/Skeleton';
 const SAVED_TABS = ['media', 'songs'] as const;
 type SavedTab = (typeof SAVED_TABS)[number];
 
-// Columns needed by both the media grid and the song rows.
+// Columns needed by both the media grid and the song rows. The 1.0.4 preview
+// columns are here too (thumb_url/placeholder for the tiles, preview_url plus the
+// trim window for the looping clips) — without them Saved is the one grid that
+// still loads full-size pictures and cannot move.
 const POST_FIELDS =
-  'id,type,media_url,caption,thumbnail_url,cover_url,aspect_ratio,slides,stream_count,view_count,duration_seconds,archived_at,user_id,profiles!posts_user_id_fkey(id,username,display_name,avatar_url,badge_tier,badge_show)';
+  'id,type,media_url,caption,thumbnail_url,cover_url,aspect_ratio,slides,stream_count,view_count,duration_seconds,archived_at,user_id,thumb_url,placeholder,preview_url,trim_start,trim_end,captions,timed_captions,profiles!posts_user_id_fkey(id,username,display_name,avatar_url,badge_tier,badge_show)';
 
 export default function SavedScreen() {
   const { colors } = useTheme();

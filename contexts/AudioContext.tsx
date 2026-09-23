@@ -192,6 +192,7 @@ export function useNowPlaying(): { id: string | null; playing: boolean; play: (t
 // refreshed on each commit below — same trick as stableNowPlay above.
 let latestPlayQueue: AudioContextType['playQueue'] | null = null;
 let latestStop: AudioContextType['stop'] | null = null;
+let latestPause: AudioContextType['pause'] | null = null;
 let latestExpand: AudioContextType['expand'] | null = null;
 let latestToggleVideoMuted: AudioContextType['toggleVideoMuted'] | null = null;
 
@@ -200,6 +201,26 @@ const AUDIO_CONTROLS = {
   playQueue: (tracks: Track[], startIndex?: number, loadMore?: QueueLoader) =>
     (latestPlayQueue ? latestPlayQueue(tracks, startIndex, loadMore) : Promise.resolve()),
   stop: () => (latestStop ? latestStop() : Promise.resolve()),
+  // ⚠️ PREFER THIS OVER stop() FOR "GET OUT OF MY WAY".
+  //
+  // stop() ends in TrackPlayer.reset(), which leaves the engine with no current
+  // item — and RNTP's iOS side answers that by calling deactivateSession() on
+  // the app's SHARED AVAudioSession. Deactivating it silences every player in
+  // the process, expo-video included. expo-audio re-activates on its next play
+  // so an ambient song comes back; a video just goes mute with the picture
+  // still moving. That is the whole of "the edited video audio doesn't play,
+  // only the attached song plays" (owner, 2026-09-20) — six screens had been
+  // given a stop() on open and every one of them was killing video sound.
+  //
+  // pause() keeps the current item, so the session is never deactivated. It is
+  // also the kinder behaviour: the user's queue survives, and their music is
+  // waiting in the mini-player when they leave. It no-ops when nothing is
+  // loaded, so calling it unconditionally on mount is free.
+  //
+  // stop() is still right where the point is to END the session — the × on the
+  // mini-player, the reel viewer's hand-off to ambient — and it is safe there
+  // because nothing is playing video yet at that moment.
+  pause: () => (latestPause ? latestPause() : Promise.resolve()),
   expand: () => { latestExpand?.(); },
   toggleVideoMuted: () => { latestToggleVideoMuted?.(); },
 };
@@ -225,6 +246,47 @@ export function useVideoMuted(): boolean {
   return useSyncExternalStore(
     (cb) => { videoMutedSubs.add(cb); return () => { videoMutedSubs.delete(cb); }; },
     () => videoMutedSnap,
+  );
+}
+
+// ── "a song is audible" subscription store (module) ─────────────────────────
+// THE AUDIO-FOCUS RULE, and the only thing that enforces it: while the music
+// player is playing, NO video anywhere in the app may be heard (owner,
+// 2026-09-20 — "when a song is played, the video audio that was playing
+// previously continues to play and the sounds crash each other").
+//
+// videoMuted could not do this job, and the collision is the proof. That flag
+// is the FEED's speaker toggle: sticky once any song has played, cleared only
+// by the user tapping the glyph, and read by exactly two surfaces. The post
+// viewer, stories, reels, Laybell TV and the ad players all ignored it — and
+// nothing set it on resume(), so the plainest sequence there is (turn a feed
+// video's sound on, which pauses the song → press play on the mini-player)
+// left both playing over each other.
+//
+// This is the live answer instead: is a song playing RIGHT NOW. The three video
+// components read it themselves (AppVideo, FeedVideo, ReelVideo), so a video
+// surface written next year is silent-under-music without its author having to
+// know the rule exists — the same reasoning as useIdleAwareLoop.
+//
+// An audio ad counts as a song: isPlaying deliberately stays true across a
+// break (see the Paused handler, which ignores it while adPlayingRef is set),
+// so an ad is never talked over either.
+//
+// A surface whose own audio IS the point passes `ownsAudio` — and stops the
+// song when it opens, the way the reel viewer always has. Muting alone would
+// leave a live broadcast mysteriously silent; stopping alone would let a
+// lock-screen play collide with it. Both halves, or neither works.
+let songAudibleSnap = false;
+const songAudibleSubs = new Set<() => void>();
+function publishSongAudible(v: boolean) {
+  if (v === songAudibleSnap) return;
+  songAudibleSnap = v;
+  for (const cb of songAudibleSubs) cb();
+}
+export function useSongAudible(): boolean {
+  return useSyncExternalStore(
+    (cb) => { songAudibleSubs.add(cb); return () => { songAudibleSubs.delete(cb); }; },
+    () => songAudibleSnap,
   );
 }
 
@@ -809,6 +871,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         TrackPlayer.play().catch(() => {});
       }
       setIsPlaying(true);
+      // Pressing play is pressing play, whether the song is starting or picking
+      // up: the feed's video audio goes off, exactly as it does in startQueue.
+      // Without this, toggling a video's sound on (which pauses the song) and
+      // then resuming the song left the two fighting — the collision the owner
+      // hit. The global rule above covers every OTHER surface; this keeps the
+      // feed's own speaker glyph honest about what it is showing.
+      setVideoMuted(true);
     } else if (currentTrack) {
       // Track already torn down — reload and replay the current track from the top.
       pendingFinishRef.current = false;
@@ -1266,8 +1335,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         if (bufferingDebounceRef.current) { clearTimeout(bufferingDebounceRef.current); bufferingDebounceRef.current = null; }
         setIsBuffering(false);
       }
-      if (e.state === TPState.Playing) setIsPlaying(true);
-      else if (e.state === TPState.Paused && !adPlayingRef.current && !pendingFinishRef.current) setIsPlaying(false);
+      if (e.state === TPState.Playing) {
+        setIsPlaying(true);
+        // The CATCH-ALL for the feed's speaker glyph. startQueue and resume set
+        // this too, for instant feedback on a tap — but the engine can also be
+        // started from outside this app entirely: the lock screen, Control
+        // Centre, CarPlay, a headphone button. Those never touch either
+        // function, and the glyph would have gone on claiming the feed's video
+        // was audible while the app-wide rule had already silenced it.
+        setVideoMuted(true);
+      } else if (e.state === TPState.Paused && !adPlayingRef.current && !pendingFinishRef.current) setIsPlaying(false);
     });
 
     // A different track became active — native auto-advance, next/previous, a
@@ -1502,10 +1579,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     latestPlay = play;
     latestPlayQueue = playQueue;
     latestStop = stop;
+    latestPause = pause;
     latestExpand = expand;
     latestToggleVideoMuted = toggleVideoMuted;
   });
   useEffect(() => { publishNowPlaying(currentTrack?.id ?? null, isPlaying); }, [currentTrack?.id, isPlaying]);
+  useEffect(() => { publishSongAudible(isPlaying); }, [isPlaying]);
   useEffect(() => { publishVideoMuted(videoMuted); }, [videoMuted]);
 
   return (

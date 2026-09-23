@@ -21,6 +21,7 @@ import { getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import { useStories } from '../../contexts/StoriesContext';
 import { useStoryUpload } from '../../contexts/StoryUploadContext';
 import { usePostMusicActions, useSongHostActive } from '../../contexts/PostMusicContext';
+import { useAudioControls } from '../../contexts/AudioContext';
 import { usePagerSwiping, useTabSwipeControl } from '../../contexts/PagerContext';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
@@ -56,6 +57,12 @@ export default function StoryCameraScreen() {
   // camera DURING the drag — without activating it on unrelated tab swipes.
   const focusedTab = useNavigationState((s: any) => s?.routes?.[s.index]?.name);
   const cameraActive = isFocused || (swiping && focusedTab === 'index');
+  // Arriving at the camera pauses the user's music — not politeness, accuracy:
+  // a song playing out of the speaker records straight into the clip's audio,
+  // and the clip you play back afterwards has to be heard on its own.
+  // PAUSE, never stop — stop() would silence that playback (useAudioControls).
+  const { pause: pauseMainSong } = useAudioControls();
+  useEffect(() => { if (isFocused) pauseMainSong(); }, [isFocused, pauseMainSong]);
   const { refresh: refreshStories } = useStories();
   const { prewarmStory, enqueueStory, discardPrewarm } = useStoryUpload();
 
@@ -297,6 +304,9 @@ export default function StoryCameraScreen() {
             contentFit="cover"
             active
             loop
+            // Your own clip, played back to decide whether to keep it: it keeps
+            // its sound. Reaching the camera has already stopped the music.
+            ownsAudio
             muted={false}
           />
         )}
