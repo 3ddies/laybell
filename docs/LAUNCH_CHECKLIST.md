@@ -18,12 +18,16 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ---
 
-## 0.0 ✅ THE CURRENT STATE — updated 2026-09-11
+## 0.0 ✅ THE CURRENT STATE — updated 2026-09-23
 
-**One-line status: 1.0.2 is live on the App Store; Android 1.0.2 is not submitted; 1.0.3 (11) is IN APP REVIEW (submitted 2026-09-14); Android 1.0.3 (versionCode 10) is built, not submitted (needs the Play key).**
+**One-line status: 1.0.3 (11) is APPROVED on iOS (tag `v1.0.3-build11`). 1.0.4 (build 12) was built and its iOS binary UPLOADED to App Store Connect on 2026-09-23 — the owner must still finish it in ASC: create the 1.0.4 version, paste What's New (`docs/RELEASE_NOTES_1.0.4.md`), select build 12, Submit for Review (`eas submit` only uploads). TestFlight was skipped (owner's call) — no OTA, so a regression ships frozen. Android: 1.0.3 (versionCode 10) built not submitted; 1.0.4 not built.**
+
+**1.0.4 headline:** post analytics from the post 3-dot menu (owner-only, real data only — no fabricated demographics/retention/geo; owner-gated RPC `post_view_series.sql` deployed), audio-focus (one sound at a time; `pause()` never `stop()` near video — `stop()` deactivates the shared iOS audio session), and the perf/polish batch. Code: `07446c4` + `87a459d` on `dev`. ⚠️ Before Submit for Review: confirm demo/test money is OFF in prod.
 
 | Version | iOS | Android |
 |---|---|---|
+| 1.0.4 (build 12) | 🚀 binary uploaded to ASC 2026-09-23 (EAS `bc234086`); **owner: create version, What's New, select build, Submit for Review** | ⏳ not built |
+| 1.0.3 (build 11) | ✅ **approved**, tag `v1.0.3-build11` | ⏳ built (versionCode 10), not submitted — needs the Play key |
 | 1.0.2 (build 9) | ✅ approved and auto-released 2026-09-06, tag `v1.0.2-build9` | ⏳ **not submitted** — needs the Play service-account key (`docs/PLAY_SERVICE_ACCOUNT.md`); `eas.json` sends it as a draft release |
 | 1.0.1 (build 7) | ✅ released 2026-09-01, tag `v1.0.1-build7` | submitted 2026-09-01; publishes on approval |
 
