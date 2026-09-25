@@ -5,8 +5,8 @@ Email: 3ddiemusic@gmail.com / Password: review1
 Sign in with the EMAIL above, not a username. Both subscription tiers are active, so every subscriber feature is reachable without buying anything. Credits (below) can be bought with a sandbox purchase.
 
 NEW IN 1.0.5
-- React (reaction videos): open any video or song's "..." menu > React. Record your reaction, then choose how the two sit together - you full-screen with the original in a small corner window, or the original full-screen with you in the corner - or "After", where a chosen slice of the original plays first and then your clip. It posts as an ordinary video and auto-tags the original creator. It only ever uses content already posted to Laybell.
-- Viewed your profile: the eye icon at the top-right of your own profile tab opens a list of who has viewed your profile (last 30 days). It is opt-out and reciprocal - on by default, and you only see others while you are sharing yours; turn it off any time from that screen. No financial detail is shown.
+- React (reaction videos): open any video or song's "..." menu > React, record your reaction, and choose how the two play - you full-screen with the original in a corner window, the original full-screen with you in the corner, or "After" (a chosen slice of the original, then your clip). It posts as an ordinary video, auto-tags the creator, and only uses content already on Laybell.
+- Viewed your profile: the eye icon top-right of your own profile tab lists who viewed you (last 30 days). Opt-out and reciprocal - on by default, you see others only while sharing yours, off any time from that screen.
 
 NOTIFICATIONS (Guideline 4.5.4)
 Two reminders (a badge about to lapse; twelve days without opening the app) are OFF by default and need an explicit opt-in: an UNTICKED checkbox at onboarding profile setup, or Settings > Notifications > "Reminders from Laybell", also the opt-out. Activity notifications (likes, comments, follows, going live, a profile view by a friend) are not promotional. No push carries financial detail.
@@ -30,7 +30,7 @@ FILMS
 Landscape videos over nine minutes, for Premium+, on their own shelf in Laybell TV: Explore tab > TV icon, top right.
 
 LIVESTREAMING
-The LIVE button sits beside the home logo. Our provider records a broadcast in order to serve it live; that recording is deleted automatically when the broadcast ends, and no replay is kept, published or offered for download.
+The LIVE button sits beside the home logo. Our provider records a broadcast only to serve it live; the recording is deleted when the broadcast ends - no replay is kept or offered.
 
 MUSIC LICENSING
 All audio is uploaded by users, who warrant they own or control the rights; Laybell hosts no commercial catalogue. Laybell LLC holds BMI and ASCAP public performance licences, has a DMCA agent registered with the U.S. Copyright Office, and enforces a published repeat-infringer policy.
