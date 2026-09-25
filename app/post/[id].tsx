@@ -1,5 +1,6 @@
 import { subscribePostEdited } from '../../lib/postEdits';
 import AppVideo from '../../components/AppVideo';
+import CompositionPlayer from '../../components/CompositionPlayer';
 import { songPlaysFor } from '../../lib/postSong';
 import { ambientMixFor, videoSoundFor } from '../../lib/songMix';
 import { Image as ExpoImage } from 'expo-image';
@@ -56,6 +57,12 @@ type Post = {
   id: string; type: string; media_url: string; caption: string;
   created_at: string; user_id: string;
   aspect_ratio?: string | null;
+  // Remix — composed at playback (lib/composition). composition_kind is the layout
+  // (commentary) or 'add' (original crop then your clip); source_trim_* is the crop.
+  source_post_id?: string | null;
+  composition_kind?: 'side_by_side' | 'top_bottom' | 'pip' | 'green_screen' | 'add' | null;
+  source_trim_start?: number | null;
+  source_trim_end?: number | null;
   captions?: unknown[] | null; // vertical-video story-style captions (jsonb array)
   timed_captions?: unknown[] | null; // the ones timed to part of the clip (lib/stickerTiming)
   stream_count?: number;
@@ -445,6 +452,25 @@ export default function PostDetailScreen() {
             )}
             {post.type === 'video' && post.media_url && (
               <View>
+              {post.composition_kind ? (
+                // Instagram-style Remix / Sequence — the source clip is fetched and
+                // composed at playback (CompositionPlayer). Captions/song controls
+                // below are skipped: a composition carries neither.
+                <CompositionPlayer
+                  clipUri={post.media_url}
+                  kind={post.composition_kind}
+                  sourcePostId={post.source_post_id ?? null}
+                  sourceTrimStart={post.source_trim_start}
+                  sourceTrimEnd={post.source_trim_end}
+                  active={isFocused}
+                  clipPoster={post.thumbnail_url ?? post.cover_url}
+                  // The frame shape follows the layout: side-by-side is ~twice as
+                  // wide as one clip (double the aspect so each half is uncropped),
+                  // top-and-bottom is ~twice as tall (half the aspect, capped), and
+                  // pip / add keep the clip's own aspect (one clip fills the frame).
+                  style={[styles.media, { height: Math.min(SCREEN_W / (aspectToNumber(post.aspect_ratio, 16 / 9) * (post.composition_kind === 'side_by_side' ? 2 : post.composition_kind === 'top_bottom' ? 0.5 : 1)), MAX_VIDEO_H), backgroundColor: '#000' }]}
+                />
+              ) : (
               <AppVideo
                 source={{ uri: post.media_url }}
                 style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(post.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
@@ -476,12 +502,13 @@ export default function PostDetailScreen() {
                   trackVideoProgress(id as string, pos, dur);
                 }}
               />
+              )}
               {/* A vertical clip's captions, as in the feed and reels — this viewer
                   used to drop them. Same frame as the feed card (full width, the
                   clip's height capped at 4:5), so a caption lands where it does
                   there. Horizontal clips carry band captions, which need the reel
                   page's letterbox and have no place in this layout. */}
-              {aspectToNumber(post.aspect_ratio, 16 / 9) <= 1 && hasPostStickers(post.captions, post.timed_captions) ? (
+              {!post.composition_kind && aspectToNumber(post.aspect_ratio, 16 / 9) <= 1 && hasPostStickers(post.captions, post.timed_captions) ? (
                 <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
                   <TimedStickers
                     postId={id as string}

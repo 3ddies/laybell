@@ -14,6 +14,8 @@ import {
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image as ExpoImage } from 'expo-image';
 import ReelVideo from '../../components/ReelVideo';
+import CompositionBadge from '../../components/CompositionBadge';
+import CompositionPlayer from '../../components/CompositionPlayer';
 import { reelPool } from '../../lib/feedVideoPool';
 import { cfStreamThumbnail } from '../../lib/cast';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -257,10 +259,10 @@ const ReelControls = memo(function ReelControls({
 const filmAdState = new Map<string, { watchMs: number; lastPosMs: number; fired: number; thresholds: number[] }>();
 
 const ReelPage = memo(function ReelPage({
-  item, active, playing, showPaused, zoomed, isLiked, isSaved, spotlight, insetsBottom, mountPlayer, api,
+  item, active, playing, showPaused, zoomed, isLiked, isSaved, spotlight, insetsBottom, insetsTop, mountPlayer, api,
 }: {
   item: any; active: boolean; playing: boolean; showPaused: boolean; zoomed: boolean;
-  isLiked: boolean; isSaved: boolean; spotlight: boolean; insetsBottom: number; mountPlayer: boolean; api: ReelPageApi;
+  isLiked: boolean; isSaved: boolean; spotlight: boolean; insetsBottom: number; insetsTop: number; mountPlayer: boolean; api: ReelPageApi;
 }) {
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
@@ -308,6 +310,12 @@ const ReelPage = memo(function ReelPage({
   // point at a door that doesn't open.
   const videoH = SCREEN_W / ratio;
   const band = (SCREEN_H - videoH) / 2;
+  // In reels a React composition fills the WHOLE screen like any other reel — no
+  // letterbox band (the old centered band left the post's frozen thumbnail showing
+  // above and below). Every layout gets the full screen and its panes cover-fill:
+  // pip/add = one clip edge-to-edge; side-by-side = two full-height halves;
+  // top-bottom = two full-width halves. See CompositionPlayer / lib/composition.
+  const compStyle: any = StyleSheet.absoluteFill;
   const showRotateHint = ratio > 1 && active && !zoomed && band >= 130;
   // Double-tap the video → like (never un-like) + heart burst; a double-tap NEVER
   // pauses (the deferred single is cancelled). A lone tap pauses via api.tapToggle
@@ -394,6 +402,33 @@ const ReelPage = memo(function ReelPage({
           />
         ) : null}
         {mountPlayer && item.video_status !== 'processing' ? (
+          item.composition_kind ? (
+            // React composition (lib/composition): both clips in the chosen layout,
+            // letterboxed. Exposes a `seek` (commentary scrubs your clip, add seeks
+            // the stitched timeline) so the scrub bar below can FF/rewind it, and
+            // reports progress the same as a plain clip. Idle-aware via AppVideo;
+            // 'pause' + the play gate keep it safe.
+            <CompositionPlayer
+              ref={setVideoRef}
+              clipUri={item.media_url}
+              kind={item.composition_kind}
+              sourcePostId={item.source_post_id ?? null}
+              sourceTrimStart={item.source_trim_start}
+              sourceTrimEnd={item.source_trim_end}
+              clipDurationSec={item.duration_seconds}
+              active={playing}
+              muted={sound.muted}
+              idleBehavior="pause"
+              chrome={false}
+              // Mini window in the TOP-RIGHT, dropped below the mute button (top+8,
+              // 40pt) so they don't overlap; the action rail is bottom-anchored, so
+              // the upper-right stays clear.
+              pipStyle={{ top: insetsTop + 54, right: SPACING.md, left: undefined, bottom: undefined }}
+              clipPoster={item.thumbnail_url}
+              onProgress={onVideoProgress}
+              style={compStyle}
+            />
+          ) : (
           // POOLED player (lib/feedVideoPool reelPool): assignment is an async
           // source swap — no creation, no freeze — which is what lets the NEXT
           // reel pre-buffer while this one plays (warmNextId in ReelScreen).
@@ -411,6 +446,7 @@ const ReelPage = memo(function ReelPage({
             trimEndSec={item.trim_end}
             onProgress={onVideoProgress}
           />
+          )
         ) : null}
         {/* Still encoding (its upload session died mid-wait; boot recovery is
             flipping it ready) — mounting the player would 404 into black, so
@@ -436,6 +472,13 @@ const ReelPage = memo(function ReelPage({
 
       {/* "Turn your phone" nudge, in the empty letterbox band above the video. */}
       <RotateHint visible={showRotateHint} top={band - 52} />
+
+      {/* Remix / Sequence pill — the reel keeps its pooled, idle-aware player and
+          shows the creator's clip; this marks the composition (opening the post
+          plays the two together). Sits right of the back chevron. */}
+      {item.composition_kind ? (
+        <CompositionBadge kind={item.composition_kind} style={{ position: 'absolute', top: insetsTop + 12, left: 54 }} />
+      ) : null}
 
       {/* Creator's captions. LANDSCAPE: in the top letterbox band (capped above
           the rotate hint) and the bottom band (capped above the meta/rail/scrub
@@ -1853,6 +1896,7 @@ export default function ReelScreen() {
         isSaved={saved.has(item.id)}
         spotlight={!!item.__spotlight || spotlightIds.has(item.id)}
         insetsBottom={insets.bottom}
+        insetsTop={insets.top}
         mountPlayer={settledId === item.id || lingerId === item.id || warmNextId === item.id}
         api={pageApi}
       />

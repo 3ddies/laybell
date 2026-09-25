@@ -95,15 +95,21 @@ type Props = {
   /** The longest recording, in seconds. */
   maxVideoSec: number;
   onCapture: (media: CapturedMedia) => void;
+  /** Fires true when a recording begins and false when it ends — lets a caller
+   *  (e.g. the Remix composer) start a reference video exactly on record so the
+   *  two line up. */
+  onRecordingChange?: (recording: boolean) => void;
   onClose: () => void;
   /** The library button, bottom left. */
   onLibrary: () => void;
   /** The way out of the camera-permission screen. */
   closeLabel: string;
+  /** Video-only capture (e.g. React reactions): no PHOTO mode, tap = record. */
+  videoOnly?: boolean;
 };
 
 const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCamera({
-  active, focused, hidden = false, maxVideoSec, onCapture, onClose, onLibrary, closeLabel,
+  active, focused, hidden = false, maxVideoSec, onCapture, onRecordingChange, onClose, onLibrary, closeLabel, videoOnly = false,
 }, ref) {
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -120,6 +126,7 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
   // The latest handler for a capture that lands after a re-render — and whether the
   // camera is still open to deliver it (the composer's can close mid-recording).
   const onCaptureRef = useRef(onCapture); onCaptureRef.current = onCapture;
+  const onRecChangeRef = useRef(onRecordingChange); onRecChangeRef.current = onRecordingChange;
   const mounted = useRef(true);
 
   const [camPermission, requestCamPermission] = useCameraPermissions();
@@ -129,7 +136,7 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
   const [facing, setFacing] = useState<CameraType>('back');
   const [flash, setFlash] = useState<FlashMode>('off');         // photo flash: off → auto → on
   const [torchOn, setTorchOn] = useState(false);                // video continuous light
-  const [mode, setMode] = useState<Mode>('picture');
+  const [mode, setMode] = useState<Mode>(videoOnly ? 'video' : 'picture');
 
   // ── Pro-camera state ────────────────────────────────────────────────────────
   const [zoom, setZoom] = useState(0);                           // 0..1 (fraction of device max)
@@ -197,6 +204,8 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
       toValue: recording ? 1 : 0, friction: 7, tension: 90, useNativeDriver: false,
     }).start();
   }, [recording, recAnim]);
+  // Tell a caller the moment recording starts/stops (Remix lines up its reference).
+  useEffect(() => { onRecChangeRef.current?.(recording); }, [recording]);
 
   // Gallery button preview: the most recent library asset — only if the library
   // permission was already granted elsewhere (never prompts from here).
@@ -241,7 +250,7 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
     setRecSecs(0);
     recProgress.setValue(0);
     setCountdown(null);
-    setMode('picture');
+    setMode(videoOnly ? 'video' : 'picture');
     setTorchOn(false);
     setZoom(0); zoomRef.current = 0;
   }, [recProgress]);
@@ -737,15 +746,18 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
           </Animated.View>
         )}
 
-        <Animated.View style={[styles.modeRow, { opacity: shutterStyle.controlsFade }]} pointerEvents={recording ? 'none' : 'auto'}>
-          {(['picture', 'video'] as Mode[]).map((m) => (
-            <TouchableOpacity key={m} onPress={() => m !== mode && toggleMode()} style={[styles.modePill, mode === m && styles.modePillActive]}>
-              <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>
-                {m === 'picture' ? t('storyCamera.modePhoto') : t('storyCamera.modeVideo')}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </Animated.View>
+        {/* No PHOTO/VIDEO switch for video-only capture (React reactions). */}
+        {!videoOnly && (
+          <Animated.View style={[styles.modeRow, { opacity: shutterStyle.controlsFade }]} pointerEvents={recording ? 'none' : 'auto'}>
+            {(['picture', 'video'] as Mode[]).map((m) => (
+              <TouchableOpacity key={m} onPress={() => m !== mode && toggleMode()} style={[styles.modePill, mode === m && styles.modePillActive]}>
+                <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>
+                  {m === 'picture' ? t('storyCamera.modePhoto') : t('storyCamera.modeVideo')}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </Animated.View>
+        )}
 
         <View style={styles.shutterRow}>
           {/* Faded out (not unmounted) while recording so it doesn't pop. */}

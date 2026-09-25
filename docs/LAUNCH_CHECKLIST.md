@@ -18,15 +18,18 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ---
 
-## 0.0 ✅ THE CURRENT STATE — updated 2026-09-23
+## 0.0 ✅ THE CURRENT STATE — updated 2026-09-25
 
-**One-line status: 1.0.3 (11) is APPROVED on iOS (tag `v1.0.3-build11`). 1.0.4 (build 12) was built and its iOS binary UPLOADED to App Store Connect on 2026-09-23 — the owner must still finish it in ASC: create the 1.0.4 version, paste What's New (`docs/RELEASE_NOTES_1.0.4.md`), select build 12, Submit for Review (`eas submit` only uploads). TestFlight was skipped (owner's call) — no OTA, so a regression ships frozen. Android: 1.0.3 (versionCode 10) built not submitted; 1.0.4 not built.**
+**One-line status: 1.0.3 (11) is APPROVED on iOS (tag `v1.0.3-build11`). 1.0.5 is now in prep and SUPERSEDES 1.0.4 (build 12) — build 12 was uploaded to ASC on 2026-09-23 but never submitted, and the owner chose (2026-09-25) to bundle everything into one release instead. 1.0.5 = all of 1.0.4's content + React (reaction videos) + profile views + a story pulse. All pure JS + already-applied SQL — NO new native module, native fingerprint unchanged. Version bumped to 1.0.5 in `app.json`; `appVersionSource: remote` + `autoIncrement` means EAS builds it as build 13. Code committed on `dev`. Pre-build gates all VERIFIED GREEN on 2026-09-25 (below). Next: the OWNER triggers the EAS production build and submits (`eas submit` only uploads — the version must still be created/submitted in ASC). Android: 1.0.3 (versionCode 10) built not submitted; still blocked on the Play service-account key.**
 
-**1.0.4 headline:** post analytics from the post 3-dot menu (owner-only, real data only — no fabricated demographics/retention/geo; owner-gated RPC `post_view_series.sql` deployed), audio-focus (one sound at a time; `pause()` never `stop()` near video — `stop()` deactivates the shared iOS audio session), and the perf/polish batch. Code: `07446c4` + `87a459d` on `dev`. ⚠️ Before Submit for Review: confirm demo/test money is OFF in prod.
+**1.0.5 headline:** **React** — react to any video or song, posted as a normal video that composes at playback (two corner views: you-big/original-corner `pip`, or original-big/you-corner `pip_flip`; plus "After"/`add` = original crop then your clip on one scrubbable timeline; studio audio = reference muted while filming so no echo; auto-tags the creator). **Profile views** — TikTok-style "who viewed your profile", opt-out + reciprocal, anon-revoked definer RPCs, realtime friend pop-up. Full detail: `docs/RELEASE_NOTES_1.0.5.md`. Carries 1.0.4's post analytics + Instagram-polish perf pass + audio-focus.
+
+**1.0.5 pre-build gates (verified 2026-09-25):** 💰 demo/fabricated money CLEAR (`global_sum_must_be_0`=0, no ledger violations/negative balances); 🗄️ schema audit NO DRIFT (all 73 tables/179 fns/178 cols/143 idx/48 trg present); new SQL live in prod (`post_remix_sequence.sql`, `profile_views.sql`) with **anon revoked** on the profile-view RPCs; 🧹 no debug/"REMOVE BEFORE RELEASE" markers, typecheck 0, bundle builds. ⚠️ Re-confirm demo money OFF at submit time.
 
 | Version | iOS | Android |
 |---|---|---|
-| 1.0.4 (build 12) | 🚀 binary uploaded to ASC 2026-09-23 (EAS `bc234086`); **owner: create version, What's New, select build, Submit for Review** | ⏳ not built |
+| 1.0.5 (build 13) | 🔧 **in prep** — React + profile views bundled onto 1.0.4; version bumped, committed to `dev`, gates green; **owner: run EAS production build → submit** | ⏳ not built |
+| 1.0.4 (build 12) | ⏭️ **SUPERSEDED by 1.0.5** — binary was uploaded to ASC 2026-09-23 (EAS `bc234086`) but not submitted; its content rides in 1.0.5 | ⏳ not built |
 | 1.0.3 (build 11) | ✅ **approved**, tag `v1.0.3-build11` | ⏳ built (versionCode 10), not submitted — needs the Play key |
 | 1.0.2 (build 9) | ✅ approved and auto-released 2026-09-06, tag `v1.0.2-build9` | ⏳ **not submitted** — needs the Play service-account key (`docs/PLAY_SERVICE_ACCOUNT.md`); `eas.json` sends it as a draft release |
 | 1.0.1 (build 7) | ✅ released 2026-09-01, tag `v1.0.1-build7` | submitted 2026-09-01; publishes on approval |

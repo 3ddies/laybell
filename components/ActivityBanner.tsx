@@ -83,6 +83,9 @@ export default function ActivityBanner() {
   // Who this account follows, for source 2. Read once — a follow made during
   // the session simply means that person's next post is the first one bannered.
   const following = useRef<Set<string>>(new Set());
+  // Who follows ME — with `following`, this gives "friend" = mutual follow, the
+  // gate for the profile-view banner (Source 3).
+  const followers = useRef<Set<string>>(new Set());
   // Reading pathname from a ref keeps the realtime subscription from tearing
   // down and rebuilding on every navigation.
   const pathRef = useRef(pathname);
@@ -122,6 +125,11 @@ export default function ActivityBanner() {
         .from('follows').select('following_id').eq('follower_id', user.id);
       if (!alive) return;
       following.current = new Set((follows ?? []).map((f: any) => f.following_id));
+
+      const { data: fr } = await supabase
+        .from('follows').select('follower_id').eq('following_id', user.id);
+      if (!alive) return;
+      followers.current = new Set((fr ?? []).map((f: any) => f.follower_id));
 
       // Per-mount suffix: re-using a channel name returns the ALREADY SUBSCRIBED
       // instance and .on() then throws — the same trap app/messages guards.
@@ -164,6 +172,32 @@ export default function ActivityBanner() {
               icon: 'add-circle',
               tint: COLORS.primary,
               dest: { href: `/post/${p.id}`, tab: false },
+            });
+          })
+        // ── Source 3: a FRIEND viewed my profile (profile_views.sql) ────────
+        // Transient only — the durable record is /profile-viewers. RLS scopes
+        // delivery to me (owner_id); the DB already gates recording on both of
+        // us being opted in, so anything that arrives here is legitimate.
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'profile_views', filter: `owner_id=eq.${user.id}` },
+          async (payload: any) => {
+            const row = payload.new;
+            if (!row || !row.viewer_id || row.viewer_id === user.id) return; // skip DELETE / self
+            const v = row.viewer_id as string;
+            // "Friend" = mutual follow (owner's ask).
+            if (!(following.current.has(v) && followers.current.has(v))) return;
+            if (pathRef.current.startsWith('/profile-viewers')) return; // already looking
+            const who = await actorOf(v);
+            if (!who || !alive) return;
+            show({
+              key: `profileview:${v}`,
+              actorId: v,
+              avatarUrl: who.avatar_url,
+              name: who.display_name || who.username || t('notifications.someone'),
+              text: t('banner.viewedProfile'),
+              icon: 'eye',
+              tint: COLORS.primaryLight,
+              dest: { href: '/profile-viewers', tab: false },
             });
           })
         .subscribe();

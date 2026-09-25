@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { withLayoutContext } from 'expo-router';
-import { View, StyleSheet, Keyboard, Animated, Dimensions, Text, PanResponder, Platform, Pressable } from 'react-native';
+import { View, StyleSheet, Keyboard, Animated, Dimensions, Text, PanResponder, Platform, Pressable, Easing } from 'react-native';
 // expo-image, not RN's: this avatar is on screen at every launch, and RN's Image
 // keeps no disk cache — so it re-downloaded your own face on every cold start
 // and faded it in after the bar had already drawn. See [[ui-feel-fixes]].
@@ -133,6 +133,23 @@ function TabSlot({
   const fillOpacity = active.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' });
   const outlineOpacity = active.interpolate({ inputRange: [0, 1], outputRange: [1, 0], extrapolate: 'clamp' });
 
+  // A single, gentle throb of the profile avatar a beat after the app opens —
+  // it swells and settles once over ~2s to draw the eye, timed to land just
+  // after the bell's first ring cue and at the SAME moment whether or not
+  // anything is unread. Once only (unlike the bell, which keeps ringing).
+  // Native driver, matching the scale/lift transforms it shares a node with.
+  const throb = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (route.name !== 'profile') return;
+    const timer = setTimeout(() => {
+      Animated.sequence([
+        Animated.timing(throb, { toValue: 1.22, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(throb, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]).start();
+    }, 3300); // just after LaybellBell's first ring (FIRST_DELAY 2400 + ~860 ring)
+    return () => clearTimeout(timer);
+  }, [route.name, throb]);
+
   // Center create button: a disc slightly darker than the bar at rest. When you're
   // ON the tab it cross-fades to an inverted, high-contrast disc — colors.text fill
   // + a colors.background "+" (white disc/black + in dark & grey, black disc/white +
@@ -159,7 +176,7 @@ function TabSlot({
   if (route.name === 'profile') {
     return (
       <View style={styles.tabItem}>
-        <Animated.View style={{ transform: [{ translateY: lift }, { scale }] }}>
+        <Animated.View style={{ transform: [{ translateY: lift }, { scale }, { scale: throb }] }}>
           <Animated.View pointerEvents="none" shouldRasterizeIOS style={[styles.chip, { opacity: chip, backgroundColor: chipBg }]} />
           <View style={styles.avatarRing}>
             {profile?.avatar_url ? (

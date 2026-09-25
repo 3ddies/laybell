@@ -46,6 +46,7 @@ import ProfileLayoutGrid from '../../components/ProfileLayoutGrid';
 import { isSlideshow } from '../../lib/slideshow';
 import { createNotification } from '../../lib/createNotification';
 import { hasOpenShop } from '../../lib/shop';
+import { recordProfileView } from '../../lib/profileViews';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 // The app's one celebratory gradient, shared rather than copied — see components/FollowButton.
 import { LISTEN_FILL } from '../../components/ListenButton';
@@ -303,6 +304,13 @@ export default function PublicProfileScreen() {
     hasOpenShop(String(id)).then((v) => { if (active) setHasShop(v); }).catch(() => {});
     return () => { active = false; };
   }, [id]);
+
+  // "Viewed your profile" — record this view (profile_views.sql). The RPC no-ops
+  // for self, for a viewer who hasn't opted in, and across a block, so it's safe
+  // to fire on every open of someone else's profile.
+  useEffect(() => {
+    if (currentUserId && id && currentUserId !== id) recordProfileView(String(id));
+  }, [id, currentUserId]);
 
   async function setup() {
     // The session is already on the phone; getUser() would first ask the auth

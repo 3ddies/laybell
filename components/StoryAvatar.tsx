@@ -1,5 +1,5 @@
-import { useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, type StyleProp, type ViewStyle } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing, type StyleProp, type ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,6 +32,12 @@ type Props = {
   addColors?: readonly [string, string]; // gradient for the ＋ button (e.g. the user's badge tier)
   onPressAdd?: () => void;
   /**
+   * Gently pulse the circle to nudge the user to post — but ONLY while they have
+   * no active story (the pulse stops the moment one goes up). Used on the "Your
+   * story" circle in the tray. Native-driven, a soft beat with rests between.
+   */
+  nudge?: boolean;
+  /**
    * Give the ring depth: a soft drop shadow plus a single top-left highlight on
    * the band. Opt-in rather than always-on — it is right for the stories RAIL,
    * where the circles are the content, and wrong for an avatar sitting inline
@@ -44,7 +50,7 @@ type Props = {
 export default function StoryAvatar({
   userId, avatarUrl, name, size,
   onPressProfile, onBeforeOpenStory, badgeRing,
-  showAdd, addColors, onPressAdd, raised = false, style,
+  showAdd, addColors, onPressAdd, nudge = false, raised = false, style,
 }: Props) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -58,6 +64,29 @@ export default function StoryAvatar({
   // avatars where the pill would be unreadable.
   const liveStreamId = useLiveStreamId(userId);
   const showLive = !!liveStreamId && size >= 32;
+
+  // Story nudge on the "Your story" circle while the user has NO active story: a
+  // ~3-second burst of continuous, smooth shrink-and-expand (a few breaths back to
+  // back), then a rest before the next burst — so it draws the eye without ever
+  // vibrating. Stops the instant a story goes up (`story` flips true) or the circle
+  // unmounts. Native-driven; it shares no node, so it drives its own scale freely.
+  const nudgeScale = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!nudge || story) { nudgeScale.stopAnimation(); nudgeScale.setValue(1); return; }
+    const HALF = 500;         // half a breath — 500 out + 500 back = one smooth cycle
+    const BURST_CYCLES = 3;   // ~3 seconds of continuous pulsing per burst
+    const REST_MS = 2600;     // quiet gap before the next burst triggers
+    const breathe = () => Animated.sequence([
+      Animated.timing(nudgeScale, { toValue: 1.12, duration: HALF, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(nudgeScale, { toValue: 1, duration: HALF, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+    ]);
+    const anim = Animated.loop(Animated.sequence([
+      ...Array.from({ length: BURST_CYCLES }, breathe),
+      Animated.delay(REST_MS),
+    ]));
+    const timer = setTimeout(() => anim.start(), 700);
+    return () => { clearTimeout(timer); anim.stop(); nudgeScale.setValue(1); };
+  }, [nudge, story, nudgeScale]);
 
   // A ring shows ONLY while the user has an active story.
   //  • Unseen → the user's badge-tier color (or an explicit `badgeRing` override,
@@ -160,17 +189,19 @@ export default function StoryAvatar({
 
   return (
     <View ref={wrapRef} style={[{ width: size, height: size }, style]}>
-      {tappable ? (
-        <TouchableOpacity activeOpacity={0.8} onPress={onPress}>{content}</TouchableOpacity>
-      ) : (
-        content
-      )}
-      {showAdd && (
-        <TouchableOpacity style={styles.add} onPress={onPressAdd} activeOpacity={0.85} hitSlop={6}>
-          <LinearGradient colors={addColors ?? [colors.primary, colors.primary]} style={StyleSheet.absoluteFill} />
-          <Ionicons name="add" size={16} color="#fff" />
-        </TouchableOpacity>
-      )}
+      <Animated.View style={{ width: size, height: size, transform: [{ scale: nudgeScale }] }}>
+        {tappable ? (
+          <TouchableOpacity activeOpacity={0.8} onPress={onPress}>{content}</TouchableOpacity>
+        ) : (
+          content
+        )}
+        {showAdd && (
+          <TouchableOpacity style={styles.add} onPress={onPressAdd} activeOpacity={0.85} hitSlop={6}>
+            <LinearGradient colors={addColors ?? [colors.primary, colors.primary]} style={StyleSheet.absoluteFill} />
+            <Ionicons name="add" size={16} color="#fff" />
+          </TouchableOpacity>
+        )}
+      </Animated.View>
       {showLive && (
         <View style={[styles.liveWrap, { bottom: -Math.max(4, Math.round(size * 0.09)) }]} pointerEvents="box-none">
           <TouchableOpacity

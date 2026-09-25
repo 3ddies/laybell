@@ -84,6 +84,14 @@ export type VideoJob = {
   // Scheduled (ISO time): the row is inserted hidden until then, and the server
   // sends its notifications when it goes live (supabase/sql/post_scheduling.sql).
   publishAt?: string | null;
+  // Remix / Sequence (lib/composition): the ORIGINAL this post is built on, and
+  // how the player composes the two. The post is still an ordinary video (this
+  // clip is its media_url); these columns just record the pairing.
+  sourcePostId?: string | null;
+  compositionKind?: 'pip' | 'pip_flip' | 'side_by_side' | 'top_bottom' | 'green_screen' | 'add' | null;
+  // 'add' mode only: the slice of the ORIGINAL to play before your clip (seconds).
+  sourceTrimStart?: number | null;
+  sourceTrimEnd?: number | null;
 };
 
 // What the feed renders for an in-flight upload.
@@ -443,7 +451,10 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         caption: job.caption,
         is_public: job.hasCommunity ? true : job.isPublic,
         ...(job.genre ? { genre: job.genre } : {}),
-        ...(job.durationSeconds && job.durationSeconds > 0 ? { duration_seconds: job.durationSeconds } : {}),
+        // duration_seconds is an INTEGER column — round it (a probed duration is a
+        // float like 59.9366…, which errors on insert). The composer already rounds
+        // before enqueue; this makes every caller safe (e.g. React).
+        ...(job.durationSeconds && job.durationSeconds > 0 ? { duration_seconds: Math.round(job.durationSeconds) } : {}),
         aspect_ratio: job.aspectRatio,
         // Spread-conditional: pre-migration databases simply never see the columns.
         ...(job.topCaption?.text ? { top_caption: job.topCaption } : {}),
@@ -469,6 +480,11 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         allow_gifs: job.allowGifs,
         // Only when set, like the composer: a database without the column never sees it.
         ...(job.mature ? { mature: true } : {}),
+        // Remix pairing + layout/mode (post_remix_sequence.sql).
+        ...(job.sourcePostId && job.compositionKind ? { source_post_id: job.sourcePostId, composition_kind: job.compositionKind } : {}),
+        // 'add' mode: the original's crop, when the creator set one.
+        ...(job.compositionKind === 'add' && job.sourceTrimStart != null ? { source_trim_start: job.sourceTrimStart } : {}),
+        ...(job.compositionKind === 'add' && job.sourceTrimEnd != null ? { source_trim_end: job.sourceTrimEnd } : {}),
       };
       let { data: newPost, error } = await supabase.from('posts').insert(row).select('id').single();
       // A column the deployed schema — or PostgREST's CACHED view of it, which
@@ -496,6 +512,15 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         delete row.song_start_sec;
         delete row.song_volume;
         delete row.video_volume;
+        ({ data: newPost, error } = await supabase.from('posts').insert(row).select('id').single());
+      }
+      // Remix/Sequence columns, if PostgREST's cached schema still lags the ALTER:
+      // the post lands as an ordinary video, just without the pairing.
+      if (error && /source_post_id|composition_kind|source_trim/i.test(error.message ?? '')) {
+        delete row.source_post_id;
+        delete row.composition_kind;
+        delete row.source_trim_start;
+        delete row.source_trim_end;
         ({ data: newPost, error } = await supabase.from('posts').insert(row).select('id').single());
       }
       // One asset = one post, DB-enforced (posts_video_uid_unique). If a racing

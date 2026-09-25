@@ -433,6 +433,9 @@ function AppContent() {
             contentStyle: { backgroundColor: 'transparent' },
           }}
         />
+        {/* Remix / Sequence compose (a camera flow): a normal opaque push, but
+            the back-swipe is OFF so a stray drag can't leave mid-recording. */}
+        <Stack.Screen name="remix/[id]" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
         {/* One-motion swipe-back screens: each renders inside a SwipeBackPager,
             so they're transparent modals — the screen you came from stays mounted
             underneath and is revealed live as you drag the page off (same feel as

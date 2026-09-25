@@ -141,6 +141,9 @@ export default function StoriesTray() {
           showAdd
           addColors={addColors}
           onPressAdd={openCamera}
+          // Pulse the circle to nudge posting — only while there's no active
+          // story of their own (StoryAvatar also self-gates on the story flag).
+          nudge={!ownGroup}
         />
         <Text style={styles.label} numberOfLines={1}>{t('storiesTray.yourStory')}</Text>
       </View>

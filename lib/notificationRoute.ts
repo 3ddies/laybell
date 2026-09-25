@@ -63,6 +63,9 @@ export function destForPushData(data: any, selfId?: string | null): Dest | null 
 
   if (type === 'system') return destForSystemKey(data?.key, selfId);
 
+  // Profile view → the list of who viewed you (profile_views.sql).
+  if (type === 'profile_view') return { href: '/profile-viewers', tab: false };
+
   // Straight into the stream that just started. The push carries the id; the
   // notification ROW does not (it has only the host), so that one settles for
   // the live rail — see destForNotificationRow.

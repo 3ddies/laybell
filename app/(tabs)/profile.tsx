@@ -50,6 +50,7 @@ import { SPACING, RADIUS, quietText, type ThemePalette } from '../../constants/t
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { unseenShopActivityCount, hasOpenShop } from '../../lib/shop';
+import { fetchProfileViewersCount, fetchProfileViewers } from '../../lib/profileViews';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ProfileCompletion from '../../components/ProfileCompletion';
 import { profileProgress, type ProfileTaskKey } from '../../lib/profileCompletion';
@@ -147,6 +148,10 @@ export default function ProfileScreen() {
   // For the "complete your profile" card (components/ProfileCompletion). null =
   // not looked yet, which reads as "not done" without claiming it is done.
   const [hasShop, setHasShop] = useState<boolean | null>(null);
+  // "Viewed your profile": the badge count and the most-recent viewer's face for
+  // the button (both empty unless opted in).
+  const [viewCount, setViewCount] = useState(0);
+  const [recentViewerAvatar, setRecentViewerAvatar] = useState<string | null>(null);
   const liveId = liveProfile?.id ?? null;
   // Waved away for good, per account: somebody who will never open a shop should
   // be able to say so once instead of being asked forever. The badge stays
@@ -167,6 +172,19 @@ export default function ProfileScreen() {
   }, [checklistKey]);
   useFocusEffect(useCallback(() => {
     unseenShopActivityCount().then(setShopAlertCount).catch(() => {});
+  }, []));
+  // Refresh the profile-views count + most-recent viewer on focus (empty unless
+  // opted in). The button wears that viewer's face, like TikTok.
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    Promise.all([fetchProfileViewersCount(), fetchProfileViewers(1)])
+      .then(([c, recent]) => {
+        if (!active) return;
+        setViewCount(c);
+        setRecentViewerAvatar(recent[0]?.avatar_url ?? null);
+      })
+      .catch(() => {});
+    return () => { active = false; };
   }, []));
   // Whether a shop exists at all — one of the four tasks, and re-checked on
   // focus so opening one ticks it off when you come back.
@@ -985,6 +1003,23 @@ export default function ProfileScreen() {
         <Text style={styles.usernameHeader}>@{profile?.username}</Text>
         <View style={styles.headerActions}>
           <TouchableOpacity
+            onPress={() => router.push('/profile-viewers')}
+            style={styles.settingsBtn}
+            accessibilityRole="button"
+            accessibilityLabel={t('profileViews.title')}
+          >
+            {recentViewerAvatar ? (
+              <Image source={{ uri: recentViewerAvatar }} style={styles.viewAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+            ) : (
+              <Ionicons name="eye-outline" size={23} color={colors.textSecondary} />
+            )}
+            {viewCount > 0 && (
+              <View style={styles.viewBadge}>
+                <Text style={styles.viewBadgeText}>{viewCount > 99 ? '99+' : viewCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
             onPress={() => setQrVisible(true)}
             style={styles.settingsBtn}
             accessibilityRole="button"
@@ -1197,6 +1232,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   usernameHeader: { color: colors.text, fontSize: 24, fontWeight: '900' },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   settingsBtn: { padding: 4 },
+  viewAvatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border },
+  viewBadge: {
+    position: 'absolute', top: -3, right: -5, minWidth: 16, height: 16, borderRadius: 8,
+    paddingHorizontal: 3, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: colors.background,
+  },
+  viewBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
 
   banner: {
     flexDirection: 'row', alignItems: 'center',

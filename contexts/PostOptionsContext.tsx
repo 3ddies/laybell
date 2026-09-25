@@ -602,6 +602,12 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
     // own-post menu. Opens the per-post analytics screen.
     options.push({ key: 'analytics', label: t('postOptions.viewAnalytics'), icon: 'stats-chart-outline',
       onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) router.push(`/post-analytics/${o.postId}`); }); } });
+    // React to your OWN video or song (lib/composition): a video reaction in a
+    // layout you pick, or your commentary over the track.
+    if (opts?.mediaType === 'video' || isAudioPost(opts?.mediaType)) {
+      options.push({ key: 'remix', label: t('postOptions.remix'), icon: 'duplicate-outline',
+        onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) router.push(`/remix/${o.postId}`); }); } });
+    }
     options.push({ key: 'edit', label: t('postOptions.editPost'), icon: 'pencil-outline',
       onPress: () => dismissThen(() => optsRef.current?.onEdit?.()) });
     // Grid visibility — songs and videos only, and only where a picture is left
@@ -645,6 +651,11 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
   } else if (hasPost && !isOwn) {
     options.push({ key: 'repost', label: reposted ? t('postOptions.removeFromReposts') : t('postOptions.repost'),
       icon: reposted ? 'repeat' : 'repeat-outline', onPress: toggleRepost });
+    // React to someone else's video or song (lib/composition).
+    if (opts?.mediaType === 'video' || isAudioPost(opts?.mediaType)) {
+      options.push({ key: 'remix', label: t('postOptions.remix'), icon: 'duplicate-outline',
+        onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) router.push(`/remix/${o.postId}`); }); } });
+    }
     options.push({ key: 'report', label: t('postOptions.reportPost'), icon: 'flag-outline', destructive: true,
       onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) reportPost(o.postId); }); } });
     if (opts?.authorId) options.push(blockOpt);

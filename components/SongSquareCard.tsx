@@ -3,9 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing } from 'reac
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { SPACING, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
-import { useTranslation } from '../contexts/LanguageContext';
 import SongCardTitle from './SongCardTitle';
 import { type Feature } from '../lib/features';
 import FloatingComments from './FloatingComments';
@@ -89,7 +88,7 @@ function FloatingNote({ delay, startX, drift, size }: {
 }
 
 export default function SongSquareCard({
-  postId, title, artist, features, cover, isPlaying, onPlay, onOpen, onOpenProfile,
+  postId, title, artist, features, cover, onOpen, onOpenProfile,
 }: {
   postId: string;
   title: string;
@@ -97,15 +96,12 @@ export default function SongSquareCard({
   artist: string | null;
   features: Feature[];
   cover: string | null;
-  isPlaying: boolean;
-  onPlay: () => void;
   onOpen: () => void;
   /** A credited collaborator's profile — by id, since they are not the poster. */
   onOpenProfile: (id: string) => void;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const { t } = useTranslation();
 
   // Drives SongCardTitle's title↔credits flip. Only runs when there are credits
   // to flip to, and is keyed on the post so a recycled card restarts from the
@@ -190,15 +186,13 @@ export default function SongSquareCard({
         {notes.map((n, i) => <FloatingNote key={`${postId}-${i}`} {...n} />)}
       </View>
 
-      {/* Its own band, below the notes' start and above the play control, so a
-          bubble is never under the button or over the title. */}
+      {/* Its own band, below the notes' start, so a bubble never runs over the
+          title. */}
       <FloatingComments postId={postId} max={3} travel={132} style={styles.commentLayer} />
 
-      {/* Scrims at BOTH ends, because the content is now at both: the title top
-          left, the play control bottom right. Artwork is arbitrary — it can be
-          white, busy, or both — so each needs its own ground rather than
-          trusting the image. The bottom one is lighter; it only has to carry a
-          button, not text. */}
+      {/* A scrim under the title (top) so it reads on any artwork, and a lighter
+          one at the base to ground the comment bubbles — artwork is arbitrary
+          (white, busy, or both), so each band needs its own ground. */}
       <LinearGradient
         colors={['rgba(0,0,0,0.72)', 'rgba(0,0,0,0.22)', 'transparent']}
         locations={[0, 0.55, 1]}
@@ -233,33 +227,6 @@ export default function SongSquareCard({
             header directly above this, and repeating it there is noise. */}
         {!!artist && <Text style={styles.artist} numberOfLines={1}>{artist}</Text>}
       </View>
-
-      <View style={styles.footer} pointerEvents="box-none">
-        <TouchableOpacity
-          style={styles.playBtn}
-          onPress={onPlay}
-          activeOpacity={0.85}
-          hitSlop={10}
-          accessibilityRole="button"
-          // STOP, not pause, because stopping is what this button does. The
-          // press runs playFeedSong, which re-issues playQueue for the track
-          // already playing rather than pausing it — so a pause glyph was
-          // promising a resume the control cannot give. Naming the real
-          // behaviour is the honest fix; the two states read play -> stop ->
-          // play, which is coherent on its own terms.
-          accessibilityLabel={isPlaying ? t('a11y.stop') : t('a11y.play')}
-        >
-          <Ionicons
-            name={isPlaying ? 'stop' : 'play'}
-            size={22}
-            color="#fff"
-            // Optical centring: a triangle's mass sits left of its bounding box,
-            // so a centred play glyph reads as if it has slipped backwards. A
-            // stop square is symmetrical and needs no nudge.
-            style={isPlaying ? undefined : { marginLeft: 3 }}
-          />
-        </TouchableOpacity>
-      </View>
     </TouchableOpacity>
   );
 }
@@ -288,10 +255,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingHorizontal: SPACING.md, paddingTop: SPACING.md + 2,
     maxWidth: '90%', minWidth: 0,
   },
-  footer: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end',
-    paddingHorizontal: SPACING.md, paddingBottom: SPACING.md,
-  },
   // Always white on the scrim, never colors.text — this sits on artwork, not on
   // the theme.
   // Colour and shadow only — the SIZE comes from titleSize above, which reads
@@ -299,10 +262,4 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   title: { color: '#fff' },
   feat: { color: 'rgba(255,255,255,0.92)', fontSize: 16, fontWeight: '700', lineHeight: 20 },
   artist: { color: 'rgba(255,255,255,0.8)', fontSize: 14.5, marginTop: 3 },
-  playBtn: {
-    width: 50, height: 50, borderRadius: RADIUS.full,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.34)',
-  },
 });

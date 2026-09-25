@@ -12,6 +12,8 @@ import { captionEchoesTitle, names, songCreditLine, songIsLinkOnly, songPlaysFor
 import { ambientMixFor, videoSoundFor, type AmbientMix } from '../../lib/songMix';
 import FeedVideo from '../../components/FeedVideo';
 import TimedStickers from '../../components/TimedStickers';
+import CompositionBadge from '../../components/CompositionBadge';
+import CompositionPlayer from '../../components/CompositionPlayer';
 import { hasPostStickers } from '../../lib/stickerTiming';
 import { setPlaybackPosition } from '../../lib/playbackClock';
 // FlashList v2: RECYCLES card views instead of mounting/destroying them while
@@ -91,9 +93,13 @@ const CARD_HEADER_H = 58;
 // SlideshowCarousel's width ÷ aspectRatio), so the "is the whole frame on
 // screen" test measures the real rectangle instead of estimating it.
 // 0 for cards that have no video frame at all.
+// A React composition's frame is a different shape than one clip: side-by-side is
+// ~twice as wide (so each half is uncropped), top-and-bottom ~twice as tall.
+const compAspectFactor = (kind?: string | null): number =>
+  kind === 'side_by_side' ? 2 : kind === 'top_bottom' ? 0.5 : 1;
 const videoFrameH = (it: any): number => {
   if (!it) return 0;
-  if (it.type === 'video') return Math.min(SCREEN_W / aspectToNumber(it.aspect_ratio, 16 / 9), MAX_VIDEO_H);
+  if (it.type === 'video') return Math.min(SCREEN_W / (aspectToNumber(it.aspect_ratio, 16 / 9) * compAspectFactor(it.composition_kind)), MAX_VIDEO_H);
   if (isSlideshow(it.type)) return Math.round(SCREEN_W / (aspectToNumber(it.aspect_ratio, 1) || 1));
   return 0;
 };
@@ -227,6 +233,12 @@ type Post = {
   comments: { count: number }[];
   save_count?: number;
   aspect_ratio?: string | null;
+  // Remix (lib/composition) — marks a composition and its layout; the feed shows
+  // the creator's clip with a badge, the post viewer plays the two together.
+  composition_kind?: 'side_by_side' | 'top_bottom' | 'pip' | 'green_screen' | 'add' | null;
+  source_post_id?: string | null;
+  source_trim_start?: number | null;
+  source_trim_end?: number | null;
   captions?: unknown[] | null; // vertical-video story-style captions (jsonb array)
   timed_captions?: unknown[] | null; // the ones timed to part of the clip (lib/stickerTiming)
   stream_count?: number;
@@ -549,8 +561,6 @@ const PostCard = memo(function PostCard({
           artist={songSquareArtist(item)}
           features={parseFeatures((item as any).features)}
           cover={item.cover_url ?? item.thumbnail_url ?? null}
-          isPlaying={audioActive}
-          onPlay={() => onPlayTrack(item)}
           onOpen={() => onExpandTrack(item)}
           onOpenProfile={onProfileId}
         />
@@ -586,7 +596,7 @@ const PostCard = memo(function PostCard({
             activeOpacity={1}
             onPress={() => onMediaTap(() => vidRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenReel(item, { x, y, width: w, height: h })))}
           >
-            <View style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: colors.background }]}>
+            <View style={[styles.postVideo, { height: Math.min(SCREEN_W / (aspectToNumber(item.aspect_ratio, 16 / 9) * compAspectFactor(item.composition_kind)), MAX_VIDEO_H), backgroundColor: colors.background }]}>
               {/* Thumbnail for every card; the real player mounts only for the
                   visible card and its nearest video neighbors (pre-warmed, paused)
                   so fast scrolling never spins up a player per row while landing
@@ -603,6 +613,30 @@ const PostCard = memo(function PostCard({
                 ) : null;
               })()}
               {isVisibleVideo && item.video_status !== 'processing' && (
+                item.composition_kind ? (
+                  // React composition (lib/composition): play the two together in
+                  // the chosen layout, right here in the feed. AppVideo is idle-aware;
+                  // 'pause' + the focus gate keep it from holding the screen awake.
+                  <CompositionPlayer
+                    clipUri={item.media_url}
+                    kind={item.composition_kind}
+                    sourcePostId={item.source_post_id ?? null}
+                    sourceTrimStart={item.source_trim_start}
+                    sourceTrimEnd={item.source_trim_end}
+                    clipDurationSec={item.duration_seconds}
+                    active={shouldPlayVideo}
+                    muted={songPlaysFor(item) ? videoSoundFor(item, songMuted).muted : videoMuted}
+                    idleBehavior="pause"
+                    chrome={false}
+                    clipPoster={item.thumbnail_url}
+                    onProgress={(pos, dur) => {
+                      videoPlaybackRef.current = { postId: item.id, positionMs: pos, durationMs: dur };
+                      setPlaybackPosition(item.id, pos / 1000);
+                      trackVideoProgress(item.id, pos, dur);
+                    }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                ) : (
                 // POOLED player (lib/feedVideoPool): assignment is a cheap
                 // source swap on a persistent player — no creation, no freeze —
                 // so it can happen while scrolling and starts feel instant.
@@ -626,6 +660,7 @@ const PostCard = memo(function PostCard({
                     trackVideoProgress(item.id, pos, dur);
                   }}
                 />
+                )
               )}
               {/* A row whose video is still ENCODING (its session died mid-wait
                   — boot recovery flips it ready shortly): mounting the player
@@ -637,6 +672,13 @@ const PostCard = memo(function PostCard({
                   <Text style={styles.encodingPillText}>{t('upload.almostDone')}</Text>
                 </View>
               )}
+              {/* Remix / Sequence pill (lib/composition). The feed keeps its
+                  pooled, idle-aware player and shows the creator's own clip; this
+                  marks it as a composition, and opening the post plays the two
+                  together (CompositionPlayer). */}
+              {item.composition_kind ? (
+                <CompositionBadge kind={item.composition_kind} style={styles.compositionBadge} />
+              ) : null}
               {/* A vertical clip's story-style captions, so the feed shows them
                   too (not just the reel). Positioned over the card frame; the
                   same normalized data the reel uses, clipped to the card. Timed
@@ -2539,18 +2581,19 @@ export default function HomeScreen() {
             hitSlop={HEADER_HIT_SLOP}
             onPress={() => { setUnreadCount(0); router.push('/notifications'); }}
           >
-            {/* No count badge here by design — the MARK is the indicator. It
-                turns the same red the badge used, rings itself while something
-                is waiting, and drops back to normal the moment notifications
-                are opened (onPress zeroes unreadCount). Gated on isFocused too,
-                so the animation and its timer exist only while this tab is on
-                screen. The messages button beside it keeps its badge, since a
-                count is the useful thing there. */}
+            {/* The bell rings itself while something is waiting and turns red;
+                the unread count DROPS OUT of its base for ~3s on a fresh
+                notification and every few rings (LaybellBell handles both).
+                onPress zeroes unreadCount, so opening notifications clears it.
+                Gated on isFocused so the ring/badge timers exist only while this
+                tab is on screen. The messages button keeps its own corner
+                badge. */}
             <LaybellBell
               matchIconSize={28}
               color={colors.text}
               unreadColor={colors.error}
               unread={unreadCount > 0}
+              count={unreadCount}
               focused={isFocused}
             />
           </TouchableOpacity>
@@ -2746,6 +2789,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingVertical: 8, paddingHorizontal: 14,
   },
   encodingPillText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  compositionBadge: { position: 'absolute', top: 10, left: 10 },
   // Absolute-fill (same trick as the story camera): escapes the pager's
   // bar-height scene padding so the feed truly extends under the tab bar —
   // when the reactive chrome hides the bar, CONTENT shows there, not a

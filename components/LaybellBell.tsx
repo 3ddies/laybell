@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { View, Image, Animated, Easing, StyleSheet, AccessibilityInfo, type ViewStyle } from 'react-native';
+import { View, Image, Text, Animated, Easing, StyleSheet, AccessibilityInfo, type ViewStyle } from 'react-native';
 
 // The Laybell bell — the actual logo, sized and aligned off the BELL BODY.
 //
@@ -92,8 +92,18 @@ const FIRST_DELAY_MS = 2400;
 const GAP_MIN_MS = 8_500;
 const GAP_MAX_MS = 16_500;
 
+// Unread-count badge (owner, 2026-09-23) — a red pill that DROPS OUT of the
+// bell's base, shows the number of unread notifications for ~3s, then retracts,
+// the way Instagram/TikTok reveal a count. It drops when a fresh one lands and
+// again on every Nth ring to pull the eye back; N is a few rings, not every one,
+// so it emphasises rather than nags.
+const BADGE_POP_EVERY = 3;
+const BADGE_HOLD_MS = 3000;   // how long the count stays out before it retracts
+const BADGE_MAX = 999;
+
 export default function LaybellBell({
   matchIconSize = 28, color, unreadColor, accent = '#FF8095', unread, focused, style,
+  count = 0,
 }: {
   /** The `size` prop given to the Ionicon beside this one. The bell's BODY is
    *  then matched to that glyph's real drawn height and vertical position — not
@@ -113,6 +123,8 @@ export default function LaybellBell({
   unread: boolean;
   /** Animation runs only while the screen is on. */
   focused: boolean;
+  /** Unread-notification count for the badge. 0 hides it; over 999 shows "999+". */
+  count?: number;
   style?: ViewStyle;
 }) {
   const active = unread && focused;
@@ -136,6 +148,64 @@ export default function LaybellBell({
     return () => { alive = false; sub?.remove?.(); };
   }, []);
 
+  // ── Unread-count badge ──────────────────────────────────────────────────────
+  const countRef = useRef(count); countRef.current = count;   // read inside the ring loop
+  const ringCountRef = useRef(0);
+  const reveal = useRef(new Animated.Value(0)).current;       // 0 tucked away, 1 dropped out
+  const revealSeq = useRef<Animated.CompositeAnimation | null>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const numPop = useRef(new Animated.Value(0)).current;       // a beat of life on the digit itself
+
+  // Drop the badge out, hold, retract. In a ref so the ring loop (a stale
+  // closure) always drives the current badge, and both triggers — a fresh
+  // notification and every Nth ring — share one definition.
+  const showBadge = useRef<() => void>(() => {});
+  showBadge.current = () => {
+    if (countRef.current <= 0) return;
+    revealSeq.current?.stop();
+    if (hideTimer.current) { clearTimeout(hideTimer.current); hideTimer.current = null; }
+    if (reduceMotion.current) {
+      reveal.setValue(1);
+      hideTimer.current = setTimeout(() => reveal.setValue(0), BADGE_HOLD_MS);
+      return;
+    }
+    revealSeq.current = Animated.sequence([
+      Animated.spring(reveal, { toValue: 1, friction: 6, tension: 180, useNativeDriver: true }),
+      Animated.delay(BADGE_HOLD_MS),
+      Animated.timing(reveal, { toValue: 0, duration: 300, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+    ]);
+    revealSeq.current.start();
+    // A quick settle on the digit a beat after it lands, so the number reads as
+    // alive rather than stamped on.
+    numPop.setValue(0);
+    Animated.sequence([
+      Animated.delay(210),
+      Animated.timing(numPop, { toValue: 1, duration: 120, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.spring(numPop, { toValue: 0, friction: 4, tension: 180, useNativeDriver: true }),
+    ]).start();
+  };
+
+  // The reveal is RING-TIMED (see the ring loop): the first ring drops it out,
+  // so the user watches it happen live a beat after opening rather than finding
+  // it already sitting there. So the initial 0 -> n load is deliberately silent
+  // here — it only marks the count as loaded. A genuinely NEW one that lands
+  // afterwards drops live; reading everything (n -> 0) snaps it away.
+  const prevCount = useRef(count);
+  const loaded = useRef(count > 0);
+  useEffect(() => {
+    const prev = prevCount.current;
+    prevCount.current = count;
+    if (count <= 0) { loaded.current = false; revealSeq.current?.stop(); reveal.setValue(0); return; }
+    if (!loaded.current) { loaded.current = true; return; }  // first load — let the ring reveal it
+    if (count > prev) showBadge.current();
+  }, [count, reveal]);
+
+  // Stop the sequence and its hold timer on unmount.
+  useEffect(() => () => {
+    revealSeq.current?.stop();
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+  }, []);
+
   useEffect(() => {
     if (!active) return;
 
@@ -150,6 +220,11 @@ export default function LaybellBell({
 
     function ring() {
       if (reduceMotion.current) { schedule(); return; }
+      // Drop the unread badge out on the FIRST ring (so the count reveals itself
+      // live, just after opening), then on every few rings after, so the eye
+      // keeps coming back to it. (% N === 1 fires on rings 1, 1+N, 1+2N, …)
+      ringCountRef.current += 1;
+      if (countRef.current > 0 && ringCountRef.current % BADGE_POP_EVERY === 1) showBadge.current();
       loop.current = Animated.sequence([
         strike(1, 140, 1),
         strike(-1, 210, 0.9),
@@ -230,7 +305,107 @@ export default function LaybellBell({
           <Image source={BELL} style={[img, { tintColor: accent }]} resizeMode="contain" />
         </Animated.View>
       </Animated.View>
+
+      {/* The count drops out of the bell's base, holds ~3s, then retracts. The
+          anchor spans the bell box and centres the pill under it; the pill
+          inside animates. A sibling of the swinging bell, not a child, so the
+          swing above it never carries it. */}
+      {count > 0 && (
+        <View pointerEvents="none" style={[styles.badgeAnchor, { top: bodySize + 10 }]}>
+          <Animated.View
+            style={[
+              styles.badge,
+              // The bell's own unread red, so the badge and the ringing logo are
+              // the same colour.
+              { backgroundColor: unreadColor },
+              {
+                opacity: reveal.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' }),
+                transform: [
+                  { translateY: reveal.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) },
+                  { scale: reveal.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }) },
+                ],
+              },
+            ]}
+          >
+            {/* Speech-bubble lip, dead-centred on the rectangle (the wrapper
+                spans the badge and centres it) and pointing up at the bell. Two
+                centred copies — the red base and an accent one that flashes with
+                the ring like the body — so the whole bubble pulses together. */}
+            <View pointerEvents="none" style={styles.tailWrap}>
+              <View style={[styles.badgeTail, { borderBottomColor: unreadColor }]} />
+            </View>
+            <Animated.View pointerEvents="none" style={[styles.tailWrap, { opacity: hit }]}>
+              <View style={[styles.badgeTail, { borderBottomColor: accent }]} />
+            </Animated.View>
+
+            {/* Flashes to the bell's accent at each strike, off the SAME `hit`
+                value the logo uses — so when the bell is out and ringing, the
+                pill pulses in time with it. */}
+            <Animated.View
+              pointerEvents="none"
+              style={[StyleSheet.absoluteFill, styles.badgeFlash, { backgroundColor: accent, opacity: hit }]}
+            />
+            <Animated.View style={{ transform: [{ scale: numPop.interpolate({ inputRange: [0, 1], outputRange: [1, 1.22] }) }] }}>
+              <Text style={styles.badgeText} numberOfLines={1}>
+                {count > BADGE_MAX ? `${BADGE_MAX}+` : String(count)}
+              </Text>
+            </Animated.View>
+          </Animated.View>
+        </View>
+      )}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  // Full width of the bell box, centring the pill under it; `top` is set inline
+  // from the measured body size so it hangs off the base.
+  badgeAnchor: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  // A rounded rectangle, Instagram-style: corners clearly rounded (~a third of
+  // the height) but the body stays rectangular. minWidth is wider than the
+  // height so even a single digit is a horizontal rectangle, not a square; the
+  // padding lets it grow. Colour is inline (the bell's unread red); a soft
+  // shadow lifts it off the feed.
+  badge: {
+    minWidth: 42,
+    height: 30,
+    borderRadius: 10,
+    paddingHorizontal: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // No overflow:hidden — on iOS that clips the shadow. The flash overlay
+    // carries its own matching radius instead.
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 3.5,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  badgeFlash: { borderRadius: 10 },
+  // A full-width strip just above the badge that CENTRES the lip on the
+  // rectangle; its top overlaps the badge edge by ~1pt to hide the seam.
+  tailWrap: { position: 'absolute', top: -6, left: 0, right: 0, alignItems: 'center' },
+  // The lip itself: a CSS-border triangle pointing UP toward the bell. Colour is
+  // set inline (the bell's red, or the accent while flashing).
+  badgeTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderBottomWidth: 7,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+  },
+  // Bold SF with tabular figures — the iOS count look: heavy enough to read at a
+  // glance, tabular so the digits stay aligned and never jitter as the count
+  // changes.
+  badgeText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    includeFontPadding: false,
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+  },
+});
 
