@@ -1,0 +1,45 @@
+Laybell is a music-focused social platform for independent artists and their listeners. Sign-in is required for all features.
+
+DEMO ACCOUNT
+Email: 3ddiemusic@gmail.com / Password: review1
+Sign in with the EMAIL above, not a username. Both subscription tiers are active, so every subscriber feature is reachable without buying anything. Credits (below) can be bought with a sandbox purchase.
+
+NEW IN 1.0.5
+- React (reaction videos): open any video or song's "..." menu > React. Record your reaction, then choose how the two sit together - you full-screen with the original in a small corner window, or the original full-screen with you in the corner - or "After", where a chosen slice of the original plays first and then your clip. It posts as an ordinary video and auto-tags the original creator. It only ever uses content already posted to Laybell.
+- Viewed your profile: the eye icon at the top-right of your own profile tab opens a list of who has viewed your profile (last 30 days). It is opt-out and reciprocal - on by default, and you only see others while you are sharing yours; turn it off any time from that screen. No financial detail is shown.
+
+NOTIFICATIONS (Guideline 4.5.4)
+Two reminders (a badge about to lapse; twelve days without opening the app) are OFF by default and need an explicit opt-in: an UNTICKED checkbox at onboarding profile setup, or Settings > Notifications > "Reminders from Laybell", also the opt-out. Activity notifications (likes, comments, follows, going live, a profile view by a friend) are not promotional. No push carries financial detail.
+
+USER-GENERATED CONTENT (Guideline 1.2)
+- Automated filtering of objectionable terms on captions and comments.
+- Reporting: the "..." menu on any post, profile, comment or message > Report.
+- Blocking: the "..." menu > Block. Their posts leave the feed and Explore and they cannot make contact. Unblock from Settings > Blocked.
+- Published contact information in the app and at laybell.app.
+
+MINORS
+Users under 18 are identified at signup. For them the app disables location capture and targeted advertising, defaults posts to friends-only, limits incoming messages to accounts they follow, blocks broadcasting, hides mature content, and excludes them from reminders and marketing email. Messaging and mature-content rules are enforced server-side.
+
+PURCHASES (Guideline 3.1.1)
+All digital purchases use In-App Purchase. Consumable credit packs at $4.99, $9.99, $19.99, $49.99 and $99.99 - Settings > Credits. Credits are spent in-app (tips, Shop purchases, promoting a post) and cannot be converted back into money or transferred. Creator earnings are a separate balance, paid out through Stripe, never redeemable as credits.
+
+SUBSCRIPTION
+Two auto-renewing tiers in one group - Laybell Premium at $9.99/month and Laybell Premium+ at $19.99/month - Settings > Promotion Tools > the Premium card. Premium+ adds Films (landscape video up to one hour), removal of all advertising, and unlimited offline downloads.
+
+FILMS
+Landscape videos over nine minutes, for Premium+, on their own shelf in Laybell TV: Explore tab > TV icon, top right.
+
+LIVESTREAMING
+The LIVE button sits beside the home logo. Our provider records a broadcast in order to serve it live; that recording is deleted automatically when the broadcast ends, and no replay is kept, published or offered for download.
+
+MUSIC LICENSING
+All audio is uploaded by users, who warrant they own or control the rights; Laybell hosts no commercial catalogue. Laybell LLC holds BMI and ASCAP public performance licences, has a DMCA agent registered with the U.S. Copyright Office, and enforces a published repeat-infringer policy.
+
+EXTERNAL SERVICES
+Supabase (auth, database, storage); RevenueCat (entitlements); Cloudflare Stream (video, live); LiveKit (studio audio); Stripe Connect (payouts only); Resend (email); Google Cloud Translation; Tenor (GIFs); Expo/EAS (build, push). No AI services.
+
+AVAILABILITY AND TRACKING
+United States only. No tracking across other companies' apps or websites, so no App Tracking Transparency prompt. Ad personalisation is opt-in and off by default.
+
+CONTACT
+support@laybell.app
