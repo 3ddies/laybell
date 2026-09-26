@@ -17,7 +17,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { timeAgo } from '../../lib/timeAgo';
 import {
   fetchStoriesForUsers, recordStoryView, deleteStory, fetchStoryViewerCount, fetchStoryViewers,
-  fetchStoryLiked, setStoryLike,
+  fetchStoryLiked, setStoryLike, REPOST_MAX_SEC,
   type Story, type StoryProfile, type StoryGroup, type SourceRect, type StoryViewer,
 } from '../../lib/stories';
 import { saveRemoteToLibrary } from '../../lib/saveToLibrary';
@@ -27,7 +27,7 @@ import { storyReplyBody } from '../../lib/postLinks';
 import { createNotification } from '../../lib/createNotification';
 import SongAttribution from '../../components/SongAttribution';
 import BadgeEmblem from '../../components/BadgeEmblem';
-import SharedPostCard from '../../components/SharedPostCard';
+import RepostStoryFrame from '../../components/RepostStoryFrame';
 import { captionStickerTextStyle, resolveSticker, StickerContent } from '../../components/StickerLayer';
 import { useStories } from '../../contexts/StoriesContext';
 import { useProfile } from '../../contexts/ProfileContext';
@@ -39,6 +39,8 @@ import Spinner from '../../components/Spinner';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const IMAGE_DURATION_MS = 10000;
+// A reshared VIDEO plays for at most this long in the story, then advances (ms).
+const REPOST_MAX_MS = REPOST_MAX_SEC * 1000;
 // Video position updates fire on this cadence; the bar glides to each new position
 // over the same interval so it moves continuously instead of stepping.
 const VIDEO_PROGRESS_INTERVAL_MS = 250;
@@ -723,15 +725,13 @@ export default function StoryViewerScreen() {
             {/* Media — full-bleed cover-fit to match the composer (which authors at
                 cover), so a clip never plays back letterboxed/"smaller" than it was
                 framed. The grey cover below hides it until its first frame paints. */}
-            {story.media_type === 'image' ? (
+            {/* Default media (NOT a reshared post) — full-bleed. */}
+            {!story.shared_post_id && (story.media_type === 'image' ? (
               <ExpoImage
                 key={`${story.id}:${reloadTick}`}
                 source={{ uri: story.media_url }}
                 style={StyleSheet.absoluteFill}
                 contentFit="cover"
-                // A reshared post shows its still BLURRED as a backdrop, with the
-                // tappable post card centered over it (below).
-                blurRadius={story.shared_post_id ? 22 : 0}
                 onLoad={() => setReadyId(story.id)}
                 onError={() => {
                   // A freshly-posted URL can 404 for a beat — retry a few times
@@ -765,21 +765,59 @@ export default function StoryViewerScreen() {
                 }}
                 onEnd={goNext}
               />
-            )}
+            ))}
 
             {/* Tap surface (advance / pause) */}
             <Pressable style={StyleSheet.absoluteFill} onPressIn={onPressIn} onPressOut={onPressOut} />
 
-            {/* Reshared post: a scrim + the post as a tappable card, centered over
-                the blurred backdrop. box-none lets taps OUTSIDE the card still reach
-                the advance/pause surface; the card itself opens the original post. */}
+            {/* Reshared post (Instagram-style): the post in a card at its OWN aspect
+                over a blurred backdrop — a video PLAYS (≤20s, with audio), an image
+                shows — plus an author chip that opens the original. Layered above the
+                tap surface but pointer-transparent except the chip, so taps on the
+                media still advance/pause. */}
             {story.shared_post_id ? (
-              <>
-                <View style={styles.sharedScrim} pointerEvents="none" />
-                <View style={styles.sharedCenter} pointerEvents="box-none">
-                  <SharedPostCard postId={story.shared_post_id} />
-                </View>
-              </>
+              <RepostStoryFrame
+                postId={story.shared_post_id}
+                aspectRatio={story.aspect_ratio}
+                onOpenPost={() => router.push(`/post/${story.shared_post_id}` as any)}
+              >
+                {story.media_type === 'video' ? (
+                  <AppVideo
+                    key={story.id}
+                    source={{ uri: story.media_url }}
+                    style={StyleSheet.absoluteFill}
+                    contentFit="cover"
+                    active={!paused}
+                    ownsAudio
+                    showStallIndicator
+                    poster={story.thumbnail_url}
+                    posterContentFit="cover"
+                    progressIntervalMs={VIDEO_PROGRESS_INTERVAL_MS}
+                    onReady={() => setReadyId(story.id)}
+                    onProgress={(pos, dur) => {
+                      if (pausedRef.current) return;
+                      const cap = Math.min(dur || REPOST_MAX_MS, REPOST_MAX_MS); // cap the bar at 20s
+                      animateProgressTo(Math.min(1, pos / (cap || 1)), VIDEO_PROGRESS_INTERVAL_MS);
+                      if (pos >= REPOST_MAX_MS) goNext(); // advance at the 20s cap
+                    }}
+                    onEnd={goNext}
+                  />
+                ) : (
+                  <ExpoImage
+                    key={`${story.id}:${reloadTick}`}
+                    source={{ uri: story.media_url }}
+                    style={StyleSheet.absoluteFill}
+                    contentFit="cover"
+                    onLoad={() => setReadyId(story.id)}
+                    onError={() => {
+                      const n = (imgErrorsRef.current[story.id] ?? 0) + 1;
+                      imgErrorsRef.current[story.id] = n;
+                      if (n <= 3) setTimeout(() => setReloadTick((t) => t + 1), 500 * n);
+                      else setReadyId(story.id);
+                    }}
+                  />
+                )}
+              </RepostStoryFrame>
             ) : null}
 
             {/* Top scrim for legibility */}
@@ -1178,9 +1216,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   greyCover: { backgroundColor: '#1C1C1E', alignItems: 'center', justifyContent: 'center', zIndex: 5 },
   center: { alignItems: 'center', justifyContent: 'center', gap: SPACING.md },
   empty: { color: colors.textSecondary, fontSize: 15 },
-  // Reshared-post story: dark scrim + centered card over the blurred backdrop.
-  sharedScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.42)' },
-  sharedCenter: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', paddingHorizontal: SPACING.lg },
   emptyBtn: { paddingVertical: SPACING.sm, paddingHorizontal: SPACING.lg, borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.border },
   emptyBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 

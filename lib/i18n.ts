@@ -239,6 +239,7 @@ const en: Record<string, string> = {
   'postOptions.postedToStoryTitle': 'Added to your story',
   'postOptions.postedToStory': "It'll show on your story for 24 hours.",
   'postOptions.postToStoryFailed': "Couldn't post to your story. Please try again.",
+  'repost.shareToStory': 'Share to your story',
   'postOptions.removeFromPlaylist': 'Remove from playlist',
   'postOptions.like': 'Like',
   'postOptions.unlike': 'Unlike',

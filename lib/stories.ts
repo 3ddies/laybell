@@ -115,32 +115,46 @@ export async function createStory(input: {
   }
 }
 
-// "Post to story": reshare a post to your 24h story. The story's media is the
-// post's still (cover/thumbnail — a BACKDROP that lives in the posts bucket and is
-// NOT owned by the story), and shared_post_id points at the post so the viewer
-// draws a tappable SharedPostCard over it (that's the attribution / tap-through).
-// (No new notification type is created here — kept intentionally simple; the card's
-// link back to the original is the attribution.)
+// Longest a reshared VIDEO plays in the story (Instagram-style cap). The viewer
+// stops the segment and advances at this point.
+export const REPOST_MAX_SEC = 20;
+
+// "Post to story" (Instagram-style): reshare a post to your 24h story, keeping the
+// post's ORIENTATION and, for videos, PLAYING it (with audio, capped at
+// REPOST_MAX_SEC) inside a card over a blurred backdrop. `shared_post_id` points at
+// the post so the viewer can draw the author chip + open the original on tap.
+//   • video post → stored as a VIDEO story (its own media_url), so the viewer's
+//     video path plays it; aspect_ratio carries the post's orientation.
+//   • everything else → the post's still, as an image story at the post's aspect.
+// (No new notification type — the card's link back is the attribution.)
 export async function createStoryFromPost(userId: string, postId: string): Promise<void> {
   const { data: post, error: pErr } = await supabase
     .from('posts')
-    .select('type, media_url, cover_url, thumbnail_url, aspect_ratio')
+    .select('type, media_url, cover_url, thumbnail_url, aspect_ratio, duration_seconds')
     .eq('id', postId)
     .single();
   if (pErr || !post) throw (pErr ?? new Error('post not found'));
   const p = post as any;
-  // Best still for the backdrop: cover → thumbnail → (image posts) the media →
-  // media_url as a last resort (the card is the real content; the viewer draws a
-  // gradient behind, so a non-image backdrop still looks fine).
-  const backdrop =
-    p.cover_url ?? p.thumbnail_url ?? (p.type === 'image' ? p.media_url : null) ?? p.media_url;
-  await createStory({
-    userId,
-    mediaUrl: backdrop,
-    mediaType: 'image',
-    aspectRatio: p.aspect_ratio ?? '9:16',
-    sharedPostId: postId,
-  });
+  if (p.type === 'video') {
+    await createStory({
+      userId,
+      mediaUrl: p.media_url,                                   // the actual video — plays
+      mediaType: 'video',
+      thumbnailUrl: p.thumbnail_url ?? p.cover_url ?? null,    // blurred backdrop + poster
+      aspectRatio: p.aspect_ratio ?? '9:16',                  // keeps horizontal/vertical
+      durationSeconds: p.duration_seconds != null ? Math.min(p.duration_seconds, REPOST_MAX_SEC) : null,
+      sharedPostId: postId,
+    });
+  } else {
+    const still = p.cover_url ?? p.thumbnail_url ?? (p.type === 'image' ? p.media_url : null) ?? p.media_url;
+    await createStory({
+      userId,
+      mediaUrl: still,
+      mediaType: 'image',
+      aspectRatio: p.aspect_ratio ?? '1:1',
+      sharedPostId: postId,
+    });
+  }
 }
 
 // Core loader: active (non-expired) stories for the given authors, grouped by
