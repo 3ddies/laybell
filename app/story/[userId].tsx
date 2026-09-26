@@ -27,6 +27,7 @@ import { storyReplyBody } from '../../lib/postLinks';
 import { createNotification } from '../../lib/createNotification';
 import SongAttribution from '../../components/SongAttribution';
 import BadgeEmblem from '../../components/BadgeEmblem';
+import SharedPostCard from '../../components/SharedPostCard';
 import { captionStickerTextStyle, resolveSticker, StickerContent } from '../../components/StickerLayer';
 import { useStories } from '../../contexts/StoriesContext';
 import { useProfile } from '../../contexts/ProfileContext';
@@ -728,6 +729,9 @@ export default function StoryViewerScreen() {
                 source={{ uri: story.media_url }}
                 style={StyleSheet.absoluteFill}
                 contentFit="cover"
+                // A reshared post shows its still BLURRED as a backdrop, with the
+                // tappable post card centered over it (below).
+                blurRadius={story.shared_post_id ? 22 : 0}
                 onLoad={() => setReadyId(story.id)}
                 onError={() => {
                   // A freshly-posted URL can 404 for a beat — retry a few times
@@ -765,6 +769,18 @@ export default function StoryViewerScreen() {
 
             {/* Tap surface (advance / pause) */}
             <Pressable style={StyleSheet.absoluteFill} onPressIn={onPressIn} onPressOut={onPressOut} />
+
+            {/* Reshared post: a scrim + the post as a tappable card, centered over
+                the blurred backdrop. box-none lets taps OUTSIDE the card still reach
+                the advance/pause surface; the card itself opens the original post. */}
+            {story.shared_post_id ? (
+              <>
+                <View style={styles.sharedScrim} pointerEvents="none" />
+                <View style={styles.sharedCenter} pointerEvents="box-none">
+                  <SharedPostCard postId={story.shared_post_id} />
+                </View>
+              </>
+            ) : null}
 
             {/* Top scrim for legibility */}
             <LinearGradient colors={['rgba(0,0,0,0.55)', 'transparent']} style={styles.topScrim} pointerEvents="none" />
@@ -1162,6 +1178,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   greyCover: { backgroundColor: '#1C1C1E', alignItems: 'center', justifyContent: 'center', zIndex: 5 },
   center: { alignItems: 'center', justifyContent: 'center', gap: SPACING.md },
   empty: { color: colors.textSecondary, fontSize: 15 },
+  // Reshared-post story: dark scrim + centered card over the blurred backdrop.
+  sharedScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.42)' },
+  sharedCenter: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', paddingHorizontal: SPACING.lg },
   emptyBtn: { paddingVertical: SPACING.sm, paddingHorizontal: SPACING.lg, borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.border },
   emptyBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 

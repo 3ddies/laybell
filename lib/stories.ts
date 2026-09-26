@@ -39,6 +39,10 @@ export type Story = {
   // story_stickers.sql. The optional style fields (font/color/bg/emoji) are
   // resolved by components/StickerLayer's resolveSticker() in editor + viewer.
   stickers?: StorySticker[] | null;
+  // "Post to story": a post reshared to this story (story_shared_post.sql). When
+  // set, media_url is the ORIGINAL post's still (a backdrop, in the posts bucket —
+  // NOT owned by this story) and the viewer draws SharedPostCard over it.
+  shared_post_id?: string | null;
 };
 
 export type StorySticker = {
@@ -86,6 +90,7 @@ export async function createStory(input: {
   durationSeconds?: number | null;
   song?: { id: string; title: string; artist: string; artistId: string } | null;
   stickers?: StorySticker[] | null;
+  sharedPostId?: string | null;
 }): Promise<void> {
   const { error } = await supabase.from('stories').insert({
     user_id: input.userId,
@@ -99,6 +104,7 @@ export async function createStory(input: {
       ? { song_id: input.song.id, song_title: input.song.title, song_artist: input.song.artist, song_artist_id: input.song.artistId }
       : {}),
     ...(input.stickers && input.stickers.length ? { stickers: input.stickers } : {}),
+    ...(input.sharedPostId ? { shared_post_id: input.sharedPostId } : {}),
   });
   if (error) throw error;
 
@@ -107,6 +113,34 @@ export async function createStory(input: {
   if (input.song && input.song.artistId && input.song.artistId !== input.userId) {
     createNotification({ userId: input.song.artistId, actorId: input.userId, type: 'song_story' });
   }
+}
+
+// "Post to story": reshare a post to your 24h story. The story's media is the
+// post's still (cover/thumbnail — a BACKDROP that lives in the posts bucket and is
+// NOT owned by the story), and shared_post_id points at the post so the viewer
+// draws a tappable SharedPostCard over it (that's the attribution / tap-through).
+// (No new notification type is created here — kept intentionally simple; the card's
+// link back to the original is the attribution.)
+export async function createStoryFromPost(userId: string, postId: string): Promise<void> {
+  const { data: post, error: pErr } = await supabase
+    .from('posts')
+    .select('type, media_url, cover_url, thumbnail_url, aspect_ratio')
+    .eq('id', postId)
+    .single();
+  if (pErr || !post) throw (pErr ?? new Error('post not found'));
+  const p = post as any;
+  // Best still for the backdrop: cover → thumbnail → (image posts) the media →
+  // media_url as a last resort (the card is the real content; the viewer draws a
+  // gradient behind, so a non-image backdrop still looks fine).
+  const backdrop =
+    p.cover_url ?? p.thumbnail_url ?? (p.type === 'image' ? p.media_url : null) ?? p.media_url;
+  await createStory({
+    userId,
+    mediaUrl: backdrop,
+    mediaType: 'image',
+    aspectRatio: p.aspect_ratio ?? '9:16',
+    sharedPostId: postId,
+  });
 }
 
 // Core loader: active (non-expired) stories for the given authors, grouped by
@@ -501,10 +535,13 @@ export async function recordStoryView(storyId: string, viewerId: string): Promis
 export async function deleteStory(storyId: string): Promise<void> {
   // Grab the media URLs first, delete the row, then best-effort remove the
   // underlying Storage objects so they don't linger in the public bucket.
+  // A shared-post story's media is the ORIGINAL post's image (posts bucket) — NOT
+  // owned by this story — so it must NEVER be cleaned up here, or we'd delete the
+  // source post's cover.
   let media: string[] = [];
   try {
-    const { data } = await supabase.from('stories').select('media_url, thumbnail_url').eq('id', storyId).single();
-    if (data) media = [data.media_url, (data as any).thumbnail_url].filter(Boolean) as string[];
+    const { data } = await supabase.from('stories').select('media_url, thumbnail_url, shared_post_id').eq('id', storyId).single();
+    if (data && !(data as any).shared_post_id) media = [data.media_url, (data as any).thumbnail_url].filter(Boolean) as string[];
   } catch {}
   await supabase.from('stories').delete().eq('id', storyId);
   if (media.length) await removePublicUrls(media);

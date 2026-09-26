@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, FlatList, TextInput, Image,
   TouchableOpacity, Platform, ActivityIndicator,
-  Keyboard, Animated, Alert, Modal, Pressable,
+  Keyboard, Animated, Alert, Modal, Pressable, LayoutAnimation,
 } from 'react-native';
 // Keyboard-synced, not keyboard-event-driven: this KeyboardAvoidingView moves
 // with the keyboard frame by frame on the UI thread, where React Native's own
@@ -41,12 +41,24 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 import TranslatableText from '../../components/TranslatableText';
 import { ChatThreadSkeleton } from '../../components/Skeleton';
 import { tabTick, reactionPop, impactLight } from '../../lib/haptics';
+import { unsendMessage, hideMessageForMe, fetchHiddenMessageIds, copyText } from '../../lib/messageActions';
 
 type Message = { id: string; body: string; sender_id: string; receiver_id: string; created_at: string };
 type Reaction = { message_id: string; user_id: string; emoji: string };
 
 // Classic iMessage "tapback" set — press-and-hold a bubble to pick one.
 const TAPBACKS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
+// iOS-standard destructive red for the Unsend action (theme-independent).
+const UNSEND_RED = '#FF3B30';
+// Simple removal animation — the bubble fades out and the gap collapses, instead of
+// popping away instantly. Called right before the message is filtered out of state.
+function animateMessageRemoval() {
+  LayoutAnimation.configureNext({
+    duration: 220,
+    update: { type: LayoutAnimation.Types.easeInEaseOut },
+    delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+  });
+}
 // Captured by the compose bar's UI-thread style worklet, so it has to be a plain value.
 const IOS = Platform.OS === 'ios';
 
@@ -117,6 +129,10 @@ export default function ChatScreen() {
   const [reactions, setReactions] = useState<Record<string, Reaction[]>>({});
   // The message whose reaction picker is open (null = picker closed).
   const [pickerFor, setPickerFor] = useState<string | null>(null);
+  // Messages this user has "deleted for you" — filtered out of the fetch + live
+  // inserts (message_unsend.sql / lib/messageActions). A ref so realtime callbacks
+  // read the current set without re-subscribing.
+  const hiddenRef = useRef<Set<string>>(new Set());
   // The message whose reactor list is open (tap a reaction to see who reacted).
   const [reactorsFor, setReactorsFor] = useState<string | null>(null);
   // Header 3-dot chat-options menu (report, and room for more later).
@@ -197,6 +213,16 @@ export default function ChatScreen() {
           }
         }
       )
+      // Unsend: when the other person hard-deletes a message they sent to me, drop
+      // it live. (My own unsends are handled optimistically.) Needs replica identity
+      // full so receiver_id survives in the delete payload for this filter.
+      .on('postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'messages', filter: `receiver_id=eq.${currentUserId}` },
+        (payload) => {
+          const gone = (payload.old as any)?.id;
+          if (gone) { animateMessageRemoval(); setMessages(prev => prev.filter(m => m.id !== gone)); }
+        }
+      )
       // RLS scopes reaction events to threads this user is part of, but that still
       // spans every conversation — reconcile only when the change touches a message
       // currently on screen. Read live message ids via the setState updater so this
@@ -232,7 +258,12 @@ export default function ChatScreen() {
   async function setup() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) { setCurrentUserId(user.id); await fetchMessages(user.id); markAsRead(user.id); }
+      if (user) {
+        setCurrentUserId(user.id);
+        hiddenRef.current = await fetchHiddenMessageIds(user.id);
+        await fetchMessages(user.id);
+        markAsRead(user.id);
+      }
       const { data: profile } = await supabase.from('profiles').select('username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden').eq('id', id).single();
       // A partner who has since hidden their account reads as "Hidden account".
       if (profile) setOtherUser(maskHiddenProfile(profile as any));
@@ -254,7 +285,11 @@ export default function ChatScreen() {
       .from('messages').select('*')
       .or(`and(sender_id.eq.${userId},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${userId})`)
       .order('created_at', { ascending: true });
-    if (data) { setMessages(data); fetchReactions(data.map(m => m.id)); }
+    if (data) {
+      const visible = data.filter((m: any) => !hiddenRef.current.has(m.id)); // drop "deleted for you"
+      setMessages(visible);
+      fetchReactions(visible.map((m: any) => m.id));
+    }
   }
 
   // Pull every reaction for the given messages and group them by message id.
@@ -276,6 +311,35 @@ export default function ChatScreen() {
   async function deleteMessage(msgId: string) {
     setMessages(prev => prev.filter(m => m.id !== msgId));
     await supabase.from('messages').delete().eq('id', msgId);
+  }
+
+  // Unsend (your own message only) — hard-delete for everyone; optimistic locally
+  // (fading out), and the DELETE realtime event removes it on the other side.
+  async function unsendPicker(msgId: string) {
+    const m = messages.find((x) => x.id === msgId);
+    setPickerFor(null);
+    impactLight();
+    animateMessageRemoval();
+    setMessages((prev) => prev.filter((x) => x.id !== msgId));
+    await unsendMessage(msgId, m?.body ?? '');
+  }
+
+  // Delete for you — hide the message from MY view only (the other side keeps it).
+  async function deleteForMe(msgId: string) {
+    if (!currentUserId) return;
+    setPickerFor(null);
+    impactLight();
+    animateMessageRemoval();
+    setMessages((prev) => prev.filter((x) => x.id !== msgId));
+    await hideMessageForMe(msgId, currentUserId);
+  }
+
+  // Copy a text message to the clipboard (no-op on a dev client without the native
+  // module — see lib/messageActions.copyText).
+  async function copyPicker(text: string) {
+    setPickerFor(null);
+    const ok = await copyText(text);
+    if (ok) impactLight();
   }
 
   // Apply (or toggle off) a reaction. Optimistic: the emoji lands instantly, then
@@ -816,6 +880,29 @@ export default function ChatScreen() {
               </TouchableOpacity>
             ))}
           </View>
+          {/* Message actions — Copy (plain text) + Delete for you (any) + Unsend (own). */}
+          <Pressable style={styles.msgActionCard} onPress={() => {}}>
+            {(() => {
+              const b = pickerFor ? messages.find((m) => m.id === pickerFor)?.body : null;
+              const text = b && !parseAttachment(b) && !parseOffer(b) && !parseStudioInvite(b) && !sharedPostId(b) && !parseStoryReply(b) ? b : null;
+              return text ? (
+                <TouchableOpacity style={styles.msgActionRow} activeOpacity={0.7} onPress={() => copyPicker(text)}>
+                  <Ionicons name="copy-outline" size={19} color={colors.text} />
+                  <Text style={[styles.msgActionText, { color: colors.text }]}>{t('messages.copy')}</Text>
+                </TouchableOpacity>
+              ) : null;
+            })()}
+            <TouchableOpacity style={styles.msgActionRow} activeOpacity={0.7} onPress={() => pickerFor && deleteForMe(pickerFor)}>
+              <Ionicons name="eye-off-outline" size={19} color={colors.text} />
+              <Text style={[styles.msgActionText, { color: colors.text }]}>{t('messages.deleteForYou')}</Text>
+            </TouchableOpacity>
+            {pickerFor && messages.find((m) => m.id === pickerFor)?.sender_id === currentUserId ? (
+              <TouchableOpacity style={styles.msgActionRow} activeOpacity={0.7} onPress={() => pickerFor && unsendPicker(pickerFor)}>
+                <Ionicons name="arrow-undo-outline" size={19} color={UNSEND_RED} />
+                <Text style={[styles.msgActionText, { color: UNSEND_RED }]}>{t('messages.unsend')}</Text>
+              </TouchableOpacity>
+            ) : null}
+          </Pressable>
         </Pressable>
       </Modal>
 
@@ -987,6 +1074,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   pickerEmojiBtn: { width: 46, height: 46, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
   pickerEmoji: { fontSize: 28 },
+  // The action menu that hangs under the tapback pill on long-press.
+  msgActionCard: {
+    marginTop: SPACING.md, minWidth: 230, backgroundColor: colors.surfaceElevated,
+    borderRadius: RADIUS.lg, paddingVertical: SPACING.xs, overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 10,
+  },
+  msgActionRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 3 },
+  msgActionText: { fontSize: 15, fontWeight: '600' },
 
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: SPACING.xxl },
   unflip: { transform: [{ scaleY: -1 }] },

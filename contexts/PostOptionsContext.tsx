@@ -22,6 +22,7 @@ import { selection } from '../lib/haptics';
 import { useProfile } from './ProfileContext';
 import { useTranslation } from './LanguageContext';
 import { isReposted, addRepost, removeRepost } from '../lib/reposts';
+import { createStoryFromPost } from '../lib/stories';
 import { useDownloadAction } from '../hooks/useDownloadAction';
 import { aspectToNumber } from '../lib/aspectRatio';
 import { postToCastItem, type CastItem } from '../lib/cast';
@@ -525,6 +526,25 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
             type: o.mediaType ?? null,
             mediaUrl: shareMedia,
           });
+        });
+      } });
+
+    // ── Post to story (ANY post) ──────────────────────────────────────────────
+    // Reshares the post to your 24h story: an ordinary story whose backdrop is the
+    // post's still and which carries the post as a tappable card (lib/stories
+    // createStoryFromPost). Tapping the card in the story opens the original.
+    options.push({ key: 'post-to-story', label: t('postOptions.postToStory'), icon: 'albums-outline',
+      onPress: () => {
+        const o = optsRef.current;
+        const uid = profile?.id;
+        dismissThen(async () => {
+          if (!o?.postId || !uid) return;
+          try {
+            await createStoryFromPost(uid, o.postId);
+            Alert.alert(t('postOptions.postedToStoryTitle'), t('postOptions.postedToStory'));
+          } catch {
+            Alert.alert(t('common.error'), t('postOptions.postToStoryFailed'));
+          }
         });
       } });
   }

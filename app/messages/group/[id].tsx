@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, FlatList, TextInput, Image,
   TouchableOpacity, Platform, ActivityIndicator,
-  Keyboard, Animated, Modal, Pressable, Alert,
+  Keyboard, Animated, Modal, Pressable, Alert, LayoutAnimation,
 } from 'react-native';
 // Keyboard-synced, not keyboard-event-driven: this KeyboardAvoidingView moves
 // with the keyboard frame by frame on the UI thread, where React Native's own
@@ -29,6 +29,7 @@ import GifPickerModal from '../../../components/GifPickerModal';
 import AttachmentView from '../../../components/AttachmentView';
 import ImageViewerModal from '../../../components/ImageViewerModal';
 import { tabTick, reactionPop, impactLight } from '../../../lib/haptics';
+import { unsendMessage, hideMessageForMe, fetchHiddenMessageIds, copyText } from '../../../lib/messageActions';
 import SharedPostCard from '../../../components/SharedPostCard';
 import GroupAvatar from '../../../components/GroupAvatar';
 import { ChatThreadSkeleton } from '../../../components/Skeleton';
@@ -38,6 +39,16 @@ type Reaction = { message_id: string; user_id: string; emoji: string };
 type Conversation = { id: string; title: string | null; avatar_url: string | null; created_by: string | null };
 
 const TAPBACKS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
+// iOS-standard destructive red for the Unsend action (theme-independent).
+const UNSEND_RED = '#FF3B30';
+// Simple removal animation — the bubble fades out and the gap collapses.
+function animateMessageRemoval() {
+  LayoutAnimation.configureNext({
+    duration: 220,
+    update: { type: LayoutAnimation.Types.easeInEaseOut },
+    delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+  });
+}
 // Captured by the compose bar's UI-thread style worklet, so it has to be a plain value.
 const IOS = Platform.OS === 'ios';
 const RUN_GAP_MS = 15 * 60 * 1000; // separator + re-show sender after a 15-min gap
@@ -69,6 +80,8 @@ export default function GroupChatScreen() {
   const orderedMessages = useMemo(() => [...messages].reverse(), [messages]);
   const [reactions, setReactions] = useState<Record<string, Reaction[]>>({});
   const [pickerFor, setPickerFor] = useState<string | null>(null);
+  // Messages this user "deleted for you" — filtered from the fetch + live inserts.
+  const hiddenRef = useRef<Set<string>>(new Set());
   const [reactorsFor, setReactorsFor] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [pendingAttachment, setPendingAttachment] = useState<Attachment | null>(null);
@@ -144,6 +157,16 @@ export default function GroupChatScreen() {
           markGroupRead(String(id), currentUserId);
         }
       )
+      // Unsend: a member hard-deleting their message drops it live for everyone.
+      // (My own unsends are optimistic.) Needs replica identity full so
+      // conversation_id survives in the delete payload for this filter.
+      .on('postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${id}` },
+        (payload) => {
+          const gone = (payload.old as any)?.id;
+          if (gone) { animateMessageRemoval(); setMessages(prev => prev.filter(m => m.id !== gone)); }
+        }
+      )
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'message_reactions' },
         () => { setMessages(curr => { fetchReactions(curr.map(m => m.id)); return curr; }); }
@@ -174,12 +197,14 @@ export default function GroupChatScreen() {
       if (!user) return;
       setCurrentUserId(user.id);
 
-      const [{ data: conv }, { data: memberRows }, { data: msgs }] = await Promise.all([
+      const [{ data: conv }, { data: memberRows }, { data: msgs }, hidden] = await Promise.all([
         supabase.from('conversations').select('id, title, avatar_url, created_by').eq('id', id).single(),
         supabase.from('conversation_members').select('user_id').eq('conversation_id', id),
         supabase.from('messages').select('id, body, sender_id, conversation_id, created_at')
           .eq('conversation_id', id).order('created_at', { ascending: true }),
+        fetchHiddenMessageIds(user.id),
       ]);
+      hiddenRef.current = hidden; // messages this user "deleted for you"
       if (conv) setConversation(conv as Conversation);
       if (memberRows?.length) {
         const ids = memberRows.map(r => r.user_id);
@@ -187,7 +212,11 @@ export default function GroupChatScreen() {
           .from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show').in('id', ids);
         if (profiles) setMembers(profiles as GroupProfile[]);
       }
-      if (msgs) { setMessages(msgs as Message[]); fetchReactions(msgs.map((m: any) => m.id)); }
+      if (msgs) {
+        const visible = (msgs as Message[]).filter((m) => !hiddenRef.current.has(m.id));
+        setMessages(visible);
+        fetchReactions(visible.map((m) => m.id));
+      }
       markGroupRead(String(id), user.id);
     } finally {
       // Never strand the group thread on a skeleton if a fetch rejects.
@@ -250,6 +279,34 @@ export default function GroupChatScreen() {
   async function deleteMessage(msgId: string) {
     setMessages(prev => prev.filter(m => m.id !== msgId));
     await supabase.from('messages').delete().eq('id', msgId);
+  }
+
+  // Unsend (your own message) — hard-delete for everyone; optimistic locally (fading
+  // out), and the DELETE realtime event removes it for the other members.
+  async function unsendPicker(msgId: string) {
+    const m = messages.find((x) => x.id === msgId);
+    setPickerFor(null);
+    impactLight();
+    animateMessageRemoval();
+    setMessages((prev) => prev.filter((x) => x.id !== msgId));
+    await unsendMessage(msgId, m?.body ?? '');
+  }
+
+  // Delete for you — hide the message from MY view only (others keep it).
+  async function deleteForMe(msgId: string) {
+    if (!currentUserId) return;
+    setPickerFor(null);
+    impactLight();
+    animateMessageRemoval();
+    setMessages((prev) => prev.filter((x) => x.id !== msgId));
+    await hideMessageForMe(msgId, currentUserId);
+  }
+
+  // Copy a text message to the clipboard (no-op without the native module).
+  async function copyPicker(text: string) {
+    setPickerFor(null);
+    const ok = await copyText(text);
+    if (ok) impactLight();
   }
 
   async function applyReaction(messageId: string, emoji: string) {
@@ -560,6 +617,29 @@ export default function GroupChatScreen() {
               </TouchableOpacity>
             ))}
           </View>
+          {/* Message actions — Copy (plain text) + Delete for you (any) + Unsend (own). */}
+          <Pressable style={styles.msgActionCard} onPress={() => {}}>
+            {(() => {
+              const b = pickerFor ? messages.find((m) => m.id === pickerFor)?.body : null;
+              const text = b && !parseAttachment(b) && !sharedPostId(b) && !parseRenameEvent(b) ? b : null;
+              return text ? (
+                <TouchableOpacity style={styles.msgActionRow} activeOpacity={0.7} onPress={() => copyPicker(text)}>
+                  <Ionicons name="copy-outline" size={19} color={colors.text} />
+                  <Text style={[styles.msgActionText, { color: colors.text }]}>{t('messages.copy')}</Text>
+                </TouchableOpacity>
+              ) : null;
+            })()}
+            <TouchableOpacity style={styles.msgActionRow} activeOpacity={0.7} onPress={() => pickerFor && deleteForMe(pickerFor)}>
+              <Ionicons name="eye-off-outline" size={19} color={colors.text} />
+              <Text style={[styles.msgActionText, { color: colors.text }]}>{t('messages.deleteForYou')}</Text>
+            </TouchableOpacity>
+            {pickerFor && messages.find((m) => m.id === pickerFor)?.sender_id === currentUserId ? (
+              <TouchableOpacity style={styles.msgActionRow} activeOpacity={0.7} onPress={() => pickerFor && unsendPicker(pickerFor)}>
+                <Ionicons name="arrow-undo-outline" size={19} color={UNSEND_RED} />
+                <Text style={[styles.msgActionText, { color: UNSEND_RED }]}>{t('messages.unsend')}</Text>
+              </TouchableOpacity>
+            ) : null}
+          </Pressable>
         </Pressable>
       </Modal>
 
@@ -782,6 +862,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   pickerEmojiBtn: { width: 46, height: 46, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
   pickerEmoji: { fontSize: 28 },
+  // The action menu that hangs under the tapback pill on long-press.
+  msgActionCard: {
+    marginTop: SPACING.md, minWidth: 230, backgroundColor: colors.surfaceElevated,
+    borderRadius: RADIUS.lg, paddingVertical: SPACING.xs, overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 10,
+  },
+  msgActionRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 3 },
+  msgActionText: { fontSize: 15, fontWeight: '600' },
 
   sheetKav: { flex: 1 },
   sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
