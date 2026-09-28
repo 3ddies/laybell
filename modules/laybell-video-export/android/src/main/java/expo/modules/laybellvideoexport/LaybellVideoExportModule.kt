@@ -280,6 +280,60 @@ class LaybellVideoExportModule : Module() {
         promise.reject("ERR_EXPORT", e.message, e)
       }
     }.runOnQueue(Queues.MAIN)
+
+    // Joins several recorded clips, head to tail, into one file — the multi-clip
+    // recorder's segments stitched into the single video the composer then works with.
+    // Concatenation is exactly an EditedMediaItemSequence: the items play back to back.
+    // The segments all come from the same camera at one setting (the recorder locks the
+    // lens once a take is banked), so they share a size and orientation and need no
+    // Presentation to line them up. Started on the main thread, the Transformer's looper.
+    AsyncFunction("concatClips") { uris: List<String>, outputUri: String, promise: Promise ->
+      if (running != null) {
+        promise.reject("ERR_EXPORT_BUSY", "A video is already being processed", null)
+        return@AsyncFunction
+      }
+      if (uris.isEmpty()) {
+        promise.reject("ERR_CONCAT", "There are no clips to join", null)
+        return@AsyncFunction
+      }
+      val output = fileOf(outputUri)
+      try {
+        output.parentFile?.mkdirs()
+        if (output.exists()) output.delete()
+        val items = uris.map { uri ->
+          EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(fileOf(uri)))).build()
+        }
+        val sequence = EditedMediaItemSequence.Builder(items).build()
+        val builder = Composition.Builder(listOf(sequence))
+        if (Build.VERSION.SDK_INT >= 29) {
+          builder.setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL)
+        }
+        val composition = builder.build()
+        val transformer = Transformer.Builder(context)
+          .setLooper(Looper.getMainLooper())
+          .setVideoMimeType(MimeTypes.VIDEO_H264)
+          .setAudioMimeType(MimeTypes.AUDIO_AAC)
+          .addListener(object : Transformer.Listener {
+            override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+              running = null
+              promise.resolve(Uri.fromFile(output).toString())
+            }
+
+            override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+              running = null
+              output.delete()
+              promise.reject("ERR_CONCAT", exportException.message, exportException)
+            }
+          })
+          .build()
+        running = transformer
+        transformer.start(composition, output.absolutePath)
+      } catch (e: Exception) {
+        running = null
+        output.delete()
+        promise.reject("ERR_CONCAT", e.message, e)
+      }
+    }.runOnQueue(Queues.MAIN)
   }
 
   private fun buildComposition(o: ExportOptions, width: Int, height: Int): Composition {

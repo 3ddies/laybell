@@ -76,6 +76,12 @@ declare class LaybellVideoExportModule extends NativeModule {
   exportVideo(options: ExportOptions): Promise<string>;
   /** Present, and true, from the build that knows ExportOptions.videoFit. */
   canFitVideo?: () => boolean;
+  /**
+   * Joins recorded clips head to tail into one file (the multi-clip recorder's
+   * segments), resolving with its URI. Present only from the build that added it; the
+   * segments must share a size and orientation (the recorder keeps them on one camera).
+   */
+  concatClips?: (uris: string[], outputUri: string) => Promise<string>;
 }
 
 // null on every binary built before the module existed (no OTA on this project).
@@ -92,6 +98,11 @@ export function videoFitAvailable(): boolean {
   } catch {
     return false;
   }
+}
+
+/** Whether this build can join recorded clips into one (the multi-clip recorder). */
+export function videoConcatAvailable(): boolean {
+  return typeof native?.concatClips === 'function';
 }
 
 export default native;

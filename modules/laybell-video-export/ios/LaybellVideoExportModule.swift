@@ -143,6 +143,79 @@ public class LaybellVideoExportModule: Module {
         }
       }
     }
+
+    // Joins several recorded clips, head to tail, into one file — the multi-clip
+    // recorder's segments stitched into the single video the composer then works with.
+    // Resolves with the written file's URI. The segments all come from the same camera
+    // at one setting (the recorder locks the lens once a take is banked), so they share
+    // a size and orientation, and the joined track keeps the first segment's transform:
+    // the file behaves exactly like a single recording downstream (getVideoInfo,
+    // exportVideo).
+    AsyncFunction("concatClips") { (uris: [String], outputUri: String, promise: Promise) in
+      Task {
+        do {
+          let url = try await LaybellVideoExportModule.concat(uris, to: outputUri)
+          promise.resolve(url.absoluteString)
+        } catch {
+          promise.reject(error)
+        }
+      }
+    }
+  }
+
+  private static func concat(_ uris: [String], to outputUri: String) async throws -> URL {
+    let outputURL = fileURL(outputUri)
+    guard !uris.isEmpty else { throw VideoExportException("There are no clips to join") }
+    let preciseTiming = [AVURLAssetPreferPreciseDurationAndTimingKey: true]
+
+    let composition = AVMutableComposition()
+    guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+      throw VideoExportException("Could not prepare the video")
+    }
+    var audioTrack: AVMutableCompositionTrack?
+    var cursor = CMTime.zero
+    var transformSet = false
+
+    for uri in uris {
+      let asset = AVURLAsset(url: fileURL(uri), options: preciseTiming)
+      guard let sourceVideo = try await asset.loadTracks(withMediaType: .video).first else { continue }
+      let videoRange = try await sourceVideo.load(.timeRange)
+      guard CMTimeCompare(videoRange.duration, .zero) > 0 else { continue }
+      try videoTrack.insertTimeRange(videoRange, of: sourceVideo, at: cursor)
+      // The first segment's orientation stands for the joined clip (the recorder keeps
+      // every segment on one camera).
+      if !transformSet {
+        videoTrack.preferredTransform = try await sourceVideo.load(.preferredTransform)
+        transformSet = true
+      }
+      // A segment's own sound, lined up under its picture and never running past it. A
+      // lip-sync take is silent (the camera was muted), so there is usually no track.
+      if let sourceAudio = try await asset.loadTracks(withMediaType: .audio).first {
+        if audioTrack == nil {
+          audioTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+        }
+        let audioRange = try await sourceAudio.load(.timeRange)
+        let audioDuration = CMTimeMinimum(audioRange.duration, videoRange.duration)
+        if let audioTrack, CMTimeCompare(audioDuration, .zero) > 0 {
+          try audioTrack.insertTimeRange(CMTimeRange(start: audioRange.start, duration: audioDuration), of: sourceAudio, at: cursor)
+        }
+      }
+      cursor = CMTimeAdd(cursor, videoRange.duration)
+    }
+    guard CMTimeCompare(cursor, .zero) > 0 else {
+      throw VideoExportException("The clips were empty")
+    }
+    // An empty audio track can fail the export (as in export()).
+    if let audioTrack, CMTimeCompare(audioTrack.timeRange.duration, .zero) <= 0 {
+      composition.removeTrack(audioTrack)
+    }
+
+    guard let session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
+      throw VideoExportException("Could not start joining the clips")
+    }
+    session.shouldOptimizeForNetworkUse = true
+    try await runExport(session, to: outputURL)
+    return outputURL
   }
 
   private static func export(_ o: ExportOptions) async throws -> URL {

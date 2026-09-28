@@ -3,7 +3,7 @@ import {
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert, Linking, Dimensions, Pressable,
-  Platform, Animated, Easing, PanResponder,
+  Platform, Animated, Easing, PanResponder, ActivityIndicator,
 } from 'react-native';
 import {
   CameraView, CameraType, FlashMode,
@@ -15,6 +15,7 @@ import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { pauseMainPlayer } from '../lib/trackPlayerService';
+import { canConcatClips, concatClips } from '../lib/videoConcat';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -120,11 +121,23 @@ type Props = {
    * for it to be audible here, so the clip and the song begin together and stay in sync.
    */
   beforeRecord?: () => Promise<void> | void;
+  /**
+   * TikTok-style segmented recording: each stop banks a segment (instead of delivering)
+   * and a ✓ joins them into one clip. Only takes effect where the native joiner exists
+   * (canConcatClips); an older build stays single-shot. Off for stories and reactions.
+   */
+  multiClip?: boolean;
+  /**
+   * How many segments are banked right now (0 when idle or after delivery). The
+   * lip-sync host watches this to keep the song lined up across a multi-clip take —
+   * resuming it between segments, and rewinding it when a segment is dropped.
+   */
+  onSegmentsChange?: (count: number) => void;
 };
 
 const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCamera({
   active, focused, hidden = false, maxVideoSec, onCapture, onRecordingChange, onClose, onLibrary, closeLabel, videoOnly = false,
-  recordMic = true, beforeRecord,
+  recordMic = true, beforeRecord, multiClip = false, onSegmentsChange,
 }, ref) {
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -177,6 +190,19 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
   const [recSecs, setRecSecs] = useState(0);
   const recSecsRef = useRef(0);
   const recTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Multi-clip (TikTok-style segmented recording) ─────────────────────────────
+  // Each stop banks a segment; a ✓ joins them. Live only where the native joiner is in
+  // the build (canConcatClips) — an older binary, and stories/reactions, stay single-shot.
+  const multi = multiClip && canConcatClips();
+  const multiRef = useRef(multi); multiRef.current = multi;
+  const [segments, setSegments] = useState<{ uri: string; sec: number }[]>([]);
+  const segmentsRef = useRef(segments); segmentsRef.current = segments;
+  const [stitching, setStitching] = useState(false);         // joining the segments after ✓
+  const stitchingRef = useRef(false); stitchingRef.current = stitching;
+  const usedSec = segments.reduce((sum, s) => sum + s.sec, 0);
+  const remainingSec = Math.max(0, maxVideoSec - usedSec);
+  const onSegChangeRef = useRef(onSegmentsChange); onSegChangeRef.current = onSegmentsChange;
   const recProgress = useRef(new Animated.Value(0)).current;     // top progress bar (0→1 over the longest recording)
   // Shutter button animations (all JS-driven so colour + transform can share a
   // view): press feedback, photo↔video tint, and the idle→recording morph.
@@ -222,6 +248,13 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
   // Tell a caller the moment recording starts/stops (Remix lines up its reference).
   useEffect(() => { onRecChangeRef.current?.(recording); }, [recording]);
 
+  // Multi-clip: report how many segments are banked (the lip-sync host keeps the song
+  // lined up from this), and drop them when the camera goes away so a reopen is clean.
+  useEffect(() => { if (multiRef.current) onSegChangeRef.current?.(segments.length); }, [segments.length]);
+  useEffect(() => {
+    if (hidden || !focused) { setSegments([]); setStitching(false); }
+  }, [hidden, focused]);
+
   // Gallery button preview: the most recent library asset — only if the library
   // permission was already granted elsewhere (never prompts from here).
   useEffect(() => {
@@ -264,6 +297,8 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
     setMicLive(false); // release the mic's session claim
     setRecSecs(0);
     recProgress.setValue(0);
+    setSegments([]);   // drop any banked multi-clip segments
+    setStitching(false);
     setCountdown(null);
     setMode(videoOnly ? 'video' : 'picture');
     setTorchOn(false);
@@ -408,8 +443,10 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
         if (countdownRef.current != null) { cancelCountdown(); return; }
         if (isDouble) {
           if (singleTapTimer.current) { clearTimeout(singleTapTimer.current); singleTapTimer.current = null; }
-          // Flipping mid-record would tear down the in-flight recording.
-          if (!recordingRef.current) flipCamera();
+          // Flipping mid-record would tear down the in-flight recording; flipping between
+          // multi-clip segments would join two orientations, so the lens is locked once a
+          // segment is banked.
+          if (!recordingRef.current && !(multiRef.current && segmentsRef.current.length > 0)) flipCamera();
         } else {
           if (singleTapTimer.current) clearTimeout(singleTapTimer.current);
           singleTapTimer.current = setTimeout(() => {
@@ -463,6 +500,9 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
   // hold-to-record that started from photo mode.
   async function beginRecording() {
     if (recordingRef.current || !cameraRef.current) return;
+    // Multi-clip: the budget is shared across segments; once it's spent the ✓ is the
+    // only way on.
+    if (multiRef.current && segmentsRef.current.reduce((s, x) => s + x.sec, 0) >= maxVideoSec) return;
     recordingRef.current = true;
     // Normal capture owns audio: pause the song through the app's OWN player
     // BEFORE the mic claims the session — the in-app buttons and the iOS
@@ -484,6 +524,10 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
     // wait cancels the record (recordingRef is cleared by reset()).
     if (beforeRecord) { try { await beforeRecord(); } catch {} }
     if (!recordingRef.current) return;
+    // Multi-clip caps this take at whatever time is left across every banked segment;
+    // a single shot uses the whole budget.
+    const usedBefore = multiRef.current ? segmentsRef.current.reduce((s, x) => s + x.sec, 0) : 0;
+    const segCap = multiRef.current ? Math.max(1, Math.ceil(maxVideoSec - usedBefore)) : maxVideoSec;
     setRecording(true);
     setRecSecs(0);
     recSecsRef.current = 0;
@@ -493,11 +537,18 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
       // Native-driven scaleX (same pattern as the story viewer's progress bar):
       // as a JS width% animation this ran a JS-thread layout pass continuously
       // for the entire recording, right while the camera loads the JS thread.
-      toValue: 1, duration: maxVideoSec * 1000, easing: Easing.linear, useNativeDriver: true,
+      toValue: 1, duration: segCap * 1000, easing: Easing.linear, useNativeDriver: true,
     }).start();
-    cameraRef.current?.recordAsync({ maxDuration: maxVideoSec })
+    cameraRef.current?.recordAsync({ maxDuration: segCap })
       .then((video) => {
-        if (video?.uri) deliver({ uri: video.uri, type: 'video', durationSec: recSecsRef.current || undefined });
+        if (!video?.uri) return;
+        // Multi-clip banks the segment and stays in the camera (the ✓ joins them);
+        // a single shot goes straight on to the composer.
+        if (multiRef.current) {
+          setSegments((prev) => [...prev, { uri: video.uri, sec: recSecsRef.current || 1 }]);
+        } else {
+          deliver({ uri: video.uri, type: 'video', durationSec: recSecsRef.current || undefined });
+        }
       })
       .catch((e: any) => {
         if (mounted.current) Alert.alert(t('storyCamera.videoFailTitle'), e?.message ?? t('post.tryAgain'));
@@ -514,6 +565,44 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
 
   function endRecording() {
     cameraRef.current?.stopRecording();   // safe no-op if nothing is recording
+  }
+
+  // ── Multi-clip actions ────────────────────────────────────────────────────────
+  // ✓ — join the banked segments into one clip and hand it on. One segment needs no
+  // join (concatClips returns it as-is). Segments clear on close/blur after delivery.
+  async function finishMulti() {
+    if (stitchingRef.current || recordingRef.current) return;
+    const segs = segmentsRef.current;
+    if (segs.length === 0) return;
+    setStitching(true);
+    try {
+      const uri = await concatClips(segs.map((s) => s.uri));
+      if (!mounted.current) return;
+      const totalSec = segs.reduce((sum, s) => sum + s.sec, 0);
+      deliver({ uri, type: 'video', durationSec: totalSec || undefined });
+    } catch (e: any) {
+      if (mounted.current) Alert.alert(t('storyCamera.videoFailTitle'), e?.message ?? t('post.tryAgain'));
+    } finally {
+      if (mounted.current) setStitching(false);
+    }
+  }
+
+  // Undo the last segment; onSegmentsChange lets the host rewind the lip-sync song to match.
+  function deleteLastSegment() {
+    if (stitchingRef.current || recordingRef.current) return;
+    setSegments((prev) => prev.slice(0, -1));
+  }
+
+  // The X: with segments banked, confirm before dropping the take.
+  function handleCloseButton() {
+    if (multiRef.current && segmentsRef.current.length > 0) {
+      Alert.alert(t('post.discardClipsTitle'), t('post.discardClipsBody'), [
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('post.discard'), style: 'destructive', onPress: () => { setSegments([]); onClose(); } },
+      ]);
+      return;
+    }
+    onClose();
   }
 
   // ── Timer countdown ─────────────────────────────────────────────────────────
@@ -546,7 +635,7 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
   // finger-lift — drift or a parent grab can't cancel a hold mid-recording.
   function onShutterDown() {
     animatePress(true);
-    if (recordingRef.current || countdown != null || !cameraRef.current) return;
+    if (stitchingRef.current || recordingRef.current || countdown != null || !cameraRef.current) return;
     pressActiveRef.current = true;
     shutterZoomBase.current = zoomRef.current;
     if (mode !== 'picture') return;          // VIDEO mode records on release (tap)
@@ -571,6 +660,7 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
     const wasActive = pressActiveRef.current;
     pressActiveRef.current = false;
     if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; }
+    if (stitchingRef.current) return;                       // joining segments — ignore the shutter
 
     if (countdown != null) { cancelCountdown(); return; }   // any tap cancels the self-timer
     if (recordingRef.current) { endRecording(); return; }   // recording (hold or video-tap) → stop
@@ -624,6 +714,8 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
 
   // ─── Live capture ────────────────────────────────────────────────────────
   const zoomFactor = ultraWide ? 0.5 : 1 + zoom * 4; // display-only approximation
+  // Multi-clip, idle with segments banked: the gallery/flip pair becomes undo/✓.
+  const showMultiActions = multi && segments.length > 0 && !recording;
   return (
     <View style={styles.container}>
       {camPermission?.granted && hasTurn ? (
@@ -681,19 +773,38 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
       {/* Front-camera screen flash */}
       {screenFlash && <View style={[StyleSheet.absoluteFill, { backgroundColor: '#fff' }]} />}
 
-      {/* Recording progress, to the longest recording, along the very top */}
-      {recording && (
+      {/* Recording progress along the very top. Single shot: one bar to the max.
+          Multi-clip: the banked segments fill it, the current take animates on from
+          there, and thin ticks mark the seams between segments. */}
+      {(recording || (multi && segments.length > 0)) && (
         <View style={[styles.recBarTrack, { top: insets.top + 4 }]}>
-          <Animated.View
-            style={[styles.recBarFill, { transform: [{ scaleX: recProgress }] }]}
-          />
+          {multi ? (
+            <>
+              <View style={[styles.recBarDone, { width: `${Math.min(100, (usedSec / maxVideoSec) * 100)}%` }]} />
+              {recording && (
+                <Animated.View
+                  style={[styles.recBarCurrent, {
+                    left: `${Math.min(100, (usedSec / maxVideoSec) * 100)}%`,
+                    width: `${Math.max(0, (remainingSec / maxVideoSec) * 100)}%`,
+                    transform: [{ scaleX: recProgress }],
+                  }]}
+                />
+              )}
+              {segments.slice(0, -1).map((_, i) => {
+                const cum = segments.slice(0, i + 1).reduce((sum, s) => sum + s.sec, 0);
+                return <View key={i} style={[styles.recBarTick, { left: `${Math.min(100, (cum / maxVideoSec) * 100)}%` }]} />;
+              })}
+            </>
+          ) : (
+            <Animated.View style={[styles.recBarFill, { transform: [{ scaleX: recProgress }] }]} />
+          )}
         </View>
       )}
 
       {/* Top controls */}
       <View style={[styles.topRow, { top: insets.top + 12 }]}>
         {!recording ? (
-          <TouchableOpacity style={styles.roundBtn} onPress={onClose} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
+          <TouchableOpacity style={styles.roundBtn} onPress={handleCloseButton} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
             <Ionicons name="close" size={28} color="#fff" />
           </TouchableOpacity>
         ) : <View style={styles.roundBtn} />}
@@ -784,16 +895,29 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
         )}
 
         <View style={styles.shutterRow}>
-          {/* Faded out (not unmounted) while recording so it doesn't pop. */}
-          <Animated.View style={{ opacity: shutterStyle.controlsFade }} pointerEvents={recording ? 'none' : 'auto'}>
-            <TouchableOpacity style={styles.galleryBtn} onPress={onLibrary} accessibilityRole="button" accessibilityLabel={t('a11y.chooseFromLibrary')}>
-              {libThumb ? (
-                <ExpoImage source={{ uri: libThumb }} style={styles.galleryThumb} contentFit="cover" />
-              ) : (
-                <Ionicons name="images-outline" size={26} color="#fff" />
-              )}
+          {/* Left: the library — or, with a multi-clip take banked, undo the last segment. */}
+          {showMultiActions ? (
+            <TouchableOpacity
+              style={styles.galleryBtn}
+              onPress={deleteLastSegment}
+              disabled={stitching}
+              accessibilityRole="button"
+              accessibilityLabel={t('post.deleteLastClip')}
+            >
+              <Ionicons name="arrow-undo-outline" size={28} color="#fff" />
             </TouchableOpacity>
-          </Animated.View>
+          ) : (
+            // Faded out (not unmounted) while recording so it doesn't pop.
+            <Animated.View style={{ opacity: shutterStyle.controlsFade }} pointerEvents={recording ? 'none' : 'auto'}>
+              <TouchableOpacity style={styles.galleryBtn} onPress={onLibrary} accessibilityRole="button" accessibilityLabel={t('a11y.chooseFromLibrary')}>
+                {libThumb ? (
+                  <ExpoImage source={{ uri: libThumb }} style={styles.galleryThumb} contentFit="cover" />
+                ) : (
+                  <Ionicons name="images-outline" size={26} color="#fff" />
+                )}
+              </TouchableOpacity>
+            </Animated.View>
+          )}
 
           <Animated.View {...shutterPan.panHandlers} style={styles.shutterHit}>
             <Animated.View style={{ transform: [{ scale: pressScale }] }}>
@@ -815,18 +939,35 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
             </Animated.View>
           </Animated.View>
 
-          <Animated.View style={{ opacity: shutterStyle.controlsFade }} pointerEvents={recording ? 'none' : 'auto'}>
-            <TouchableOpacity style={styles.galleryBtn} onPress={flipCamera} accessibilityRole="button" accessibilityLabel={t('a11y.flipCamera')}>
-              <Ionicons name="camera-reverse-outline" size={28} color="#fff" />
+          {/* Right: flip the camera — or, with a take banked, ✓ to join and go on. */}
+          {showMultiActions ? (
+            <TouchableOpacity
+              style={styles.doneBtn}
+              onPress={finishMulti}
+              disabled={stitching}
+              accessibilityRole="button"
+              accessibilityLabel={t('post.finishClips')}
+            >
+              {stitching ? <ActivityIndicator color="#fff" /> : <Ionicons name="checkmark" size={32} color="#fff" />}
             </TouchableOpacity>
-          </Animated.View>
+          ) : (
+            <Animated.View style={{ opacity: shutterStyle.controlsFade }} pointerEvents={recording ? 'none' : 'auto'}>
+              <TouchableOpacity style={styles.galleryBtn} onPress={flipCamera} accessibilityRole="button" accessibilityLabel={t('a11y.flipCamera')}>
+                <Ionicons name="camera-reverse-outline" size={28} color="#fff" />
+              </TouchableOpacity>
+            </Animated.View>
+          )}
         </View>
 
         {/* Fixed-height row: the label changes but the height never does, so the
             shutter above it stays put instead of jumping as mode/recording flip. */}
         <View style={styles.hintRow}>
           <Text style={styles.holdHint}>
-            {recording ? t('storyCamera.slideToZoom') : mode === 'picture' ? t('storyCamera.holdForVideo') : t('storyCamera.tapToRecord')}
+            {recording
+              ? t('storyCamera.slideToZoom')
+              : showMultiActions
+                ? t('post.multiClipHint')
+                : mode === 'picture' ? t('storyCamera.holdForVideo') : t('storyCamera.tapToRecord')}
           </Text>
         </View>
       </View>
@@ -899,6 +1040,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Full-width + left-anchored: the native scaleX drive reveals it exactly like
   // the old width% animation (track's overflow:hidden clips the ends).
   recBarFill: { width: '100%', height: 3, borderRadius: 1.5, backgroundColor: colors.error, transformOrigin: 'left' },
+  // Multi-clip: banked segments (static), the current take (animated on from there),
+  // and thin ticks marking the seams between segments.
+  recBarDone: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: colors.error },
+  recBarCurrent: { position: 'absolute', top: 0, bottom: 0, backgroundColor: colors.error, transformOrigin: 'left' },
+  recBarTick: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: 'rgba(0,0,0,0.55)' },
 
   recPill: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -940,6 +1086,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   galleryThumb: {
     width: 40, height: 40, borderRadius: 10,
     borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.85)',
+  },
+  // Multi-clip ✓: join the banked segments and go on to the composer.
+  doneBtn: {
+    width: 48, height: 48, borderRadius: 24,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary,
   },
 
   // Wraps the 78px ring at its natural size (hitSlop extends the touch area

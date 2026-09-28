@@ -45,6 +45,7 @@ import { scheduleLiveReminder } from '../../lib/scheduleNotify';
 import { mixColumns, DEFAULT_MIX, type SongMix } from '../../lib/songMix';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pauseMainPlayer } from '../../lib/trackPlayerService';
+import { canConcatClips } from '../../lib/videoConcat';
 import { makeMediaPreview, NO_PREVIEW, type MediaPreview } from '../../lib/mediaPreview';
 import type { Sticker } from '../../components/StickerLayer';
 import { splitForPublish, timingForPublish } from '../../lib/stickerTiming';
@@ -342,6 +343,12 @@ export default function PostScreen() {
   const captureSoundRef = useRef<AudioPlayer | null>(null);          // the pre-loaded lip-sync song
   const captureSongIdRef = useRef<string | null>(null);              // which song it holds
   const captureStartSecRef = useRef(0);                              // song position when the clip began
+  // Multi-clip: the song position at the start of each banked segment (dropping one
+  // rewinds the song to match), and the camera's live segment count — it decides
+  // resume-vs-restart and hides "Add sound" once a take is under way.
+  const captureSegStartsRef = useRef<number[]>([]);
+  const captureSegCountRef = useRef(0);
+  const [captureSegCount, setCaptureSegCount] = useState(0);
   // The song's part and levels, set in the video studio (lib/songMix). Tied to the
   // song they were set for, so picking a different song quietly starts fresh — a
   // part chosen in one track means nothing in another.
@@ -1018,9 +1025,19 @@ export default function PostScreen() {
     } catch {}
   }, [releaseCaptureSong]);
   // Stop + rewind, so the NEXT take starts over instead of resuming where it ended.
+  // Also ends any multi-clip session (its per-segment marks and count reset).
   const rewindCaptureSong = useCallback(() => {
     const p = captureSoundRef.current;
     if (p) { try { p.pause(); } catch {} try { p.seekTo(0); } catch {} }
+    captureSegStartsRef.current = [];
+    captureSegCountRef.current = 0;
+    setCaptureSegCount(0);
+  }, []);
+  // Between multi-clip segments: hold the song where it is so the next take resumes
+  // (rewinding here would restart the song under the joined clip).
+  const pauseCaptureSong = useCallback(() => {
+    const p = captureSoundRef.current;
+    if (p) { try { p.pause(); } catch {} }
   }, []);
   // Run by CaptureCamera JUST before the clip rolls (beforeRecord): start the song from
   // 0, WAIT until it's actually outputting audio, and record where it is — so the studio
@@ -1029,19 +1046,56 @@ export default function PostScreen() {
     const p = captureSoundRef.current;
     if (!p) return;
     pauseMainPlayer();                 // only the chosen song is heard
-    try { await p.seekTo(0); } catch {}
-    try { p.play(); } catch {}
-    // Play a short lead-in so the song is solidly audible before the clip rolls, then
-    // note exactly where it is — the mix lines the published song up with the clip.
-    const t0 = Date.now();
-    while (Date.now() - t0 < 900) {
-      if ((p.currentTime ?? 0) >= LIPSYNC_LEAD_SEC) break;
-      await new Promise((r) => setTimeout(r, 20));
+    const idx = captureSegCountRef.current;   // 0 = the take that opens the clip
+    if (idx === 0) {
+      // Fresh take: start the song over and wait until it's solidly audible, then note
+      // where it is — the studio mix lines the published song up with the clip.
+      try { await p.seekTo(0); } catch {}
+      try { p.play(); } catch {}
+      const t0 = Date.now();
+      while (Date.now() - t0 < 900) {
+        if ((p.currentTime ?? 0) >= LIPSYNC_LEAD_SEC) break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      captureStartSecRef.current = p.currentTime ?? 0;
+    } else {
+      // A later multi-clip segment: resume from where the last one left off, so the
+      // performance — and the joined clip — stays continuous with the song. Wait until
+      // it's actually moving before the clip rolls, so there's no gap at the seam.
+      const from = p.currentTime ?? 0;
+      try { p.play(); } catch {}
+      const t0 = Date.now();
+      while (Date.now() - t0 < 500) {
+        if ((p.currentTime ?? 0) > from + 0.02) break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
     }
-    captureStartSecRef.current = p.currentTime ?? 0;
+    captureSegStartsRef.current[idx] = p.currentTime ?? 0;
   }, []);
+  // The camera's live segment count (multi-clip). Rewinds the song when the take empties,
+  // or back to a dropped segment's start; the count also hides "Add sound" mid-take.
+  const onCaptureSegmentsChange = useCallback((count: number) => {
+    const prev = captureSegCountRef.current;
+    captureSegCountRef.current = count;
+    setCaptureSegCount(count);
+    if (count === 0) {
+      rewindCaptureSong();
+    } else if (count < prev) {
+      // A segment was dropped — send the song back to where that segment began.
+      const p = captureSoundRef.current;
+      const to = captureSegStartsRef.current[count] ?? 0;
+      captureSegStartsRef.current = captureSegStartsRef.current.slice(0, count);
+      if (p) { try { p.pause(); } catch {} try { p.seekTo(to); } catch {} }
+    }
+  }, [rewindCaptureSong]);
   // Free the player when the composer unmounts.
   useEffect(() => () => releaseCaptureSong(), [releaseCaptureSong]);
+
+  // TikTok-style multi-clip (segmented) recording for the composer's camera. Off for
+  // slideshow slides (each slide is one clip), and off unless this build has the native
+  // joiner — matching CaptureCamera's own gate, so the song coordination here agrees
+  // with what the camera actually does (an older binary stays single-shot).
+  const captureMultiClip = !slideshowMode && canConcatClips();
 
   function closeCamera(then?: () => void) {
     setCameraOpen(false);
@@ -3165,15 +3219,25 @@ export default function PostScreen() {
             ? Math.max(1, Math.floor(SLIDESHOW_VIDEO_BUDGET_SEC - slideshowVideoSecs(slides)))
             : VIDEO_MAX_SEC}
           onCapture={onCameraCapture}
-          onRecordingChange={(rec) => { setCapturing(rec); if (!rec) rewindCaptureSong(); }}
+          // TikTok-style segmented recording (joins into one clip on ✓). The camera
+          // feature-detects the native joiner; onSegmentsChange keeps the song lined up.
+          multiClip={captureMultiClip}
+          onSegmentsChange={onCaptureSegmentsChange}
+          onRecordingChange={(rec) => {
+            setCapturing(rec);
+            // Multi-clip holds the song between segments (resume, not restart); a single
+            // shot rewinds it so the next take starts over.
+            if (!rec) { captureMultiClip ? pauseCaptureSong() : rewindCaptureSong(); }
+          }}
           onClose={() => { rewindCaptureSong(); closeCamera(); }}
           onLibrary={() => { rewindCaptureSong(); closeCamera(); }}
           closeLabel={t('common.back')}
         />
 
-        {/* "Add sound" (TikTok-style) — top center, hidden while recording. Picks a
-            song that plays out loud during the silent recording so you lip-sync. */}
-        {!capturing && (
+        {/* "Add sound" (TikTok-style) — top center, hidden while recording and once a
+            multi-clip take is under way (the sound is locked so every segment matches).
+            Picks a song that plays out loud during the silent recording so you lip-sync. */}
+        {!capturing && captureSegCount === 0 && (
           <View style={[styles.addSoundWrap, { top: insets.top + 10 }]} pointerEvents="box-none">
             <View style={styles.addSoundPill}>
               <TouchableOpacity style={styles.addSoundMain} activeOpacity={0.85} onPress={() => setCaptureSongPicker(true)}>
