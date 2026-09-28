@@ -114,11 +114,17 @@ type Props = {
    * speaker echo baked into the clip.
    */
   recordMic?: boolean;
+  /**
+   * Awaited right before the clip actually rolls (after any mic settle). Lets the host
+   * line something up with the capture — the lip-sync camera starts the song and waits
+   * for it to be audible here, so the clip and the song begin together and stay in sync.
+   */
+  beforeRecord?: () => Promise<void> | void;
 };
 
 const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCamera({
   active, focused, hidden = false, maxVideoSec, onCapture, onRecordingChange, onClose, onLibrary, closeLabel, videoOnly = false,
-  recordMic = true,
+  recordMic = true, beforeRecord,
 }, ref) {
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -473,6 +479,11 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
         await new Promise((r) => setTimeout(r, 350));
       }
     }
+    // Host pre-roll — the lip-sync camera starts the song and waits for it to be
+    // audible here, so the clip and the song begin together. A reset/close during the
+    // wait cancels the record (recordingRef is cleared by reset()).
+    if (beforeRecord) { try { await beforeRecord(); } catch {} }
+    if (!recordingRef.current) return;
     setRecording(true);
     setRecSecs(0);
     recSecsRef.current = 0;

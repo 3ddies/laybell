@@ -44,7 +44,7 @@ import { formatSchedule, scheduleProblem } from '../../lib/schedule';
 import { scheduleLiveReminder } from '../../lib/scheduleNotify';
 import { mixColumns, DEFAULT_MIX, type SongMix } from '../../lib/songMix';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { usePostMusicActions } from '../../contexts/PostMusicContext';
+import { pauseMainPlayer } from '../../lib/trackPlayerService';
 import { makeMediaPreview, NO_PREVIEW, type MediaPreview } from '../../lib/mediaPreview';
 import type { Sticker } from '../../components/StickerLayer';
 import { splitForPublish, timingForPublish } from '../../lib/stickerTiming';
@@ -176,6 +176,15 @@ const IOS_INDIGO = '#5856D6';
 // longer means migrating the uploader to tus first.
 const VIDEO_MAX_SEC   = 180;     // 3 min — vertical (and square) WINDOW
 const VIDEO_MAX_SEC_H = 540;     // 9 min — landscape WINDOW (Laybell TV)
+// Lip-sync timing. The camera plays a short LEAD-IN of the song before the clip rolls
+// so it's solidly audible; the published mix then starts the song this much LATER in
+// the track than the measured record position (LIPSYNC_COMP_SEC) — ADVANCING it to
+// offset the camera's record-start latency (the clip's first frame lands after the song
+// has already moved on, so the video runs ahead of the song). One tuning knob: RAISE it
+// if the VIDEO still runs ahead of the song on playback, LOWER it if the SONG then runs
+// ahead of the video.
+const LIPSYNC_LEAD_SEC = 0.30;
+const LIPSYNC_COMP_SEC = 0.15;
 // Trimming a long clip is VIRTUAL: we store trim_start/trim_end and upload the
 // FULL source file (no re-encode). Cloudflare, meanwhile, rejects any direct
 // upload longer than the maxDurationSeconds its upload URL was minted with — so
@@ -324,12 +333,15 @@ export default function PostScreen() {
   const musicVideoOn = musicVideo && postType === 'video';
   const [showSongPicker, setShowSongPicker] = useState(false);
   // Camera "Add sound" (lip-sync): the chosen `song` plays out loud during a SILENT
-  // recording so the user performs to it; the clean song becomes the post's audio.
+  // recording so the user performs to it; the clean song becomes the post's audio. A
+  // DEDICATED expo-audio player (not the feed-synced ambient one) so it starts from 0
+  // on every take and reports a precise start position for the mix.
   const insets = useSafeAreaInsets();
-  const { playSong: playCaptureSong, stop: stopCaptureSong } = usePostMusicActions();
-  const CAPTURE_HOST = 'post-capture';
   const [captureSongPicker, setCaptureSongPicker] = useState(false); // song sheet over the camera
   const [capturing, setCapturing] = useState(false);                 // a recording is in progress
+  const captureSoundRef = useRef<AudioPlayer | null>(null);          // the pre-loaded lip-sync song
+  const captureSongIdRef = useRef<string | null>(null);              // which song it holds
+  const captureStartSecRef = useRef(0);                              // song position when the clip began
   // The song's part and levels, set in the video studio (lib/songMix). Tied to the
   // song they were set for, so picking a different song quietly starts fresh — a
   // part chosen in one track means nothing in another.
@@ -633,7 +645,7 @@ export default function PostScreen() {
   // on a fresh 'pick' step, so returning mid-compose (studio/details) doesn't reopen
   // it, and never for the audio tab (which picks a track, not a camera capture).
   useEffect(() => {
-    if (!isFocused) { setCameraOpen(false); return; }
+    if (!isFocused) { setCameraOpen(false); rewindCaptureSong(); return; }
     if (step === 'pick' && postType !== 'audio') setCameraOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFocused]);
@@ -982,6 +994,55 @@ export default function PostScreen() {
   // (owner, 2026-09-11). A photo lands exactly as a grid pick does; a recording goes
   // straight on to the video editor (through the trimmer first if it runs past the
   // window, as Next would decide), or becomes the next slide in a slideshow.
+  // ── Lip-sync capture song (dedicated player) ────────────────────────────────
+  const releaseCaptureSong = useCallback(() => {
+    const p = captureSoundRef.current;
+    if (p) { try { p.pause(); } catch {} try { p.remove(); } catch {} }
+    captureSoundRef.current = null;
+    captureSongIdRef.current = null;
+  }, []);
+  // Pre-load the chosen song the instant it's picked, so a take starts it with no delay.
+  const loadCaptureSong = useCallback(async (songId: string) => {
+    if (captureSongIdRef.current === songId && captureSoundRef.current) return;
+    releaseCaptureSong();
+    try {
+      const { data } = await supabase.from('posts').select('media_url').eq('id', songId).single();
+      const url = (data as any)?.media_url as string | undefined;
+      if (!url) return;
+      // keepAudioSessionActive: expo-audio's pause() otherwise DEACTIVATES the shared
+      // session and silences every other player (audio-session-hazard).
+      const p = createAudioPlayer(null, { keepAudioSessionActive: true });
+      p.replace({ uri: url });
+      captureSoundRef.current = p;
+      captureSongIdRef.current = songId;
+    } catch {}
+  }, [releaseCaptureSong]);
+  // Stop + rewind, so the NEXT take starts over instead of resuming where it ended.
+  const rewindCaptureSong = useCallback(() => {
+    const p = captureSoundRef.current;
+    if (p) { try { p.pause(); } catch {} try { p.seekTo(0); } catch {} }
+  }, []);
+  // Run by CaptureCamera JUST before the clip rolls (beforeRecord): start the song from
+  // 0, WAIT until it's actually outputting audio, and record where it is — so the studio
+  // mix lines the published song up with the clip (fixes the delayed/out-of-sync take).
+  const captureBeforeRecord = useCallback(async () => {
+    const p = captureSoundRef.current;
+    if (!p) return;
+    pauseMainPlayer();                 // only the chosen song is heard
+    try { await p.seekTo(0); } catch {}
+    try { p.play(); } catch {}
+    // Play a short lead-in so the song is solidly audible before the clip rolls, then
+    // note exactly where it is — the mix lines the published song up with the clip.
+    const t0 = Date.now();
+    while (Date.now() - t0 < 900) {
+      if ((p.currentTime ?? 0) >= LIPSYNC_LEAD_SEC) break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    captureStartSecRef.current = p.currentTime ?? 0;
+  }, []);
+  // Free the player when the composer unmounts.
+  useEffect(() => () => releaseCaptureSong(), [releaseCaptureSong]);
+
   function closeCamera(then?: () => void) {
     setCameraOpen(false);
     if (!then) return;
@@ -989,9 +1050,9 @@ export default function PostScreen() {
     else then();
   }
   async function onCameraCapture(c: CapturedMedia) {
-    // The lip-sync song was playing out loud during the (silent) recording — stop it
-    // here; the studio drives its own playback from now on.
-    stopCaptureSong(CAPTURE_HOST);
+    // The lip-sync song was playing during the (silent) recording — stop + rewind it;
+    // the studio drives its own playback from now on.
+    rewindCaptureSong();
     if (c.type === 'image') {
       // Keyed by its uri, as the system camera's captures were.
       const m: PickedMedia = { id: c.uri, uri: c.uri, posterUri: c.uri, width: c.width ?? 1, height: c.height ?? 1, type: 'image' };
@@ -1014,7 +1075,7 @@ export default function PostScreen() {
       const windowSec = meta.width > meta.height ? (isPremiumPlus ? FILM_MAX_SEC : VIDEO_MAX_SEC_H) : VIDEO_MAX_SEC;
       // Lip-sync: seed the mix so the studio opens video-muted + song-full (its own
       // default too, but this ties it to the chosen song so the Sound panel is live).
-      if (song && !musicVideo) setSongMix({ ...DEFAULT_MIX, songId: song.id });
+      if (song && !musicVideo) setSongMix({ ...DEFAULT_MIX, startSec: Math.max(0, captureStartSecRef.current + LIPSYNC_COMP_SEC), songId: song.id });
       setStep(meta.durationSec > windowSec ? 'edit' : 'studio');
       closeCamera();
     } catch {
@@ -3097,19 +3158,16 @@ export default function PostScreen() {
           // Lip-sync: with a sound chosen, record SILENT so the speaker's song isn't
           // echoed in; the clean song becomes the audio in the studio.
           recordMic={!song}
+          // The song starts (from 0) and is confirmed audible in here, JUST before the
+          // clip rolls, so the two begin together and stay in sync.
+          beforeRecord={song ? captureBeforeRecord : undefined}
           maxVideoSec={slideshowMode
             ? Math.max(1, Math.floor(SLIDESHOW_VIDEO_BUDGET_SEC - slideshowVideoSecs(slides)))
             : VIDEO_MAX_SEC}
           onCapture={onCameraCapture}
-          onRecordingChange={(rec) => {
-            setCapturing(rec);
-            // The chosen song plays out loud the instant recording starts (from the
-            // top, so the clip lines up with the song's start) and stops on end.
-            if (rec && song) playCaptureSong(CAPTURE_HOST, song.id);
-            else stopCaptureSong(CAPTURE_HOST);
-          }}
-          onClose={() => { stopCaptureSong(CAPTURE_HOST); closeCamera(); }}
-          onLibrary={() => { stopCaptureSong(CAPTURE_HOST); closeCamera(); }}
+          onRecordingChange={(rec) => { setCapturing(rec); if (!rec) rewindCaptureSong(); }}
+          onClose={() => { rewindCaptureSong(); closeCamera(); }}
+          onLibrary={() => { rewindCaptureSong(); closeCamera(); }}
           closeLabel={t('common.back')}
         />
 
@@ -3123,7 +3181,7 @@ export default function PostScreen() {
                 <Text style={styles.addSoundText} numberOfLines={1}>{song ? song.title : t('post.addSound')}</Text>
               </TouchableOpacity>
               {song && (
-                <TouchableOpacity style={styles.addSoundClear} hitSlop={8} onPress={() => { setSong(null); stopCaptureSong(CAPTURE_HOST); }} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
+                <TouchableOpacity style={styles.addSoundClear} hitSlop={8} onPress={() => { setSong(null); releaseCaptureSong(); }} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
                   <Ionicons name="close" size={15} color="rgba(255,255,255,0.85)" />
                 </TouchableOpacity>
               )}
@@ -3152,7 +3210,7 @@ export default function PostScreen() {
                   <Ionicons name="close" size={22} color={colors.textSecondary} />
                 </TouchableOpacity>
               </View>
-              <SongBrowser onPick={(s) => { setSong(s); setMusicVideo(false); setCaptureSongPicker(false); }} />
+              <SongBrowser onPick={(s) => { setSong(s); setMusicVideo(false); setCaptureSongPicker(false); loadCaptureSong(s.id); }} />
             </View>
           </View>
         )}
