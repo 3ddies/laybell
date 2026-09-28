@@ -26,6 +26,12 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 **1.0.5 pre-build gates (verified 2026-09-25):** 💰 demo/fabricated money CLEAR (`global_sum_must_be_0`=0, no ledger violations/negative balances); 🗄️ **BOTH audits clean** — schema audit NO DRIFT (all 73 tables/179 fns/178 cols/143 idx/48 trg present) AND deploy-drift NO DRIFT (26/26 edge functions deployed, none with repo source committed after its last deploy); new SQL live in prod (`post_remix_sequence.sql`, `profile_views.sql`) with **anon revoked** on the profile-view RPCs; 🧹 no debug/"REMOVE BEFORE RELEASE" markers, typecheck 0, bundle builds. ⚠️ Re-confirm demo money OFF at submit time.
 
+**🔭 Post-1.0.5 dev work accumulating on `dev` (for the NEXT build, NOT in 1.0.5's build 13):**
+- **Post-to-story + DM actions** — committed (`884ebf8`, `7a08e92`): reshare to story, DM unsend / delete-for-you / copy. SQL LIVE (`story_shared_post.sql`, `message_unsend.sql`). `expo-clipboard` added (first clipboard dep, owner-approved) → **needs a rebuild to ship**.
+- **Post-to-story EDITOR** — built 2026-09-26, **UNCOMMITTED**, pure JS (no new native dep), typecheck 0 + iOS bundle 200, **NOT device-tested**: the reshared post is a movable/resizable frame with the full story toolset + a new background picker + a pure-JS pen. Rides in the existing `stickers` jsonb + `shared_post_id` — **no new SQL**. Detail: memory `story-repost.md`.
+- **Green screen (React)** — plan only, `docs/GREEN_SCREEN_PLAN.md`: needs `@shopify/react-native-skia` (native dep + rebuild) — awaiting owner's OK.
+- **Marketing:** App-install ad with store badges = Meta Ads Manager "App Promotion" (owner-only; IG in-app Boost can't make the badge card). Claude will NOT log into Meta with the owner's credentials.
+
 | Version | iOS | Android |
 |---|---|---|
 | 1.0.5 (build 13) | 🚀 **BUILT + UPLOADED to ASC 2026-09-25** (build `4dccacf1`, submission `e38e3d80`, Apple processing); React + profile views bundled onto 1.0.4, gates green; **owner: create version, What's New, select build 13, Submit for Review** | 🚀 **.aab BUILT 2026-09-25** (versionCode 11, EAS `02b2b728`); **owner: Play key → `eas submit -p android` (draft), or manual `.aab` upload** |

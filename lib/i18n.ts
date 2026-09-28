@@ -1948,6 +1948,7 @@ const en: Record<string, string> = {
   'post.deleteDraftBody': 'This removes the saved draft from this device.',
   'post.tabPosts': 'POSTS',
   'post.tabMusic': 'MUSIC',
+  'post.addSound': 'Add sound',
   'post.single': 'Single',
   'post.fromFiles': 'Post from Files',
   'post.filesImport': 'Files',

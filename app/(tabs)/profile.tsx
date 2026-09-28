@@ -50,7 +50,7 @@ import { SPACING, RADIUS, quietText, type ThemePalette } from '../../constants/t
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { unseenShopActivityCount, hasOpenShop } from '../../lib/shop';
-import { fetchProfileViewersCount, fetchProfileViewers } from '../../lib/profileViews';
+import { fetchProfileViewers } from '../../lib/profileViews';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ProfileCompletion from '../../components/ProfileCompletion';
 import { profileProgress, type ProfileTaskKey } from '../../lib/profileCompletion';
@@ -173,19 +173,29 @@ export default function ProfileScreen() {
   useFocusEffect(useCallback(() => {
     unseenShopActivityCount().then(setShopAlertCount).catch(() => {});
   }, []));
-  // Refresh the profile-views count + most-recent viewer on focus (empty unless
-  // opted in). The button wears that viewer's face, like TikTok.
+  // The badge counts UNSEEN viewers — those whose most-recent view lands after the
+  // last time you opened the list (a local per-user marker). Opening the list stamps
+  // "now" (markViewsSeen), so the number clears and only re-appears when someone new
+  // views you. The button still wears the most-recent viewer's face, like TikTok.
+  const viewsSeenKey = profile?.id ? `profile_views_seen_at_v1_${profile.id}` : null;
+  const markViewsSeen = useCallback(() => {
+    setViewCount(0);
+    if (viewsSeenKey) AsyncStorage.setItem(viewsSeenKey, String(Date.now())).catch(() => {});
+  }, [viewsSeenKey]);
   useFocusEffect(useCallback(() => {
     let active = true;
-    Promise.all([fetchProfileViewersCount(), fetchProfileViewers(1)])
-      .then(([c, recent]) => {
-        if (!active) return;
-        setViewCount(c);
-        setRecentViewerAvatar(recent[0]?.avatar_url ?? null);
-      })
-      .catch(() => {});
+    (async () => {
+      let seenAt = 0;
+      if (viewsSeenKey) {
+        try { const v = await AsyncStorage.getItem(viewsSeenKey); seenAt = v ? Number(v) : 0; } catch { /* default 0 */ }
+      }
+      const viewers = await fetchProfileViewers(100);
+      if (!active) return;
+      setRecentViewerAvatar(viewers[0]?.avatar_url ?? null);
+      setViewCount(viewers.filter((v) => Date.parse(v.viewed_at) > seenAt).length);
+    })().catch(() => {});
     return () => { active = false; };
-  }, []));
+  }, [viewsSeenKey]));
   // Whether a shop exists at all — one of the four tasks, and re-checked on
   // focus so opening one ticks it off when you come back.
   useFocusEffect(useCallback(() => {
@@ -1003,7 +1013,7 @@ export default function ProfileScreen() {
         <Text style={styles.usernameHeader}>@{profile?.username}</Text>
         <View style={styles.headerActions}>
           <TouchableOpacity
-            onPress={() => router.push('/profile-viewers')}
+            onPress={() => { markViewsSeen(); router.push('/profile-viewers'); }}
             style={styles.settingsBtn}
             accessibilityRole="button"
             accessibilityLabel={t('profileViews.title')}

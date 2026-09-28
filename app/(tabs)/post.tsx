@@ -42,7 +42,9 @@ import { FullWindowOverlay } from 'react-native-screens';
 import { openShareGlobal } from '../../contexts/ShareContext';
 import { formatSchedule, scheduleProblem } from '../../lib/schedule';
 import { scheduleLiveReminder } from '../../lib/scheduleNotify';
-import { mixColumns, type SongMix } from '../../lib/songMix';
+import { mixColumns, DEFAULT_MIX, type SongMix } from '../../lib/songMix';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePostMusicActions } from '../../contexts/PostMusicContext';
 import { makeMediaPreview, NO_PREVIEW, type MediaPreview } from '../../lib/mediaPreview';
 import type { Sticker } from '../../components/StickerLayer';
 import { splitForPublish, timingForPublish } from '../../lib/stickerTiming';
@@ -72,6 +74,7 @@ import {
   loadDrafts, saveDraft, deleteDraft, draftThumb, draftSummary, makeDraftId, consumeResumeDraftId, type Draft,
 } from '../../lib/drafts';
 import SongPickerModal, { type PickedSong } from '../../components/SongPickerModal';
+import SongBrowser from '../../components/SongBrowser';
 import CommunityPickerModal from '../../components/CommunityPickerModal';
 import { type PostableCommunity } from '../../lib/communities';
 import VideoTrimmer from '../../components/VideoTrimmer';
@@ -320,6 +323,13 @@ export default function PostScreen() {
   // in-section picker key off the same derived flag so they can never disagree.
   const musicVideoOn = musicVideo && postType === 'video';
   const [showSongPicker, setShowSongPicker] = useState(false);
+  // Camera "Add sound" (lip-sync): the chosen `song` plays out loud during a SILENT
+  // recording so the user performs to it; the clean song becomes the post's audio.
+  const insets = useSafeAreaInsets();
+  const { playSong: playCaptureSong, stop: stopCaptureSong } = usePostMusicActions();
+  const CAPTURE_HOST = 'post-capture';
+  const [captureSongPicker, setCaptureSongPicker] = useState(false); // song sheet over the camera
+  const [capturing, setCapturing] = useState(false);                 // a recording is in progress
   // The song's part and levels, set in the video studio (lib/songMix). Tied to the
   // song they were set for, so picking a different song quietly starts fresh — a
   // part chosen in one track means nothing in another.
@@ -617,8 +627,16 @@ export default function PostScreen() {
   // resume, just not still going.
   const isFocused = useIsFocused();
   // Leaving the composer (a notification tap, say) takes the camera with it — its
-  // Modal would otherwise stay up over whichever screen opened.
-  useEffect(() => { if (!isFocused) setCameraOpen(false); }, [isFocused]);
+  // Modal would otherwise stay up over whichever screen opened. And CAMERA-FIRST
+  // (TikTok-style): landing on the New Post tab fresh opens the live camera straight
+  // away — the library grid is one tap behind it (the camera's gallery button). Only
+  // on a fresh 'pick' step, so returning mid-compose (studio/details) doesn't reopen
+  // it, and never for the audio tab (which picks a track, not a camera capture).
+  useEffect(() => {
+    if (!isFocused) { setCameraOpen(false); return; }
+    if (step === 'pick' && postType !== 'audio') setCameraOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFocused]);
   useEffect(() => {
     if (isFocused && step === 'pick') return;
     const p = previewSoundRef.current;
@@ -971,6 +989,9 @@ export default function PostScreen() {
     else then();
   }
   async function onCameraCapture(c: CapturedMedia) {
+    // The lip-sync song was playing out loud during the (silent) recording — stop it
+    // here; the studio drives its own playback from now on.
+    stopCaptureSong(CAPTURE_HOST);
     if (c.type === 'image') {
       // Keyed by its uri, as the system camera's captures were.
       const m: PickedMedia = { id: c.uri, uri: c.uri, posterUri: c.uri, width: c.width ?? 1, height: c.height ?? 1, type: 'image' };
@@ -991,6 +1012,9 @@ export default function PostScreen() {
       // goNext's routing, from this clip's own numbers: the state onPickMedia just
       // set hasn't reached this closure.
       const windowSec = meta.width > meta.height ? (isPremiumPlus ? FILM_MAX_SEC : VIDEO_MAX_SEC_H) : VIDEO_MAX_SEC;
+      // Lip-sync: seed the mix so the studio opens video-muted + song-full (its own
+      // default too, but this ties it to the chosen song so the Sound panel is live).
+      if (song && !musicVideo) setSongMix({ ...DEFAULT_MIX, songId: song.id });
       setStep(meta.durationSec > windowSec ? 'edit' : 'studio');
       closeCamera();
     } catch {
@@ -3070,17 +3094,66 @@ export default function PostScreen() {
         <CaptureCamera
           active
           focused
+          // Lip-sync: with a sound chosen, record SILENT so the speaker's song isn't
+          // echoed in; the clean song becomes the audio in the studio.
+          recordMic={!song}
           maxVideoSec={slideshowMode
             ? Math.max(1, Math.floor(SLIDESHOW_VIDEO_BUDGET_SEC - slideshowVideoSecs(slides)))
             : VIDEO_MAX_SEC}
           onCapture={onCameraCapture}
-          onClose={() => closeCamera()}
-          onLibrary={() => closeCamera()}
+          onRecordingChange={(rec) => {
+            setCapturing(rec);
+            // The chosen song plays out loud the instant recording starts (from the
+            // top, so the clip lines up with the song's start) and stops on end.
+            if (rec && song) playCaptureSong(CAPTURE_HOST, song.id);
+            else stopCaptureSong(CAPTURE_HOST);
+          }}
+          onClose={() => { stopCaptureSong(CAPTURE_HOST); closeCamera(); }}
+          onLibrary={() => { stopCaptureSong(CAPTURE_HOST); closeCamera(); }}
           closeLabel={t('common.back')}
         />
+
+        {/* "Add sound" (TikTok-style) — top center, hidden while recording. Picks a
+            song that plays out loud during the silent recording so you lip-sync. */}
+        {!capturing && (
+          <View style={[styles.addSoundWrap, { top: insets.top + 10 }]} pointerEvents="box-none">
+            <View style={styles.addSoundPill}>
+              <TouchableOpacity style={styles.addSoundMain} activeOpacity={0.85} onPress={() => setCaptureSongPicker(true)}>
+                <Ionicons name="musical-notes" size={16} color="#fff" />
+                <Text style={styles.addSoundText} numberOfLines={1}>{song ? song.title : t('post.addSound')}</Text>
+              </TouchableOpacity>
+              {song && (
+                <TouchableOpacity style={styles.addSoundClear} hitSlop={8} onPress={() => { setSong(null); stopCaptureSong(CAPTURE_HOST); }} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
+                  <Ionicons name="close" size={15} color="rgba(255,255,255,0.85)" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )}
+
         {cameraBusy && (
           <View style={[StyleSheet.absoluteFill, styles.cameraBusy]}>
             <ActivityIndicator size="large" color="#fff" />
+          </View>
+        )}
+
+        {/* "Add sound" picker — a plain overlay INSIDE the camera Modal, NOT a nested
+            Modal (a sibling/nested Modal presents BEHIND the camera on iOS, which left
+            the sheet invisible). SongBrowser is the same list the studio shows inline.
+            Picking a track sets it as the post's sound (lip-sync). */}
+        {captureSongPicker && (
+          <View style={StyleSheet.absoluteFill}>
+            <TouchableOpacity style={styles.captureSongScrim} activeOpacity={1} onPress={() => setCaptureSongPicker(false)} />
+            <View style={styles.captureSongSheet}>
+              <View style={styles.captureSongHandle} />
+              <View style={styles.captureSongHead}>
+                <Text style={styles.captureSongTitle}>{t('songPicker.title')}</Text>
+                <TouchableOpacity onPress={() => setCaptureSongPicker(false)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
+                  <Ionicons name="close" size={22} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+              <SongBrowser onPick={(s) => { setSong(s); setMusicVideo(false); setCaptureSongPicker(false); }} />
+            </View>
           </View>
         )}
       </Modal>
@@ -3360,6 +3433,29 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   modeMenuDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginHorizontal: SPACING.sm },
   // Over the in-app camera while a recording is probed; also blocks a second take.
   cameraBusy: { alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.45)' },
+
+  // "Add sound" pill over the camera (TikTok-style, top-center).
+  addSoundWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  addSoundPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '72%',
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 999,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.2)',
+  },
+  addSoundMain: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
+  addSoundText: { color: '#fff', fontSize: 14, fontWeight: '700', flexShrink: 1 },
+  addSoundClear: { marginLeft: 2 },
+
+  // "Add sound" bottom sheet drawn INSIDE the camera Modal (see the note there).
+  captureSongScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
+  captureSongSheet: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, height: '80%',
+    backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingBottom: SPACING.xl, overflow: 'hidden',
+  },
+  captureSongHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginTop: SPACING.sm },
+  captureSongHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SPACING.lg, paddingVertical: SPACING.md },
+  captureSongTitle: { color: colors.text, fontSize: 17, fontWeight: '800' },
 
   // Bottom Posts | Music strip — two equal halves, centered labels, same (dark)
   // background; the active label is orange and bolder.

@@ -106,10 +106,19 @@ type Props = {
   closeLabel: string;
   /** Video-only capture (e.g. React reactions): no PHOTO mode, tap = record. */
   videoOnly?: boolean;
+  /**
+   * Whether a recording captures the microphone. Default true (stories, the post
+   * composer). Pass FALSE for LIP-SYNC capture: the recording is SILENT and the main
+   * player is NOT paused, so a chosen song keeps playing out loud for the user to
+   * perform to — the clean song becomes the post's audio later in the studio, with no
+   * speaker echo baked into the clip.
+   */
+  recordMic?: boolean;
 };
 
 const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCamera({
   active, focused, hidden = false, maxVideoSec, onCapture, onRecordingChange, onClose, onLibrary, closeLabel, videoOnly = false,
+  recordMic = true,
 }, ref) {
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -449,16 +458,20 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
   async function beginRecording() {
     if (recordingRef.current || !cameraRef.current) return;
     recordingRef.current = true;
-    // Recording owns audio: pause the song through the app's OWN player
+    // Normal capture owns audio: pause the song through the app's OWN player
     // BEFORE the mic claims the session — the in-app buttons and the iOS
     // card stay in sync (the OS interruption path left them disagreeing).
-    pauseMainPlayer();
-    if (micPermission?.granted && !micLiveRef.current) {
-      setMicLive(true);
-      // The native session needs a beat to attach the audio input —
-      // recordAsync in the same tick races the reconfiguration and can
-      // produce a soundless first recording.
-      await new Promise((r) => setTimeout(r, 350));
+    // LIP-SYNC capture (recordMic=false) skips both: the recording is silent and
+    // the chosen song keeps playing out loud for the user to perform to.
+    if (recordMic) {
+      pauseMainPlayer();
+      if (micPermission?.granted && !micLiveRef.current) {
+        setMicLive(true);
+        // The native session needs a beat to attach the audio input —
+        // recordAsync in the same tick races the reconfiguration and can
+        // produce a soundless first recording.
+        await new Promise((r) => setTimeout(r, 350));
+      }
     }
     setRecording(true);
     setRecSecs(0);

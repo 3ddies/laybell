@@ -45,9 +45,23 @@ export type Story = {
   shared_post_id?: string | null;
 };
 
+// A story's `stickers` jsonb is a heterogeneous list of LAYERS. Most are text/emoji
+// (kind absent or 'text'). The Post-to-story editor also stores, in the same array
+// (no schema change):
+//   • kind:'post'  — the reshared post, as a movable/resizable frame (its transform
+//     only; the media comes from shared_post_id).
+//   • kind:'bg'    — the chosen background behind the post (blurred still / solid /
+//     gradient). Absent = the blurred default.
+//   • kind:'draw'  — pen strokes, normalised to the frame.
+// Every field is optional so a plain text sticker (the only kind before this) still
+// validates and renders exactly as before.
 export type StorySticker = {
-  text: string; x: number; y: number; scale: number; rotation: number;
-  font?: string; color?: string; bg?: string; emoji?: boolean;
+  kind?: 'text' | 'post' | 'bg' | 'draw';
+  text?: string; x?: number; y?: number; scale?: number; rotation?: number;
+  font?: string; color?: string; bg?: string; size?: number; emoji?: boolean;
+  id?: string;                                                        // post layer
+  background?: { type: 'blur' | 'color' | 'gradient'; color?: string; colors?: string[] }; // bg layer
+  strokes?: { c: string; w: number; p: [number, number][] }[];       // draw layer
 };
 
 export type StoryGroup = {
@@ -155,6 +169,37 @@ export async function createStoryFromPost(userId: string, postId: string): Promi
       sharedPostId: postId,
     });
   }
+}
+
+// The EDITED "Post to story": the reshared post placed/resized on a chosen
+// background with drawings, text and emoji (app/story/repost/[id].tsx). Same media
+// rules as createStoryFromPost — a video is stored as a VIDEO story so it plays,
+// everything else as the still — but the composition (background + post transform +
+// strokes + text) rides along in the stickers jsonb, and the viewer composes it
+// live. `post` is the row the editor already fetched.
+export async function createStoryRepost(input: {
+  userId: string;
+  postId: string;
+  post: { type: string; media_url: string | null; cover_url?: string | null; thumbnail_url?: string | null; aspect_ratio?: string | null; duration_seconds?: number | null };
+  layers: StorySticker[];
+  caption?: string | null;
+  song?: { id: string; title: string; artist: string; artistId: string } | null;
+}): Promise<void> {
+  const p = input.post;
+  const isVideo = p.type === 'video';
+  const still = p.cover_url ?? p.thumbnail_url ?? (p.type === 'image' ? p.media_url : null) ?? p.media_url;
+  await createStory({
+    userId: input.userId,
+    mediaUrl: isVideo ? (p.media_url ?? '') : (still ?? ''),
+    mediaType: isVideo ? 'video' : 'image',
+    thumbnailUrl: isVideo ? (p.thumbnail_url ?? p.cover_url ?? null) : null,
+    aspectRatio: p.aspect_ratio ?? (isVideo ? '9:16' : '1:1'),
+    durationSeconds: isVideo && p.duration_seconds != null ? Math.min(p.duration_seconds, REPOST_MAX_SEC) : null,
+    caption: input.caption ?? null,
+    song: input.song ?? null,
+    stickers: input.layers.length ? input.layers : null,
+    sharedPostId: input.postId,
+  });
 }
 
 // Core loader: active (non-expired) stories for the given authors, grouped by

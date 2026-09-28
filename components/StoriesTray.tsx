@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import Reanimated, { FadeIn } from 'react-native-reanimated';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
@@ -16,6 +17,12 @@ import StoryAvatar from './StoryAvatar';
 // broken; the point of this row is that there is something in it.
 const MIN_STORIES = 3;
 const MAX_SUGGESTIONS = 10;
+// Left-to-right fade-in: each circle's entrance is delayed by its position, so the
+// rail washes in from the left as stories load rather than popping in all at once.
+// Capped so a long rail doesn't take forever to finish arriving.
+const STAGGER_MS = 55;
+const STAGGER_CAP = 12;
+const enterAt = (i: number) => FadeIn.delay(Math.min(i, STAGGER_CAP) * STAGGER_MS).duration(300);
 
 // The row of story circles at the top of the Home feed. Your own circle leads
 // (with a ＋ to add), then followed users who have an active story — unseen rings
@@ -130,7 +137,7 @@ export default function StoriesTray() {
       contentContainerStyle={styles.row}
     >
       {/* Your story */}
-      <View style={styles.item}>
+      <Reanimated.View style={styles.item} entering={enterAt(0)}>
         <StoryAvatar
           userId={currentUserId}
           avatarUrl={ownAvatar}
@@ -146,11 +153,11 @@ export default function StoriesTray() {
           nudge={!ownGroup}
         />
         <Text style={styles.label} numberOfLines={1}>{t('storiesTray.yourStory')}</Text>
-      </View>
+      </Reanimated.View>
 
       {/* Followed users with active stories */}
-      {others.map((g) => (
-        <View key={g.user.id} style={styles.item}>
+      {others.map((g, i) => (
+        <Reanimated.View key={g.user.id} style={styles.item} entering={enterAt(i + 1)}>
           <StoryAvatar
             userId={g.user.id}
             avatarUrl={g.user.avatar_url}
@@ -161,7 +168,7 @@ export default function StoriesTray() {
           <Text style={styles.label} numberOfLines={1}>
             {g.user.username || g.user.display_name}
           </Text>
-        </View>
+        </Reanimated.View>
       ))}
 
       {/* A hairline, not a heading. The row is 82pt circles with a label under
@@ -171,8 +178,8 @@ export default function StoriesTray() {
           in nine locales. */}
       {shownSuggestions.length > 0 && <View style={styles.divider} />}
 
-      {shownSuggestions.map((s) => (
-        <View key={s.id} style={styles.item}>
+      {shownSuggestions.map((s, j) => (
+        <Reanimated.View key={s.id} style={styles.item} entering={enterAt(others.length + 1 + j)}>
           {/* onPressProfile is the fallback StoryAvatar uses when there is no
               active story. When there IS one it ignores this and opens the
               story instead — which is what should happen. */}
@@ -186,7 +193,7 @@ export default function StoriesTray() {
           <Text style={styles.label} numberOfLines={1}>
             {s.username || s.display_name}
           </Text>
-        </View>
+        </Reanimated.View>
       ))}
     </ScrollView>
   );

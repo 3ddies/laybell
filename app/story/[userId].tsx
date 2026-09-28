@@ -28,6 +28,11 @@ import { createNotification } from '../../lib/createNotification';
 import SongAttribution from '../../components/SongAttribution';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import RepostStoryFrame from '../../components/RepostStoryFrame';
+import RepostPostMedia, { repostCardSize } from '../../components/RepostPostMedia';
+import RepostAuthorChip from '../../components/RepostAuthorChip';
+import { StoryBackground, type StoryBg } from '../../components/StoryBackgroundLayer';
+import { StoryDrawRenderer, type DrawStroke } from '../../components/StoryDrawLayer';
+import { aspectToNumber } from '../../lib/aspectRatio';
 import { captionStickerTextStyle, resolveSticker, StickerContent } from '../../components/StickerLayer';
 import { useStories } from '../../contexts/StoriesContext';
 import { useProfile } from '../../contexts/ProfileContext';
@@ -154,6 +159,9 @@ export default function StoryViewerScreen() {
   // for EVERY open path (including no-zoom opens, e.g. from a notification) so it's
   // fixed globally, not just when expanding out of a tapped circle.
   const textReveal = useRef(new Animated.Value(0)).current;
+  // Grey loading cover's opacity: 1 = opaque (still loading), fades to 0 when this
+  // story's first frame is ready — a crossfade to the media instead of a hard pop.
+  const coverAnim = useRef(new Animated.Value(1)).current;
   const closingRef = useRef(false);
   const panningRef = useRef(false);
   const gestureAxisRef = useRef<'h' | 'v' | null>(null);
@@ -162,6 +170,27 @@ export default function StoryViewerScreen() {
   const group = groups[userIndex] ?? null;
   const story = group?.stories[storyIndex] ?? null;
   const isOwn = !!currentUserId && group?.user.id === currentUserId;
+
+  // A reshared post the author EDITED (Post-to-story editor) carries its layout in
+  // the stickers jsonb: a kind:'post' frame (its transform), an optional kind:'bg'
+  // background and kind:'draw' strokes. When present, the viewer composes it live
+  // (background + placed post + drawing) instead of the default centred card; a plain
+  // reshare (no post layer) still renders through RepostStoryFrame.
+  const composed = useMemo(() => {
+    const layers = (story?.stickers ?? []) as any[];
+    const postLayer = layers.find((l) => l?.kind === 'post');
+    if (!story?.shared_post_id || !postLayer) return null;
+    const bgLayer = layers.find((l) => l?.kind === 'bg');
+    const drawLayer = layers.find((l) => l?.kind === 'draw');
+    const aspect = aspectToNumber(story.aspect_ratio, 9 / 16);
+    const { cardW, cardH } = repostCardSize(SCREEN_W, SCREEN_H, insets.top, insets.bottom, aspect);
+    return {
+      post: postLayer as { x: number; y: number; scale: number; rotation: number },
+      bg: (bgLayer?.background ?? null) as StoryBg | null,
+      strokes: (drawLayer?.strokes ?? null) as DrawStroke[] | null,
+      cardW, cardH,
+    };
+  }, [story?.id, story?.stickers, story?.shared_post_id, story?.aspect_ratio, insets.top, insets.bottom]);
 
   // Render-derived so a story flip re-raises the grey cover in the SAME commit:
   // "ready" only once THIS story's own media has painted its first frame.
@@ -240,6 +269,25 @@ export default function StoryViewerScreen() {
     }).start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Crossfade the grey cover away once this story's first frame has painted, and
+  // snap it back to opaque the instant the story flips to a not-yet-ready one.
+  // useLayoutEffect so the re-raise commits BEFORE paint — the next story never
+  // flashes its half-loaded frame from under a still-lifting cover.
+  useLayoutEffect(() => {
+    if (ready) {
+      Animated.timing(coverAnim, {
+        toValue: 0,
+        duration: 260,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start();
+    } else {
+      coverAnim.stopAnimation();
+      coverAnim.setValue(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, story?.id]);
 
   // ─── drive the active story (timer + view record) ────────────────────────────
   useEffect(() => {
@@ -776,48 +824,93 @@ export default function StoryViewerScreen() {
                 tap surface but pointer-transparent except the chip, so taps on the
                 media still advance/pause. */}
             {story.shared_post_id ? (
-              <RepostStoryFrame
-                postId={story.shared_post_id}
-                aspectRatio={story.aspect_ratio}
-                onOpenPost={() => router.push(`/post/${story.shared_post_id}` as any)}
-              >
-                {story.media_type === 'video' ? (
-                  <AppVideo
-                    key={story.id}
-                    source={{ uri: story.media_url }}
-                    style={StyleSheet.absoluteFill}
-                    contentFit="cover"
-                    active={!paused}
-                    ownsAudio
-                    showStallIndicator
-                    poster={story.thumbnail_url}
-                    posterContentFit="cover"
-                    progressIntervalMs={VIDEO_PROGRESS_INTERVAL_MS}
-                    onReady={() => setReadyId(story.id)}
-                    onProgress={(pos, dur) => {
-                      if (pausedRef.current) return;
-                      const cap = Math.min(dur || REPOST_MAX_MS, REPOST_MAX_MS); // cap the bar at 20s
-                      animateProgressTo(Math.min(1, pos / (cap || 1)), VIDEO_PROGRESS_INTERVAL_MS);
-                      if (pos >= REPOST_MAX_MS) goNext(); // advance at the 20s cap
-                    }}
-                    onEnd={goNext}
-                  />
-                ) : (
-                  <ExpoImage
-                    key={`${story.id}:${reloadTick}`}
-                    source={{ uri: story.media_url }}
-                    style={StyleSheet.absoluteFill}
-                    contentFit="cover"
-                    onLoad={() => setReadyId(story.id)}
-                    onError={() => {
-                      const n = (imgErrorsRef.current[story.id] ?? 0) + 1;
-                      imgErrorsRef.current[story.id] = n;
-                      if (n <= 3) setTimeout(() => setReloadTick((t) => t + 1), 500 * n);
-                      else setReadyId(story.id);
-                    }}
-                  />
-                )}
-              </RepostStoryFrame>
+              composed ? (
+                // EDITED repost — background + the post placed/resized on it, drawn
+                // above the tap surface but pointer-transparent (except the chip) so
+                // taps still advance/pause; drawing + text render further up.
+                <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+                  <StoryBackground bg={composed.bg} backdropUri={story.thumbnail_url ?? (story.media_type === 'image' ? story.media_url : null)} />
+                  <View style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="box-none">
+                    <View
+                      pointerEvents="box-none"
+                      style={{
+                        width: composed.cardW, height: composed.cardH,
+                        borderRadius: RADIUS.xl, overflow: 'hidden', backgroundColor: '#000',
+                        borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
+                        transform: [
+                          { translateX: (composed.post.x - 0.5) * SCREEN_W },
+                          { translateY: (composed.post.y - 0.5) * SCREEN_H },
+                          { scale: composed.post.scale ?? 1 },
+                          { rotate: `${composed.post.rotation ?? 0}deg` },
+                        ],
+                      }}
+                    >
+                      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+                        <RepostPostMedia
+                          post={{ type: story.media_type, media_url: story.media_url, thumbnail_url: story.thumbnail_url }}
+                          active={!paused}
+                          reloadKey={`${story.id}:${reloadTick}`}
+                          progressIntervalMs={VIDEO_PROGRESS_INTERVAL_MS}
+                          onReady={() => setReadyId(story.id)}
+                          onProgressFrac={(frac) => { if (!pausedRef.current) animateProgressTo(frac, VIDEO_PROGRESS_INTERVAL_MS); }}
+                          onReachedCap={() => { if (!pausedRef.current) goNext(); }}
+                          onEnd={goNext}
+                          onImageError={() => {
+                            const n = (imgErrorsRef.current[story.id] ?? 0) + 1;
+                            imgErrorsRef.current[story.id] = n;
+                            if (n <= 3) setTimeout(() => setReloadTick((t) => t + 1), 500 * n);
+                            else setReadyId(story.id);
+                          }}
+                        />
+                      </View>
+                      <RepostAuthorChip postId={story.shared_post_id} onPress={() => router.push(`/post/${story.shared_post_id}` as any)} />
+                    </View>
+                  </View>
+                </View>
+              ) : (
+                <RepostStoryFrame
+                  postId={story.shared_post_id}
+                  aspectRatio={story.aspect_ratio}
+                  onOpenPost={() => router.push(`/post/${story.shared_post_id}` as any)}
+                >
+                  {story.media_type === 'video' ? (
+                    <AppVideo
+                      key={story.id}
+                      source={{ uri: story.media_url }}
+                      style={StyleSheet.absoluteFill}
+                      contentFit="cover"
+                      active={!paused}
+                      ownsAudio
+                      showStallIndicator
+                      poster={story.thumbnail_url}
+                      posterContentFit="cover"
+                      progressIntervalMs={VIDEO_PROGRESS_INTERVAL_MS}
+                      onReady={() => setReadyId(story.id)}
+                      onProgress={(pos, dur) => {
+                        if (pausedRef.current) return;
+                        const cap = Math.min(dur || REPOST_MAX_MS, REPOST_MAX_MS); // cap the bar at 20s
+                        animateProgressTo(Math.min(1, pos / (cap || 1)), VIDEO_PROGRESS_INTERVAL_MS);
+                        if (pos >= REPOST_MAX_MS) goNext(); // advance at the 20s cap
+                      }}
+                      onEnd={goNext}
+                    />
+                  ) : (
+                    <ExpoImage
+                      key={`${story.id}:${reloadTick}`}
+                      source={{ uri: story.media_url }}
+                      style={StyleSheet.absoluteFill}
+                      contentFit="cover"
+                      onLoad={() => setReadyId(story.id)}
+                      onError={() => {
+                        const n = (imgErrorsRef.current[story.id] ?? 0) + 1;
+                        imgErrorsRef.current[story.id] = n;
+                        if (n <= 3) setTimeout(() => setReloadTick((t) => t + 1), 500 * n);
+                        else setReadyId(story.id);
+                      }}
+                    />
+                  )}
+                </RepostStoryFrame>
+              )
             ) : null}
 
             {/* Top scrim for legibility */}
@@ -966,9 +1059,9 @@ export default function StoryViewerScreen() {
                 author — rendered through the SAME style resolver as the editor
                 (font / color / background / emoji metadata in stickers jsonb),
                 so the story looks exactly as it did when composed. */}
-            {(story.stickers ?? []).length > 0 && (
+            {(story.stickers ?? []).some((st: any) => (!st.kind || st.kind === 'text') && st.text) && (
               <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="none">
-                {(story.stickers ?? []).map((st: any, i: number) => (
+                {(story.stickers ?? []).filter((st: any) => (!st.kind || st.kind === 'text') && st.text).map((st: any, i: number) => (
                   <View key={i} style={StyleSheet.absoluteFill}>
                     <View style={styles.captionStickerCenter}>
                       <View
@@ -987,6 +1080,14 @@ export default function StoryViewerScreen() {
                     </View>
                   </View>
                 ))}
+              </Animated.View>
+            )}
+
+            {/* Reshared-post pen strokes — the top layer of the composition (above
+                the post + text), revealed with the media. */}
+            {composed?.strokes && composed.strokes.length > 0 && (
+              <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="none">
+                <StoryDrawRenderer strokes={composed.strokes} frameW={SCREEN_W} frameH={SCREEN_H} />
               </Animated.View>
             )}
 
@@ -1075,11 +1176,13 @@ export default function StoryViewerScreen() {
                 what makes a not-yet-ready story show plain grey instead of text
                 or chrome over a blank/half-loaded frame. pointerEvents none so
                 swipe-down-to-dismiss still works while grey. */}
-            {!ready && (
-              <View style={[StyleSheet.absoluteFill, styles.greyCover]} pointerEvents="none">
-                {showLoader && <Spinner size={34} color="#fff" thickness={3} />}
-              </View>
-            )}
+            {/* Kept MOUNTED (not `{!ready && …}`) so it can fade rather than pop —
+                opacity is driven by coverAnim: opaque while loading, crossfading to
+                the media when the first frame is ready. pointerEvents none so it never
+                blocks a swipe-down-to-dismiss, even mid-fade. */}
+            <Animated.View style={[StyleSheet.absoluteFill, styles.greyCover, { opacity: coverAnim }]} pointerEvents="none">
+              {showLoader && <Spinner size={34} color="#fff" thickness={3} />}
+            </Animated.View>
           </>
         )}
       </Animated.View>

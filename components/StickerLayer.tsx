@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, type ReactNode } from 'react';
 import {
   Animated, PanResponder, Platform, StyleSheet, Text, View,
   type GestureResponderEvent, type TextStyle, type ViewStyle,
@@ -48,6 +48,12 @@ export type Sticker = {
   // A horizontal video's captions only: the letterbox band it sits in, with its
   // `y` measured inside that band (lib/bandCaptions).
   band?: 'top' | 'bottom';
+  // A NON-text layer moved by the SAME gestures — currently the reshared post in
+  // the Post-to-story editor. Its content is drawn by the host's `renderKind`
+  // (StickerLayer stays media-agnostic); the story viewer reads its transform to
+  // place the post. Absent (or 'text') = an ordinary text/emoji sticker, so every
+  // sticker posted before this renders exactly as before.
+  kind?: 'text' | 'post';
 } & CaptionStyle;
 
 export const STICKER_FONTS: { key: StickerFont; label: string }[] = [
@@ -249,7 +255,7 @@ function pinch(touches: any[]) {
 
 export default function StickerLayer({
   stickers, frameW, frameH, editingId, onManipulate, onTapSticker, onTapEmpty,
-  onDragActive, onDragMove, onRelease, faintIds, constrain,
+  onDragActive, onDragMove, onRelease, faintIds, constrain, renderKind,
 }: {
   stickers: Sticker[];
   frameW: number;
@@ -258,8 +264,10 @@ export default function StickerLayer({
   onManipulate: (id: string, style: CaptionStyle) => void;
   onTapSticker: (id: string) => void;
   onTapEmpty: (xNorm: number, yNorm: number) => void;
-  // Fired when a sticker drag starts/ends — the host shows its trash zone.
-  onDragActive?: (active: boolean) => void;
+  // Fired when a sticker drag starts/ends — the host shows its trash zone. The
+  // active sticker's id rides along so a host can suppress the trash for a sticker
+  // that must not be deleted (e.g. the reshared post in Post-to-story).
+  onDragActive?: (active: boolean, id?: string | null) => void;
   // Live centroid (normalized) during a drag — lets the host highlight the trash.
   onDragMove?: (xNorm: number, yNorm: number) => void;
   // Release position of a finished drag; the host deletes the sticker if it was
@@ -272,6 +280,10 @@ export default function StickerLayer({
   // it's laid out, so it never shows anywhere the host won't keep it — a horizontal
   // video's captions stay whole inside its letterbox bands.
   constrain?: (fit: StickerFit) => { x: number; y: number; scale: number };
+  // Draws a non-text sticker's content (a `kind` other than text/emoji). The host
+  // returns a FIXED-SIZE node — StickerLayer measures, centres and transforms it
+  // exactly like a text sticker. Returning null skips the sticker.
+  renderKind?: (s: Sticker) => ReactNode;
 }) {
   const animRef = useRef<Record<string, Anim>>({});
   const curRef = useRef<Record<string, Cur>>({});
@@ -355,7 +367,7 @@ export default function StickerLayer({
       if (cur) cbRef.current.onManipulate(id, { x: cur.x / frameW + 0.5, y: cur.y / frameH + 0.5, scale: cur.scale, rotation: cur.rotation });
       cbRef.current.onRelease?.(id, last.current.x / frameW, last.current.y / frameH);
     }
-    if (dragSignalled.current) { cbRef.current.onDragActive?.(false); dragSignalled.current = false; }
+    if (dragSignalled.current) { cbRef.current.onDragActive?.(false, id); dragSignalled.current = false; }
     active.current = null;
   }
 
@@ -397,7 +409,7 @@ export default function StickerLayer({
         if (!a || !cur) return;
         if (moved.current && !dragSignalled.current) {
           dragSignalled.current = true;
-          cbRef.current.onDragActive?.(true);
+          cbRef.current.onDragActive?.(true, id);
         }
         if (moved.current) cbRef.current.onDragMove?.(c.x / frameW, c.y / frameH);
         const nx = base.current.px + (c.x - base.current.cx);
@@ -421,7 +433,14 @@ export default function StickerLayer({
   return (
     <View style={StyleSheet.absoluteFill} {...responder.panHandlers}>
       {stickers.map((s) => {
-        if (s.id === editingId || !s.text) return null;
+        if (s.id === editingId) return null;
+        // A non-text layer (the reshared post) draws through the host; a text/emoji
+        // sticker (no `kind`) still needs its text, so it's culled while empty
+        // exactly as before.
+        const isPost = s.kind === 'post';
+        if (!isPost && !s.text) return null;
+        const content = isPost ? renderKind?.(s) : <StickerContent sticker={s} />;
+        if (!content) return null;
         const a = getAnim(s);
         return (
           <View key={s.id} style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">
@@ -437,7 +456,7 @@ export default function StickerLayer({
                 ],
               }}
             >
-              <StickerContent sticker={s} />
+              {content}
             </Animated.View>
           </View>
         );

@@ -1,14 +1,14 @@
 import {
   View, Text, StyleSheet, FlatList, TextInput, Image,
   TouchableOpacity, Platform, ActivityIndicator,
-  Keyboard, Animated, Modal, Pressable, Alert, LayoutAnimation,
+  Keyboard, Animated, Modal, Pressable, Alert,
 } from 'react-native';
 // Keyboard-synced, not keyboard-event-driven: this KeyboardAvoidingView moves
 // with the keyboard frame by frame on the UI thread, where React Native's own
 // animates on a guessed duration once the event lands. Same props (1.0.4).
 import { KeyboardAvoidingView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import Reanimated, { runOnJS, useAnimatedReaction, useAnimatedStyle } from 'react-native-reanimated';
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -41,13 +41,21 @@ type Conversation = { id: string; title: string | null; avatar_url: string | nul
 const TAPBACKS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
 // iOS-standard destructive red for the Unsend action (theme-independent).
 const UNSEND_RED = '#FF3B30';
-// Simple removal animation — the bubble fades out and the gap collapses.
-function animateMessageRemoval() {
-  LayoutAnimation.configureNext({
-    duration: 220,
-    update: { type: LayoutAnimation.Types.easeInEaseOut },
-    delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-  });
+// The FlatList cell wrapper: fades a message out before it's removed (Unsend /
+// Delete for you), then reports back so it can be pulled from state. LayoutAnimation
+// doesn't run on the New Architecture; RN Animated opacity (which does) drives it.
+// Opacity only — the cell's own style carries the inverted-list transform.
+function MessageCell({ removing, onRemoved, style, children, ...rest }: any) {
+  const fade = useRef(new Animated.Value(1)).current;
+  const started = useRef(false);
+  useEffect(() => {
+    if (removing && !started.current) {
+      started.current = true;
+      Animated.timing(fade, { toValue: 0, duration: 220, useNativeDriver: true })
+        .start(({ finished }) => { if (finished) onRemoved(); });
+    }
+  }, [removing]);
+  return <Animated.View {...rest} style={[style, { opacity: fade }]}>{children}</Animated.View>;
 }
 // Captured by the compose bar's UI-thread style worklet, so it has to be a plain value.
 const IOS = Platform.OS === 'ios';
@@ -78,6 +86,33 @@ export default function GroupChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   // Oldest-first in state, reversed only for the inverted list.
   const orderedMessages = useMemo(() => [...messages].reverse(), [messages]);
+
+  // Fade-out-then-remove for Unsend / Delete-for-you (see MessageCell). beginRemove
+  // marks the id; the cell fades then finishRemove pulls it from state. The timeout
+  // is a safety net for an off-screen row whose cell never mounts to animate.
+  const orderedRef = useRef(orderedMessages);
+  orderedRef.current = orderedMessages;
+  const removingRef = useRef<Set<string>>(new Set());
+  const [, forceRemoveTick] = useState(0);
+  const finishRemove = useCallback((id: string) => {
+    removingRef.current.delete(id);
+    setMessages(prev => prev.filter(m => m.id !== id));
+  }, []);
+  const beginRemove = useCallback((id?: string | null) => {
+    if (!id || removingRef.current.has(id)) return;
+    removingRef.current.add(id);
+    forceRemoveTick(t => t + 1);
+    setTimeout(() => finishRemove(id), 360);
+  }, [finishRemove]);
+  const CellRenderer = useMemo(() => function MsgCell({ index, style, children, ...rest }: any) {
+    const it = orderedRef.current[index];
+    const removing = !!it && removingRef.current.has(it.id);
+    return (
+      <MessageCell removing={removing} onRemoved={() => it && finishRemove(it.id)} style={style} {...rest}>
+        {children}
+      </MessageCell>
+    );
+  }, [finishRemove]);
   const [reactions, setReactions] = useState<Record<string, Reaction[]>>({});
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   // Messages this user "deleted for you" — filtered from the fetch + live inserts.
@@ -164,7 +199,7 @@ export default function GroupChatScreen() {
         { event: 'DELETE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${id}` },
         (payload) => {
           const gone = (payload.old as any)?.id;
-          if (gone) { animateMessageRemoval(); setMessages(prev => prev.filter(m => m.id !== gone)); }
+          if (gone) beginRemove(gone);
         }
       )
       .on('postgres_changes',
@@ -277,7 +312,7 @@ export default function GroupChatScreen() {
   // Delete your own message (used by the GIF sheet's "Delete GIF"). Needs the
   // senders-delete-own RLS policy (supabase/sql/message_delete.sql).
   async function deleteMessage(msgId: string) {
-    setMessages(prev => prev.filter(m => m.id !== msgId));
+    beginRemove(msgId);
     await supabase.from('messages').delete().eq('id', msgId);
   }
 
@@ -287,8 +322,7 @@ export default function GroupChatScreen() {
     const m = messages.find((x) => x.id === msgId);
     setPickerFor(null);
     impactLight();
-    animateMessageRemoval();
-    setMessages((prev) => prev.filter((x) => x.id !== msgId));
+    beginRemove(msgId);
     await unsendMessage(msgId, m?.body ?? '');
   }
 
@@ -297,8 +331,7 @@ export default function GroupChatScreen() {
     if (!currentUserId) return;
     setPickerFor(null);
     impactLight();
-    animateMessageRemoval();
-    setMessages((prev) => prev.filter((x) => x.id !== msgId));
+    beginRemove(msgId);
     await hideMessageForMe(msgId, currentUserId);
   }
 
@@ -459,6 +492,7 @@ export default function GroupChatScreen() {
           inverted
           data={orderedMessages}
           keyExtractor={item => item.id}
+          CellRendererComponent={CellRenderer}
           // 'on-drag', not 'interactive' — see the note in app/messages/[id].tsx:
           // interactive dismissal tracks the finger in the ScrollView's own
           // coordinate space, which `inverted` flips.
