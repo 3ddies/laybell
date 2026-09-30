@@ -7,21 +7,23 @@ App Store "What's New" at **4000**:
 node scripts/check-release-notes.mjs docs/RELEASE_NOTES_1.0.5.md
 ```
 
-> **1.0.5 supersedes 1.0.4 (build 12).** Build 12 was uploaded to App Store Connect but
-> never submitted, so 1.0.5 is the next public release after 1.0.3 — it carries React +
-> profile views (new) AND everything from 1.0.4 (post analytics, the performance pass,
-> cleaner sound, Explore previews, the profile checklist and badges). The notes cover it all.
+> **Shipping as 1.0.5 build 14 — supersedes the unsubmitted builds 12 (1.0.4) and 13 (1.0.5).**
+> Neither was submitted, so this is the next public release after 1.0.3. Build 14 carries
+> React + profile views AND everything from 1.0.4 (post analytics, the performance pass,
+> cleaner sound, Explore previews, the profile checklist and badges) AND this session's
+> additions — the multi-clip/lip-sync camera, the obsidian/Instagram-white theme redesign,
+> the Shop revamp, the profile→wallet shortcut, and the redesigned go-live screen. Notes cover it all.
 
 ---
 
 ## Google Play — "What's new" (≤500 chars)
 
 ```
-• React: record your reaction to any video or song — you full-screen with the original in a corner, or the original full-screen with your reaction in the corner.
+• React: record your reaction to any video or song — full-screen or as a corner overlay.
+• New camera: record in multiple clips and film in time with a song.
 • See who viewed your profile (your call whether to share yours back).
-• Post analytics: tap ⋯ on a post for views, engagement and trends.
-• Faster app, cleaner sound, livelier Explore.
-• New badges + a profile checklist. Polish and fixes.
+• A fresh look: redesigned dark + light themes, and a cleaner Shop.
+• Post analytics, faster app, new badges. Polish and fixes.
 ```
 
 ---
@@ -33,14 +35,19 @@ What's new in 1.0.5
 
 React — react to what you're watching. Record your take on any video or song and post it. Put yourself full-screen with the original in a small corner window, or flip it: the original full-screen with your reaction in the corner. Or react "after" — a slice of the original plays first, then your response.
 
+A new camera — record your post in several clips and we'll stitch them into one, and film in time with a song so your lip-sync lands right.
+
 See who viewed your profile — a new list of who's been checking you out. It's your call whether to take part: turn it off any time, and you only see others when you share yours too.
+
+A fresh look — a redesigned dark theme in deep obsidian black, and a brighter, cleaner light theme.
+
+A refreshed Shop — the marketplace is easier to browse, with a cleaner layout and clearer pricing, and your wallet is now one tap from your profile.
 
 Also in this update:
 • Post analytics — tap ⋯ on any of your posts to see how it's doing: views, likes, comments, shares and saves, an engagement rate, views over time, and how the post stacks up against your average.
 • A faster, smoother app — quicker startup, snappier screens, smoother scrolling and lists, and animations that keep up with your finger.
 • Cleaner sound — only one thing plays at a time now, so a song and a video's audio never talk over each other, and songs on posts start faster.
-• Livelier Explore previews.
-• A complete-your-profile checklist and new badges to earn.
+• A redesigned "go live" screen, livelier Explore previews, a complete-your-profile checklist and new badges to earn.
 • Plenty of polish and bug fixes.
 
 Thanks for using Laybell!
