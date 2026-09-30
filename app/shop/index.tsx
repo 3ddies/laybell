@@ -32,6 +32,18 @@ import { useShopCart } from '../../lib/shopCart';
 
 type Tab = 'explore' | 'mine' | 'orders';
 
+// A small glyph per category so the filter row reads at a glance, not as a wall of
+// text — and the "All" chip gets one too.
+const CATEGORY_ICON: Record<ListingCategory | 'all', any> = {
+  all: 'apps',
+  beat: 'musical-notes',
+  song: 'mic',
+  sample_pack: 'albums',
+  preset: 'options',
+  service: 'construct',
+  other: 'pricetag',
+};
+
 export default function ShopHubScreen() {
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
@@ -157,9 +169,9 @@ function ExploreTab() {
           <Ionicons name="swap-vertical" size={13} color={colors.text} />
           <Text style={styles.sortChipText}>{t(`shop.sort.${sort}`)}</Text>
         </TouchableOpacity>
-        <Chip label={t('shop.all')} active={!category} onPress={() => setCategory(null)} />
+        <Chip label={t('shop.all')} icon={CATEGORY_ICON.all} active={!category} onPress={() => setCategory(null)} />
         {LISTING_CATEGORIES.map((c) => (
-          <Chip key={c} label={t(`shop.category.${c}`)} active={category === c} onPress={() => setCategory(category === c ? null : c)} />
+          <Chip key={c} label={t(`shop.category.${c}`)} icon={CATEGORY_ICON[c]} active={category === c} onPress={() => setCategory(category === c ? null : c)} />
         ))}
       </ScrollView>
       {loading ? (
@@ -188,10 +200,12 @@ function ExploreTab() {
   );
 }
 
-function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function Chip({ label, icon, active, onPress }: { label: string; icon?: any; active: boolean; onPress: () => void }) {
   const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   return (
-    <TouchableOpacity style={[styles.chip, active && styles.chipActive]} onPress={onPress}>
+    <TouchableOpacity style={[styles.chip, active && styles.chipActive]} onPress={onPress} activeOpacity={0.8}>
+      {icon && <Ionicons name={icon} size={14} color={active ? colors.background : colors.textSecondary} />}
       <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
     </TouchableOpacity>
   );
@@ -606,7 +620,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   flex: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { flex: 1, textAlign: 'center', color: c.text, fontSize: 17, fontWeight: '700' },
+  headerTitle: { flex: 1, textAlign: 'center', color: c.text, fontSize: 19, fontWeight: '800', letterSpacing: -0.3 },
   cartBadge: {
     position: 'absolute', top: 4, right: 3, minWidth: 15, height: 15, borderRadius: 7.5,
     paddingHorizontal: 3, backgroundColor: c.success, alignItems: 'center', justifyContent: 'center',
@@ -624,11 +638,12 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   segmentBadge: { backgroundColor: c.success, borderRadius: RADIUS.full, minWidth: 16, height: 16, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' },
   segmentBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   sortChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
     borderRadius: RADIUS.full, backgroundColor: c.surfaceLight,
-    paddingHorizontal: 12, paddingVertical: 6,
+    borderWidth: 1.5, borderColor: c.border,
+    paddingHorizontal: 14, paddingVertical: 9,
   },
-  sortChipText: { color: c.text, fontSize: 12, fontWeight: '600' },
+  sortChipText: { color: c.text, fontSize: 13, fontWeight: '700', lineHeight: 17 },
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     marginHorizontal: SPACING.md, marginBottom: 8,
@@ -636,14 +651,20 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     borderWidth: 1, borderColor: c.borderStrong,
   },
   searchInput: { flex: 1, color: c.text, fontSize: 14, paddingVertical: 10 },
-  chipRow: { flexGrow: 0, marginBottom: 8 },
-  chipRowContent: { paddingHorizontal: SPACING.md, gap: 8 },
+  // A horizontal ScrollView with no explicit height collapses shorter than its
+  // chips and clips them at the bottom — so the height is pinned and the chips are
+  // centred within it (that clipping is what the owner kept seeing).
+  chipRow: { flexGrow: 0, height: 54, marginBottom: 10 },
+  chipRowContent: { paddingHorizontal: SPACING.md, gap: 8, alignItems: 'center' },
   chip: {
-    borderRadius: RADIUS.full, borderWidth: 1, borderColor: c.border,
-    paddingHorizontal: 12, paddingVertical: 6,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderRadius: RADIUS.full, borderWidth: 1.5, borderColor: c.border,
+    backgroundColor: c.surfaceLight,
+    paddingHorizontal: 14, paddingVertical: 9,
   },
   chipActive: { backgroundColor: c.text, borderColor: c.text },
-  chipText: { color: c.textSecondary, fontSize: 12, fontWeight: '600' },
+  // lineHeight gives descenders (the g in "Song") room so they aren't clipped.
+  chipText: { color: c.textSecondary, fontSize: 13, fontWeight: '700', lineHeight: 17 },
   chipTextActive: { color: c.background },
   gridRow: { gap: 12, paddingHorizontal: SPACING.md },
   gridContent: { gap: 14, paddingBottom: 40 },

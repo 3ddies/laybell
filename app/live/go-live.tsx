@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, Share, ActivityIndicator, Platform,
+  Animated, Easing,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +11,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { GRADIENTS, type ThemePalette } from '../../constants/theme';
+import { LISTEN_FILL } from '../../components/ListenButton';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
@@ -38,56 +40,18 @@ import { fetchStreamEarnings, fmtCents } from '../../lib/donations';
 type Phase = 'setup' | 'preview' | 'waiting' | 'live';
 type Mode = 'webrtc' | 'rtmp';
 
-/**
- * The frame a selected field gets: a real GRADIENT BORDER in the Go Live
- * button's own two colours, drawn the way StoryAvatar draws its ring — a
- * LinearGradient with padding, holding an inner view filled with the card
- * colour, so only the padding shows as a border.
- *
- * The first attempt washed the row in that gradient at low alpha instead. It
- * matched on paper and not on screen: 20% orange over a near-black card is
- * BROWN, so the button stayed vivid and the selection went muddy. Fill cannot
- * fix that — anything saturated enough to read as orange is too dark to put a
- * label on.
- *
- * A border has no such problem. At full strength it is literally the button's
- * gradient, and the row behind it keeps the card colour and its own contrast.
- */
-// Border thickness for a selected field. 1.5 rather than 1: a gradient needs a
-// little width before it reads as a gradient rather than as a single colour.
-const FRAME_W = 1.5;
-
-function ActiveFrame({ active, style, innerStyle, children }: {
-  active: boolean;
-  /** The box: radius, and flex behaviour in its parent. */
-  style?: any;
-  /** The CONTENT: padding and alignment, which differ per control. */
-  innerStyle?: any;
-  children: React.ReactNode;
-}) {
-  const styles = useThemedStyles(makeStyles);
-  if (!active) {
-    return <View style={[styles.frameOff, style]}><View style={[styles.frameInner, innerStyle]}>{children}</View></View>;
-  }
-  return (
-    <LinearGradient
-      colors={GRADIENTS.primary}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={[styles.frameOn, style]}
-    >
-      <View style={[styles.frameInner, innerStyle]}>{children}</View>
-    </LinearGradient>
-  );
-}
-
 export default function GoLiveScreen() {
   const styles = useThemedStyles(makeStyles);
-  const { colors } = useTheme();
+  const { colors, mode: themeMode } = useTheme();  // aliased: `mode` below is the stream mode
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { profile } = useProfile();
+  // Owner (2026-09-28): the CTA + selection highlights wear the Laybell yellow→orange
+  // fade in LIGHT mode, and plain orange in the dark themes. The checkmark radio stays
+  // orange in both.
+  const hi = themeMode === 'light' ? colors.primaryLight : colors.primary;  // highlight accent
+  const ctaFill = themeMode === 'light' ? LISTEN_FILL : GRADIENTS.primary;  // CTA gradient
 
   const [phase, setPhaseState] = useState<Phase>('setup');
   // Mirrored in a ref so the unmount cleanup sees the CURRENT phase, not the
@@ -104,6 +68,20 @@ export default function GoLiveScreen() {
   // landscape default can never quietly overwrite a real choice.
   const [orientTouched, setOrientTouched] = useState(false);
   const [title, setTitle] = useState('');
+  // The title field breathes (a soft opacity pulse) to invite a title, and holds
+  // steady the moment the host taps in or has typed one.
+  const [titleFocused, setTitleFocused] = useState(false);
+  const titlePulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const invite = phase === 'setup' && !titleFocused && title.trim().length === 0;
+    if (!invite) { titlePulse.stopAnimation(); titlePulse.setValue(1); return; }
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(titlePulse, { toValue: 0.5, duration: 1200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(titlePulse, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [phase, titleFocused, title, titlePulse]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -447,96 +425,102 @@ export default function GoLiveScreen() {
         <View style={styles.body}>
           {phase === 'setup' && (
             <View style={styles.card}>
-              <TextInput
-                style={styles.titleInput}
-                placeholder={t('live.titlePlaceholder')}
-                placeholderTextColor={colors.textTertiary}
-                value={title}
-                onChangeText={setTitle}
-                maxLength={120}
-              />
-              {/* Mode picker */}
-              <TouchableOpacity
-                style={!webrtcAvailable() ? { opacity: 0.45 } : undefined}
-                disabled={!webrtcAvailable()}
-                onPress={() => setMode('webrtc')}
-              >
-                <ActiveFrame active={mode === 'webrtc'} style={styles.modeRow} innerStyle={styles.modeRowInner}>
-                  <Ionicons name="phone-portrait-outline" size={20} color={colors.text} />
-                  <View style={styles.modeTextWrap}>
-                    <Text style={styles.modeTitle}>{t('live.phone')}</Text>
-                    <Text style={styles.modeSub}>{webrtcAvailable() ? t('live.phoneSub') : t('live.rebuildNeeded')}</Text>
-                  </View>
-                  {mode === 'webrtc' && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
-                </ActiveFrame>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  setMode('rtmp');
-                  // OBS and every other RTMP encoder ships a 16:9 canvas, so an
-                  // encoder broadcast is landscape unless its host says
-                  // otherwise. Nudge once, and never over a real choice.
-                  if (!orientTouched) setOrientation('horizontal');
-                }}
-              >
-                <ActiveFrame active={mode === 'rtmp'} style={styles.modeRow} innerStyle={styles.modeRowInner}>
-                  <Ionicons name="desktop-outline" size={20} color={colors.text} />
-                  <View style={styles.modeTextWrap}>
-                    <Text style={styles.modeTitle}>{t('live.encoder')}</Text>
-                    <Text style={styles.modeSub}>{t('live.encoderSub')}</Text>
-                  </View>
-                  {mode === 'rtmp' && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
-                </ActiveFrame>
-              </TouchableOpacity>
+              <View style={styles.grabber} />
 
-              {/* Orientation — horizontal/both also land in Laybell TV. Shown for
-                  BOTH paths: an encoder can be pointed at either shape, and
-                  silently filing every encoder broadcast as vertical kept them
-                  out of Laybell TV entirely. */}
+              {/* A defined field with a pencil, so it reads as "tap to add a title".
+                  It softly breathes to invite a title until the host taps in. */}
+              <Animated.View style={[styles.titleField, { opacity: titlePulse }]}>
+                <Ionicons name="create-outline" size={20} color={colors.textSecondary} />
+                <TextInput
+                  style={styles.titleInput}
+                  placeholder={t('live.titlePlaceholder')}
+                  placeholderTextColor={colors.textSecondary}
+                  value={title}
+                  onChangeText={setTitle}
+                  onFocus={() => setTitleFocused(true)}
+                  onBlur={() => setTitleFocused(false)}
+                  maxLength={120}
+                />
+              </Animated.View>
+
+              {/* Mode picker — a phone camera or an external encoder. */}
+              {([
+                { key: 'webrtc' as const, icon: 'phone-portrait-outline', title: t('live.phone'),
+                  sub: webrtcAvailable() ? t('live.phoneSub') : t('live.rebuildNeeded'), disabled: !webrtcAvailable() },
+                { key: 'rtmp' as const, icon: 'desktop-outline', title: t('live.encoder'),
+                  sub: t('live.encoderSub'), disabled: false },
+              ]).map((m) => {
+                const selected = mode === m.key;
+                return (
+                  <TouchableOpacity
+                    key={m.key}
+                    activeOpacity={0.9}
+                    disabled={m.disabled}
+                    style={[styles.modeRow, selected && [styles.modeRowOn, { borderColor: hi, backgroundColor: hi + '1F' }], m.disabled && { opacity: 0.45 }]}
+                    onPress={() => {
+                      setMode(m.key);
+                      // OBS and every other RTMP encoder ships a 16:9 canvas, so an
+                      // encoder broadcast is landscape unless its host says otherwise.
+                      // Nudge once, and never over a real choice.
+                      if (m.key === 'rtmp' && !orientTouched) setOrientation('horizontal');
+                    }}
+                  >
+                    <View style={styles.modeIcon}>
+                      <Ionicons name={m.icon as never} size={40} color={colors.text} />
+                    </View>
+                    <View style={styles.modeTextWrap}>
+                      <Text style={styles.modeTitle}>{m.title}</Text>
+                      <Text style={styles.modeSub}>{m.sub}</Text>
+                    </View>
+                    <View style={[styles.radio, selected && styles.radioOn]}>
+                      {selected && <Ionicons name="checkmark" size={15} color="#fff" />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+
+              {/* Orientation — horizontal also lands in Laybell TV. Shown for both
+                  paths: an encoder can be pointed at either shape. */}
               <View style={styles.orientWrap}>
-                  <Text style={styles.orientLabel}>{t('live.orientationLabel')}</Text>
-                  <View style={styles.orientRow}>
-                    {/* 'both' was retired as a choice — horizontal IS the TV-bound
-                        option (legacy 'both' rows still play everywhere). */}
-                    {([
-                      { key: 'vertical' as const, icon: 'phone-portrait-outline', label: t('live.orientVertical') },
-                      { key: 'horizontal' as const, icon: 'phone-landscape-outline', label: t('live.orientHorizontal') },
-                    ]).map((o) => (
+                <Text style={styles.orientLabel}>{t('live.orientationLabel')}</Text>
+                <View style={styles.orientRow}>
+                  {([
+                    { key: 'vertical' as const, label: t('live.orientVertical') },
+                    { key: 'horizontal' as const, label: t('live.orientHorizontal') },
+                  ]).map((o) => {
+                    const selected = orientation === o.key;
+                    const tint = selected ? hi : colors.textSecondary;
+                    return (
                       <TouchableOpacity
                         key={o.key}
-                        style={styles.orientSlot}
+                        activeOpacity={0.9}
+                        style={[styles.orientBtn, selected && [styles.orientBtnOn, { borderColor: hi, backgroundColor: hi + '1F' }]]}
                         onPress={() => { setOrientTouched(true); setOrientation(o.key); }}
                       >
-                        <ActiveFrame active={orientation === o.key} style={styles.orientBtn} innerStyle={styles.orientBtnInner}>
-                          <Ionicons name={o.icon as never} size={18} color={orientation === o.key ? colors.primary : colors.textSecondary} />
-                          <Text style={[styles.orientText, orientation === o.key && { color: colors.primary }]}>{o.label}</Text>
-                        </ActiveFrame>
+                        {/* A plain rounded rectangle — portrait or landscape — no button detail. */}
+                        <View style={[o.key === 'vertical' ? styles.rectV : styles.rectH, { borderColor: tint }]} />
+                        <Text style={[styles.orientText, selected && { color: hi }]}>{o.label}</Text>
                       </TouchableOpacity>
-                    ))}
+                    );
+                  })}
+                </View>
+                {orientation !== 'vertical' && (
+                  <View style={styles.tvNote}>
+                    <Ionicons name="tv-outline" size={13} color={colors.textTertiary} />
+                    <Text style={styles.tvNoteText}>
+                      {t('live.tvNote')}
+                      {mode === 'webrtc' && !rtmpAvailable() ? ` ${t('live.tvPhoneNote')}` : ''}
+                    </Text>
                   </View>
-                  {orientation !== 'vertical' && (
-                    <View style={styles.tvNote}>
-                      <Ionicons name="tv-outline" size={13} color={colors.textTertiary} />
-                      {/* An encoder always reaches a TV. On the phone path it
-                          depends on the RTMP engine being in this binary —
-                          without it (pre-rebuild), say so rather than promise a
-                          cast that won't happen. */}
-                      <Text style={styles.tvNoteText}>
-                        {t('live.tvNote')}
-                        {mode === 'webrtc' && !rtmpAvailable() ? ` ${t('live.tvPhoneNote')}` : ''}
-                      </Text>
-                    </View>
-                  )}
+                )}
               </View>
 
               {!!error && <Text style={styles.error}>{error}</Text>}
-              <TouchableOpacity onPress={prepare} disabled={busy} activeOpacity={0.85} style={styles.primaryBtn}>
-                <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnBg}>
+
+              <TouchableOpacity onPress={prepare} disabled={busy} activeOpacity={0.9} style={[styles.primaryBtn, { shadowColor: hi }]}>
+                <LinearGradient colors={ctaFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.primaryBtnBg}>
                   {busy ? <ActivityIndicator color="#fff" /> : (
-                    <>
-                      <Ionicons name="radio-outline" size={18} color="#fff" />
-                      <Text style={styles.primaryBtnText}>{t('live.prepare')}</Text>
-                    </>
+                    <Text style={styles.primaryBtnText}>{t('live.prepare')}</Text>
                   )}
                 </LinearGradient>
               </TouchableOpacity>
@@ -549,8 +533,8 @@ export default function GoLiveScreen() {
                   the capture orientation on-device, so broadcasts stay on the
                   front camera and the picture stays regular. */}
               {!!error && <Text style={styles.error}>{error}</Text>}
-              <TouchableOpacity onPress={goLiveNow} disabled={busy} activeOpacity={0.85} style={styles.primaryBtn}>
-                <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnBg}>
+              <TouchableOpacity onPress={goLiveNow} disabled={busy} activeOpacity={0.85} style={[styles.primaryBtn, { shadowColor: hi }]}>
+                <LinearGradient colors={ctaFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.primaryBtnBg}>
                   {busy ? <ActivityIndicator color="#fff" /> : (
                     <Text style={styles.primaryBtnText}>{t('live.goLiveNow')}</Text>
                   )}
@@ -627,7 +611,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 10 },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { flex: 1, color: '#fff', fontSize: 17, fontWeight: '700' },
+  headerTitle: { flex: 1, color: '#fff', fontSize: 22, fontWeight: '900', letterSpacing: -0.4 },
   liveBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   livePill: { backgroundColor: '#F43F5E', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   livePillText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
@@ -640,36 +624,72 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   // "tap me".
   earnPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: GRADIENTS.money[0], borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
   body: { flex: 1, justifyContent: 'flex-end', padding: 16, paddingBottom: Platform.OS === 'ios' ? 34 : 22 },
-  card: { backgroundColor: c.surfaceElevated, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 16, gap: 12 },
-  titleInput: { backgroundColor: c.surfaceLight, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: c.text, fontSize: 15 },
-  // ActiveFrame's two states. BORDER_W of padding on the gradient is what shows
-  // as the border; the inner view paints the card colour back over the rest.
-  // The unselected state keeps an ordinary hairline of the same thickness, so
-  // selecting a row cannot nudge the layout by a pixel.
-  frameOn: { borderRadius: 12, padding: FRAME_W },
-  frameOff: { borderRadius: 12, borderWidth: FRAME_W, borderColor: c.border },
-  // No padding here — each caller supplies its own via innerStyle, because a
-  // mode row and an orientation chip are not the same shape.
-  frameInner: { borderRadius: 12 - FRAME_W, backgroundColor: c.surfaceElevated },
-  modeRow: { borderRadius: 12 },
-  modeRowInner: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 },
-  orientWrap: { gap: 8, marginTop: 2 },
-  orientLabel: { color: c.textTertiary, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
-  orientRow: { flexDirection: 'row', gap: 8 },
-  // The touchable is now just a slot; ActiveFrame draws the box inside it.
-  orientSlot: { flex: 1 },
-  orientBtn: { borderRadius: 12 },
-  orientBtnInner: { alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 10 },
+  // iOS bottom-sheet: generous radius, a grabber, and a soft lift off the black.
+  card: {
+    backgroundColor: c.surfaceElevated, borderRadius: 28, padding: 20, paddingTop: 12, gap: 14,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 24, shadowOffset: { width: 0, height: -4 } },
+      android: { elevation: 12 },
+    }),
+  },
+  grabber: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: c.border, marginBottom: 6 },
+  titleField: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: c.surfaceLight, borderRadius: 16, borderWidth: 1.5, borderColor: c.borderStrong,
+    paddingHorizontal: 16, paddingVertical: 15,
+  },
+  titleInput: { flex: 1, padding: 0, color: c.text, fontSize: 17, fontWeight: '600' },
 
-  orientText: { color: c.textSecondary, fontSize: 11, fontWeight: '600' },
+  // Mode rows — an iOS settings-style tinted icon tile, a bold title, and a radio
+  // that fills to the accent when chosen. Selected: a 2pt accent border + a soft
+  // accent wash; unselected: a hairline over the plain surface.
+  modeRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 20,
+    borderWidth: 1.5, borderColor: c.border, backgroundColor: c.surfaceLight,
+  },
+  // Selected. The accent colour is applied inline (gold in light mode, orange in dark);
+  // the checkmark radio below stays orange in both.
+  modeRowOn: { borderWidth: 2, borderColor: c.primary, backgroundColor: c.primary + '14' },
+  // A plain black-and-white line icon (no tinted tile) in a fixed-width column so the
+  // two titles line up.
+  modeIcon: { width: 46, alignItems: 'center', justifyContent: 'center' },
+  modeTextWrap: { flex: 1, gap: 3 },
+  modeTitle: { color: c.text, fontSize: 21, fontWeight: '900', letterSpacing: -0.4 },
+  // Quieter than the title: smaller and lighter, so the button name leads.
+  modeSub: { color: c.textSecondary, fontSize: 12, lineHeight: 16, fontWeight: '400' },
+  radio: {
+    width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: c.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  radioOn: { borderWidth: 0, backgroundColor: c.primary },
+
+  // Orientation — two bold cards, the chosen one washed and outlined in the accent.
+  orientWrap: { gap: 10, marginTop: 2 },
+  orientLabel: { color: c.textTertiary, fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.8 },
+  orientRow: { flexDirection: 'row', gap: 10 },
+  orientBtn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 16, borderRadius: 18,
+    borderWidth: 1.5, borderColor: c.border, backgroundColor: c.surfaceLight,
+  },
+  orientBtnOn: { borderWidth: 2, borderColor: c.primary, backgroundColor: c.primary + '14' },
+  orientText: { color: c.textSecondary, fontSize: 18, fontWeight: '800' },
+  orientTextOn: { color: c.primary },
+  // Plain rounded rectangles — no button detail.
+  rectV: { width: 22, height: 32, borderRadius: 6, borderWidth: 2.5 },
+  rectH: { width: 32, height: 22, borderRadius: 6, borderWidth: 2.5 },
   tvNote: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   tvNoteText: { flex: 1, color: c.textTertiary, fontSize: 11.5, lineHeight: 16 },
-  modeTextWrap: { flex: 1, gap: 2 },
-  modeTitle: { color: c.text, fontSize: 14, fontWeight: '700' },
-  modeSub: { color: c.textTertiary, fontSize: 12, lineHeight: 17 },
-  primaryBtn: { borderRadius: 24, overflow: 'hidden' },
-  primaryBtnBg: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 13 },
-  primaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  // Bold, tall, fully rounded CTA with a warm accent glow.
+  primaryBtn: {
+    borderRadius: 30, marginTop: 2,
+    ...Platform.select({
+      ios: { shadowColor: c.primary, shadowOpacity: 0.22, shadowRadius: 9, shadowOffset: { width: 0, height: 4 } },
+      android: { elevation: 5 },
+    }),
+  },
+  primaryBtnBg: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 17, borderRadius: 30 },
+  primaryBtnText: { color: '#fff', fontSize: 19, fontWeight: '900', letterSpacing: 0.3 },
   previewControls: { alignItems: 'center', gap: 14 },
   // previewControls centers its children, so the chat strip must stretch back
   // to full width to read like the viewer-side overlay.

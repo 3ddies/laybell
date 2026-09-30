@@ -22,11 +22,14 @@ const BRAND = {
 };
 
 // ─── Display modes ─────────────────────────────────────────────────────────────
-// Dark (pure black, default), Grey (softer graphite), Light (white). Every key
+// Dark (obsidian black, default), Grey (softer graphite), Light (white). Every key
 // matches across palettes so any screen can swap between them by reading the
 // active theme (see ThemeContext + useTheme).
 const DARK = {
-  background: '#090909',
+  // Obsidian near-black — deeper than the old #090909, which read as a dull dark
+  // grey. Staying a few levels above pure #000 keeps a hair of depth and dodges
+  // OLED black-smear on scroll, while surfaces (#111+) now pop harder against it.
+  background: '#040406',
   surface: '#111111',
   surfaceLight: '#181818',
   surfaceElevated: '#1E1E1E',
@@ -62,24 +65,25 @@ const GREY = {
   ...BRAND,
 };
 
-// Matte off-white. The old palette was cool-blue-tinted with PURE-white cards,
-// which read shiny/clinical; this drops the blue for a faint warm-neutral cast
-// and softens the brightest surfaces to an off-white (no pure #FFFFFF) so it
-// looks like flat paper rather than a glossy screen.
+// Instagram-clean light: a neutral, BRIGHT canvas with pure-white raised
+// surfaces that pop — replacing the old warm matte off-white, which read cream
+// and dull. #FAFAFA canvas + #FFFFFF cards + #DBDBDB hairlines is exactly the
+// crisp white-on-white look IG uses; the faint canvas grey is what lets a white
+// card read as elevated instead of vanishing.
 const LIGHT = {
-  background: '#F2F1ED',
-  surface: '#EAE8E3',
-  surfaceLight: '#F9F8F4',
-  surfaceElevated: '#FCFBF7',
-  // Crisp, clean hairlines: defined enough to read clearly against the off-white
-  // surfaces without going heavy. `border` is the standard visible edge; the
-  // subtle one is for quiet dividers.
-  border: '#D4D1C9',
-  borderStrong: '#B8B4A8',
-  // Deepened for light: #8B7CF6 measures 2.94:1 on this background, under even
-  // the large-text bar. Same violet, enough weight to actually read (4.9:1).
+  background: '#FAFAFA',
+  surface: '#EFEFEF',
+  surfaceLight: '#FFFFFF',
+  surfaceElevated: '#FFFFFF',
+  // Neutral hairlines (IG's #DBDBDB) that define white cards against the bright
+  // canvas. `border` is the standard visible edge; the subtle one is for quiet
+  // dividers.
+  border: '#DBDBDB',
+  borderStrong: '#C6C6C6',
+  // #8B7CF6 is too pale on this bright canvas; this deeper violet reads (~5:1)
+  // while staying the same hue. The brighter background only helps its contrast.
   communityTint: '#6D4AE8',
-  borderSubtle: '#E2DFD7',
+  borderSubtle: '#ECECEC',
   text: '#16161A',
   textSecondary: '#5E5E66',
   textMeta: '#8A8A92',

@@ -13,6 +13,21 @@ export function canConcatClips(): boolean {
 }
 
 /**
+ * The precise length of a recorded clip, in seconds (0 if it can't be read). Used by the
+ * multi-clip lip-sync to anchor the song to the first clip's actual first frame — with no
+ * camera-warm-up guess — via firstFrame = stopPosition − duration.
+ */
+export async function getClipDurationSec(uri: string): Promise<number> {
+  try {
+    if (!VideoExport?.getVideoInfo) return 0;
+    const info = await VideoExport.getVideoInfo(uri);
+    return info?.durationSec ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Joins recorded clips head to tail into a single MP4 in the cache directory and
  * resolves with its URI. One clip is returned as-is (nothing to join, no re-encode).
  * The segments must share a size and orientation — the recorder keeps them on one

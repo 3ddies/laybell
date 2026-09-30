@@ -186,6 +186,12 @@ const VIDEO_MAX_SEC_H = 540;     // 9 min — landscape WINDOW (Laybell TV)
 // ahead of the video.
 const LIPSYNC_LEAD_SEC = 0.30;
 const LIPSYNC_COMP_SEC = 0.15;
+// The FIRST clip of a multi-clip take runs on a COLD camera, whose record-start latency
+// is longer than the warm one the later clips use — so clip 1's first frame lands even
+// later in the song and it runs AHEAD of the music. This extra nudge, added ONLY to clip
+// 1's mix anchor, advances the song a touch more to offset that cold start. RAISE if clip
+// 1 still runs ahead of the music; LOWER if clip 1 then lags behind it.
+const LIPSYNC_FIRST_COMP_SEC = 0.18;
 // Trimming a long clip is VIRTUAL: we store trim_start/trim_end and upload the
 // FULL source file (no re-encode). Cloudflare, meanwhile, rejects any direct
 // upload longer than the maxDurationSeconds its upload URL was minted with — so
@@ -343,10 +349,15 @@ export default function PostScreen() {
   const captureSoundRef = useRef<AudioPlayer | null>(null);          // the pre-loaded lip-sync song
   const captureSongIdRef = useRef<string | null>(null);              // which song it holds
   const captureStartSecRef = useRef(0);                              // song position when the clip began
-  // Multi-clip: the song position at the start of each banked segment (dropping one
-  // rewinds the song to match), and the camera's live segment count — it decides
-  // resume-vs-restart and hides "Add sound" once a take is under way.
-  const captureSegStartsRef = useRef<number[]>([]);
+  // Multi-clip lip-sync bookkeeping. captureSegPausesRef: the song position captured
+  // PROMPTLY at each segment's stop (its last frame), so the next take resumes from
+  // exactly there and no drift builds up across seams. captureSegmentsRef: the banked
+  // segment files, kept across a trip to the studio so "back" resumes the take.
+  // captureSongPausedRef: a guard so each stop is captured once. captureSegCount(Ref):
+  // the live count — decides resume-vs-restart and hides "Add sound" mid-take.
+  const captureSegPausesRef = useRef<number[]>([]);
+  const captureSegmentsRef = useRef<{ uri: string; sec: number }[]>([]);
+  const captureSongPausedRef = useRef(false);
   const captureSegCountRef = useRef(0);
   const [captureSegCount, setCaptureSegCount] = useState(0);
   // The song's part and levels, set in the video studio (lib/songMix). Tied to the
@@ -652,7 +663,7 @@ export default function PostScreen() {
   // on a fresh 'pick' step, so returning mid-compose (studio/details) doesn't reopen
   // it, and never for the audio tab (which picks a track, not a camera capture).
   useEffect(() => {
-    if (!isFocused) { setCameraOpen(false); rewindCaptureSong(); return; }
+    if (!isFocused) { setCameraOpen(false); resetCaptureSession(); return; }
     if (step === 'pick' && postType !== 'audio') setCameraOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFocused]);
@@ -750,6 +761,7 @@ export default function PostScreen() {
   function resetAll() {
     if (recActiveRef.current) { audioRecorder.stop().catch(() => {}); recActiveRef.current = false; }
     if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null; }
+    resetCaptureSession();   // end any multi-clip lip-sync take
     unloadPreview();
     setIsRecording(false); setRecSecs(0);
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
@@ -1024,70 +1036,83 @@ export default function PostScreen() {
       captureSongIdRef.current = songId;
     } catch {}
   }, [releaseCaptureSong]);
-  // Stop + rewind, so the NEXT take starts over instead of resuming where it ended.
-  // Also ends any multi-clip session (its per-segment marks and count reset).
-  const rewindCaptureSong = useCallback(() => {
+  // Stop playback and rewind the song to its start — the studio drives its own playback
+  // from here. Does NOT end the multi-clip take: that survives a trip to the studio and
+  // back, so "back" from the preview resumes recording where it left off.
+  const stopCaptureSong = useCallback(() => {
     const p = captureSoundRef.current;
     if (p) { try { p.pause(); } catch {} try { p.seekTo(0); } catch {} }
-    captureSegStartsRef.current = [];
+  }, []);
+  // End the whole multi-clip take: stop the song and drop every banked segment + mark.
+  const resetCaptureSession = useCallback(() => {
+    stopCaptureSong();
+    captureSegPausesRef.current = [];
+    captureSegmentsRef.current = [];
+    captureSongPausedRef.current = false;
     captureSegCountRef.current = 0;
     setCaptureSegCount(0);
-  }, []);
-  // Between multi-clip segments: hold the song where it is so the next take resumes
-  // (rewinding here would restart the song under the joined clip).
+  }, [stopCaptureSong]);
+  // Called the instant a take stops (the stop tap, via onStopRequested): pause the song
+  // and note where it is PROMPTLY — so the mark is the take's last frame, not wherever
+  // the song drifted to while the file finished writing. Once per take (the later
+  // onRecordingChange fallback is then a no-op), so seams don't creep out of sync.
   const pauseCaptureSong = useCallback(() => {
     const p = captureSoundRef.current;
-    if (p) { try { p.pause(); } catch {} }
+    if (!p || captureSongPausedRef.current) return;
+    captureSongPausedRef.current = true;
+    const pos = p.currentTime ?? 0;
+    try { p.pause(); } catch {}
+    captureSegPausesRef.current[captureSegCountRef.current] = pos;
   }, []);
-  // Run by CaptureCamera JUST before the clip rolls (beforeRecord): start the song from
-  // 0, WAIT until it's actually outputting audio, and record where it is — so the studio
-  // mix lines the published song up with the clip (fixes the delayed/out-of-sync take).
+  // Run by CaptureCamera JUST before a clip rolls (beforeRecord). Every take uses the
+  // SAME discipline — seek to a base, wait a lead so the song is solidly audible, then
+  // roll — so each lines up the way the (owner-approved) first take does. Segment 1
+  // opens the song from 0 and seeds the mix start. A later segment seeks to the previous
+  // segment's end MINUS the lead+comp, so its first captured frame lands exactly where
+  // the last one stopped: every seam is aligned identically → no drift builds up.
   const captureBeforeRecord = useCallback(async () => {
     const p = captureSoundRef.current;
     if (!p) return;
-    pauseMainPlayer();                 // only the chosen song is heard
+    pauseMainPlayer();                        // only the chosen song is heard
+    captureSongPausedRef.current = false;     // arm the next stop capture
     const idx = captureSegCountRef.current;   // 0 = the take that opens the clip
-    if (idx === 0) {
-      // Fresh take: start the song over and wait until it's solidly audible, then note
-      // where it is — the studio mix lines the published song up with the clip.
-      try { await p.seekTo(0); } catch {}
-      try { p.play(); } catch {}
-      const t0 = Date.now();
-      while (Date.now() - t0 < 900) {
-        if ((p.currentTime ?? 0) >= LIPSYNC_LEAD_SEC) break;
-        await new Promise((r) => setTimeout(r, 20));
-      }
-      captureStartSecRef.current = p.currentTime ?? 0;
-    } else {
-      // A later multi-clip segment: resume from where the last one left off, so the
-      // performance — and the joined clip — stays continuous with the song. Wait until
-      // it's actually moving before the clip rolls, so there's no gap at the seam.
-      const from = p.currentTime ?? 0;
-      try { p.play(); } catch {}
-      const t0 = Date.now();
-      while (Date.now() - t0 < 500) {
-        if ((p.currentTime ?? 0) > from + 0.02) break;
-        await new Promise((r) => setTimeout(r, 20));
-      }
+    // Where in the song this take begins. Clip 1 opens from 0. A later clip targets the
+    // RUNNING content position — clip 1's end plus the precise length of every clip since
+    // — not the previous clip's live stop, so a small per-seam offset stays constant
+    // instead of accumulating (that made the 3rd+ clip drift). Minus lead+comp so the
+    // first captured frame lands on the target after the pre-roll.
+    let base = 0;
+    if (idx > 0) {
+      const anchor = captureSegPausesRef.current[0] ?? 0;                                  // clip 1's end
+      const since = captureSegmentsRef.current.slice(1).reduce((s, seg) => s + (seg.sec || 0), 0);
+      base = Math.max(0, anchor + since - LIPSYNC_LEAD_SEC - LIPSYNC_COMP_SEC);
     }
-    captureSegStartsRef.current[idx] = p.currentTime ?? 0;
+    try { await p.seekTo(base); } catch {}
+    try { p.play(); } catch {}
+    const t0 = Date.now();
+    while (Date.now() - t0 < 900) {
+      if ((p.currentTime ?? 0) >= base + LIPSYNC_LEAD_SEC) break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    if (idx === 0) captureStartSecRef.current = p.currentTime ?? 0;   // seeds the mix start
   }, []);
-  // The camera's live segment count (multi-clip). Rewinds the song when the take empties,
-  // or back to a dropped segment's start; the count also hides "Add sound" mid-take.
-  const onCaptureSegmentsChange = useCallback((count: number) => {
+  // CaptureCamera reports the banked segments (multi-clip). Keep the list — so "back"
+  // from the studio resumes the take — keep the count/pill in step, and end the session
+  // when it empties; a drop just trims the last mark so the next take seeks correctly.
+  const onCaptureSegmentsChange = useCallback((segs: { uri: string; sec: number }[]) => {
+    const count = segs.length;
     const prev = captureSegCountRef.current;
+    captureSegmentsRef.current = segs;
     captureSegCountRef.current = count;
     setCaptureSegCount(count);
     if (count === 0) {
-      rewindCaptureSong();
+      resetCaptureSession();
     } else if (count < prev) {
-      // A segment was dropped — send the song back to where that segment began.
+      captureSegPausesRef.current = captureSegPausesRef.current.slice(0, count);
       const p = captureSoundRef.current;
-      const to = captureSegStartsRef.current[count] ?? 0;
-      captureSegStartsRef.current = captureSegStartsRef.current.slice(0, count);
-      if (p) { try { p.pause(); } catch {} try { p.seekTo(to); } catch {} }
+      if (p) { try { p.pause(); } catch {} }
     }
-  }, [rewindCaptureSong]);
+  }, [resetCaptureSession]);
   // Free the player when the composer unmounts.
   useEffect(() => () => releaseCaptureSong(), [releaseCaptureSong]);
 
@@ -1097,6 +1122,15 @@ export default function PostScreen() {
   // with what the camera actually does (an older binary stays single-shot).
   const captureMultiClip = !slideshowMode && canConcatClips();
 
+  // A gentle fade + rise when the studio (preview) opens, so it doesn't hard-cut in after
+  // the camera closes — the camera↔preview hand-off reads as an animated transition.
+  const studioFade = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (step !== 'studio') return;
+    studioFade.setValue(0);
+    Animated.timing(studioFade, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [step, studioFade]);
+
   function closeCamera(then?: () => void) {
     setCameraOpen(false);
     if (!then) return;
@@ -1105,8 +1139,9 @@ export default function PostScreen() {
   }
   async function onCameraCapture(c: CapturedMedia) {
     // The lip-sync song was playing during the (silent) recording — stop + rewind it;
-    // the studio drives its own playback from now on.
-    rewindCaptureSong();
+    // the studio drives its own playback from now on. The multi-clip take is KEPT, so
+    // backing out of the studio resumes it (resetCaptureSession ends it for good).
+    stopCaptureSong();
     if (c.type === 'image') {
       // Keyed by its uri, as the system camera's captures were.
       const m: PickedMedia = { id: c.uri, uri: c.uri, posterUri: c.uri, width: c.width ?? 1, height: c.height ?? 1, type: 'image' };
@@ -1129,7 +1164,17 @@ export default function PostScreen() {
       const windowSec = meta.width > meta.height ? (isPremiumPlus ? FILM_MAX_SEC : VIDEO_MAX_SEC_H) : VIDEO_MAX_SEC;
       // Lip-sync: seed the mix so the studio opens video-muted + song-full (its own
       // default too, but this ties it to the chosen song so the Sound panel is live).
-      if (song && !musicVideo) setSongMix({ ...DEFAULT_MIX, startSec: Math.max(0, captureStartSecRef.current + LIPSYNC_COMP_SEC), songId: song.id });
+      // A JOINED take (≥2 clips) anchors the song to clip 1's ACTUAL first frame —
+      // stopPosition − clipDuration — which needs no camera-warm-up guess, so clip 1
+      // lines up like the seams do. A single clip keeps the tuned estimate.
+      if (song && !musicVideo) {
+        const pause0 = captureSegPausesRef.current[0];
+        const joined = (c.segmentCount ?? 0) >= 2 && (c.firstClipSec ?? 0) > 0 && pause0 != null;
+        const startSec = joined
+          ? Math.max(0, pause0 - (c.firstClipSec ?? 0) + LIPSYNC_FIRST_COMP_SEC)
+          : Math.max(0, captureStartSecRef.current + LIPSYNC_COMP_SEC);
+        setSongMix({ ...DEFAULT_MIX, startSec, songId: song.id });
+      }
       setStep(meta.durationSec > windowSec ? 'edit' : 'studio');
       closeCamera();
     } catch {
@@ -2050,7 +2095,7 @@ export default function PostScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => setStep('pick')}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => { setStep('pick'); setCameraOpen(true); }}>
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('post.trim')}</Text>
@@ -2089,7 +2134,12 @@ export default function PostScreen() {
       if (r.mix && song && !musicVideoOn) setSongMix({ ...r.mix, songId: song.id });
     };
     return (
-      <View style={styles.container}>
+      <Animated.View
+        style={[styles.container, {
+          opacity: studioFade,
+          transform: [{ translateY: studioFade.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
+        }]}
+      >
         <VideoStudio
           videoUri={media.uri}
           posterUri={thumbnailUri ?? media.posterUri ?? null}
@@ -2107,10 +2157,18 @@ export default function PostScreen() {
           coverSec={coverSec}
           onCoverSec={setCoverSec}
           initialPanel={studioPanel}
-          onBack={(r) => { keep(r); setStep(trimmedV ? 'edit' : 'pick'); }}
+          // Back from the preview returns to the recording camera (or the trimmer for a
+          // long clip, whose own back then reopens the camera). Fade the preview out
+          // first, so the hand-off back to the camera reads as a transition, not a cut.
+          onBack={(r) => {
+            keep(r);
+            if (trimmedV) { setStep('edit'); return; }
+            Animated.timing(studioFade, { toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true })
+              .start(() => { setStep('pick'); setCameraOpen(true); });
+          }}
           onNext={(r) => { keep(r); setStep('details'); }}
         />
-      </View>
+      </Animated.View>
     );
   }
 
@@ -3197,7 +3255,7 @@ export default function PostScreen() {
           capped at what its video budget has left. */}
       <Modal
         visible={cameraOpen}
-        animationType="slide"
+        animationType="fade"
         statusBarTranslucent
         onRequestClose={() => { if (!cameraBusy) closeCamera(); }}
         onDismiss={() => {
@@ -3219,18 +3277,26 @@ export default function PostScreen() {
             ? Math.max(1, Math.floor(SLIDESHOW_VIDEO_BUDGET_SEC - slideshowVideoSecs(slides)))
             : VIDEO_MAX_SEC}
           onCapture={onCameraCapture}
+          // Just a record button — no photo option (owner, 2026-09-28). Slideshow keeps
+          // its photo/video picker (each slide is one item).
+          videoOnly={!slideshowMode}
           // TikTok-style segmented recording (joins into one clip on ✓). The camera
           // feature-detects the native joiner; onSegmentsChange keeps the song lined up.
           multiClip={captureMultiClip}
+          // The banked segments, restored so backing out of the studio resumes the take.
+          initialSegments={captureMultiClip ? captureSegmentsRef.current : undefined}
           onSegmentsChange={onCaptureSegmentsChange}
+          // The stop TAP — pause the song promptly here, so its mark is the take's last
+          // frame and the next segment lines up (waiting for onRecordingChange is late).
+          onStopRequested={() => { if (captureMultiClip) pauseCaptureSong(); }}
           onRecordingChange={(rec) => {
             setCapturing(rec);
             // Multi-clip holds the song between segments (resume, not restart); a single
             // shot rewinds it so the next take starts over.
-            if (!rec) { captureMultiClip ? pauseCaptureSong() : rewindCaptureSong(); }
+            if (!rec) { captureMultiClip ? pauseCaptureSong() : stopCaptureSong(); }
           }}
-          onClose={() => { rewindCaptureSong(); closeCamera(); }}
-          onLibrary={() => { rewindCaptureSong(); closeCamera(); }}
+          onClose={() => { resetCaptureSession(); closeCamera(); }}
+          onLibrary={() => { resetCaptureSession(); closeCamera(); }}
           closeLabel={t('common.back')}
         />
 

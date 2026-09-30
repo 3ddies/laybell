@@ -269,12 +269,29 @@ export default function VideoStudio({
   const songUrl = info?.url ?? null;
   const startSec = clampStart(mix.startSec, songSec, windowSec);
 
+  // The clip's progress ticks stop when it finishes its pass and freezes (the idle-aware
+  // loop) — a short gap between ticks means it has actually stopped, so the song stops
+  // with it instead of playing on over a still frame. Both come back together when
+  // playback resumes (a tick clears the stall, and the ambient player re-lines up).
+  const [videoStalled, setVideoStalled] = useState(false);
+  const videoStalledRef = useRef(false); videoStalledRef.current = videoStalled;
+  const lastProgressAtRef = useRef(Date.now());
+  useEffect(() => {
+    if (!playing) { setVideoStalled(false); return; }
+    lastProgressAtRef.current = Date.now();
+    const id = setInterval(() => {
+      const stalled = Date.now() - lastProgressAtRef.current > 600;
+      if (stalled !== videoStalledRef.current) setVideoStalled(stalled);
+    }, 250);
+    return () => clearInterval(id);
+  }, [playing]);
+
   // The song plays with the clip, and only while the clip does — lined up with it
   // by the ambient player (PostMusicContext). Asked again with a new mix it adjusts
   // in place; stopped and asked again, it lines back up with wherever the clip is.
-  // Held while the clip is still being copied, so the two start together, and
-  // while the music menu is open, where the list plays its own previews.
-  const songOn = songPlays && !!songUrl && !preparing && playing && panel !== 'music';
+  // Held while the clip is still being copied, so the two start together, while the
+  // music menu is open (the list plays its own previews), and while the clip is frozen.
+  const songOn = songPlays && !!songUrl && !preparing && playing && !videoStalled && panel !== 'music';
   useEffect(() => {
     if (!songOn || !songId || !songUrl) { stopSong(HOST); return; }
     playSong(HOST, songId, songUrl, { startSec, volume: mix.songVolume, videoStartSec: windowStart });
@@ -595,7 +612,7 @@ export default function VideoStudio({
             trimStartSec={windowStart > 0 ? windowStart : null}
             trimEndSec={hasTimeline ? windowEnd : null}
             progressIntervalMs={100}
-            onProgress={(ms) => setPlaybackPosition(HOST, ms / 1000)}
+            onProgress={(ms) => { lastProgressAtRef.current = Date.now(); if (videoStalledRef.current) setVideoStalled(false); setPlaybackPosition(HOST, ms / 1000); }}
             onReady={onClipReady}
             // A local copy that fails will fail the same way on every retry; a
             // posted video's stream may just have hit a bad moment on the network.

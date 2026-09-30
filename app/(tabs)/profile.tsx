@@ -1010,7 +1010,7 @@ export default function ProfileScreen() {
     <View style={styles.container} {...pageSwipePan.panHandlers}>
       <View>
       <View style={styles.headerBar}>
-        <Text style={styles.usernameHeader}>@{profile?.username}</Text>
+        <Text style={styles.usernameHeader} numberOfLines={1}>@{profile?.username}</Text>
         <View style={styles.headerActions}>
           <TouchableOpacity
             onPress={() => { markViewsSeen(); router.push('/profile-viewers'); }}
@@ -1037,6 +1037,12 @@ export default function ProfileScreen() {
             disabled={!profile?.id}
           >
             <Ionicons name="qr-code-outline" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+          {/* Money at a glance: the Wallet (earnings + cash out) is one tap from
+              your own profile, not buried in Settings. Credits live one tap deeper,
+              from inside the Wallet. */}
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('wallet.title')} onPress={() => router.push('/wallet')} style={styles.settingsBtn}>
+            <Ionicons name="wallet-outline" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.settings')} onPress={() => router.push('/settings')} style={styles.settingsBtn}>
             <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
@@ -1239,8 +1245,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm,
   },
-  usernameHeader: { color: colors.text, fontSize: 24, fontWeight: '900' },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  // flexShrink lets a long @name ellipsize instead of shoving the icon row; the
+  // actions never compress (flexShrink: 0) now that there are four of them.
+  usernameHeader: { color: colors.text, fontSize: 24, fontWeight: '900', flexShrink: 1, marginRight: SPACING.sm },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, flexShrink: 0 },
   settingsBtn: { padding: 4 },
   viewAvatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border },
   viewBadge: {

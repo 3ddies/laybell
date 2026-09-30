@@ -3,11 +3,10 @@ import {
   TouchableOpacity, ActivityIndicator, Alert, Platform, TextInput, KeyboardAvoidingView,
 } from 'react-native';
 import { useEffect, useState } from 'react';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import SlideUpSheet from './SlideUpSheet';
 import { supabase } from '../lib/supabase';
-import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { ListRowsSkeleton } from './Skeleton';
@@ -25,9 +24,13 @@ type Props = {
 };
 
 export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay }: Props) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
+  // Owner (2026-09-28): this menu's highlight is WHITE on the dark themes and stays
+  // orange in light. `onAccent` is the text/spinner that sits ON a filled accent button.
+  const accent = mode === 'light' ? colors.primary : '#FFFFFF';
+  const onAccent = mode === 'light' ? '#FFFFFF' : '#111114';
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState<string | null>(null);
@@ -165,20 +168,24 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
                 onSubmitEditing={createPlaylist}
               />
               <TouchableOpacity
-                style={[styles.createBtn, !newName.trim() && styles.createBtnDisabled]}
+                style={[styles.createBtn, { backgroundColor: accent }, !newName.trim() && styles.createBtnDisabled]}
                 onPress={createPlaylist}
                 disabled={!newName.trim() || savingNew}
               >
-                {savingNew ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.createBtnText}>{t('addToPlaylist.createBtn')}</Text>}
+                {savingNew ? <ActivityIndicator color={onAccent} size="small" /> : <Text style={[styles.createBtnText, { color: onAccent }]}>{t('addToPlaylist.createBtn')}</Text>}
               </TouchableOpacity>
               <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.close')} onPress={() => { setCreating(false); setNewName(''); }} style={styles.createCancel} hitSlop={8}>
                 <Ionicons name="close" size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
           ) : (
-            <TouchableOpacity style={styles.createRow} onPress={() => setCreating(true)} activeOpacity={0.7}>
-              <View style={styles.createIcon}><Ionicons name="add" size={22} color={colors.primary} /></View>
-              <Text style={styles.createRowText}>{t('addToPlaylist.create')}</Text>
+            <TouchableOpacity
+              style={[styles.createRow, { borderColor: accent + '55', backgroundColor: accent + '14' }]}
+              onPress={() => setCreating(true)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.createIcon, { backgroundColor: accent + '22' }]}><Ionicons name="add" size={24} color={accent} /></View>
+              <Text style={[styles.createRowText, { color: accent }]}>{t('addToPlaylist.create')}</Text>
             </TouchableOpacity>
           )}
 
@@ -193,9 +200,8 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
             </View>
           ) : playlists.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Ionicons name="musical-notes-outline" size={36} color={colors.textTertiary} />
+              <Ionicons name="musical-notes" size={46} color={colors.textTertiary} />
               <Text style={styles.emptyText}>{t('addToPlaylist.empty')}</Text>
-              <Text style={styles.emptySubtext}>{t('addToPlaylist.emptyCreateHint')}</Text>
             </View>
           ) : (
             <FlatList
@@ -212,30 +218,27 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
                 const isAdding = adding === item.id;
                 return (
                   <TouchableOpacity
-                    style={[styles.playlistRow, isAdded && styles.playlistRowAdded]}
+                    style={[styles.playlistRow, isAdded && { borderColor: accent + '44', backgroundColor: accent + '0A' }]}
                     onPress={() => handleToggle(item.id)}
                     disabled={isAdding}
                   >
-                    <LinearGradient
-                      colors={isAdded ? GRADIENTS.primaryWarm : GRADIENTS.primarySoft}
-                      style={styles.playlistIcon}
-                    >
+                    <View style={[styles.playlistIcon, { backgroundColor: accent + (isAdded ? '33' : '1F') }]}>
                       <Ionicons
                         name={isAdded ? 'checkmark' : 'musical-notes'}
                         size={18}
-                        color={isAdded ? colors.text : colors.primary}
+                        color={accent}
                       />
-                    </LinearGradient>
+                    </View>
                     <View style={styles.playlistInfo}>
                       <Text style={styles.playlistName}>{item.name}</Text>
                       <Text style={styles.playlistMeta}>{item.is_public ? t('post.public') : t('music.private')}</Text>
                     </View>
                     {isAdding ? (
-                      <ActivityIndicator size="small" color={colors.primary} />
+                      <ActivityIndicator size="small" color={accent} />
                     ) : isAdded ? (
-                      <Text style={styles.addedText}>{t('addToPlaylist.added')}</Text>
+                      <Text style={[styles.addedText, { color: accent }]}>{t('addToPlaylist.added')}</Text>
                     ) : (
-                      <Ionicons name="add-circle-outline" size={22} color={colors.primary} />
+                      <Ionicons name="add-circle-outline" size={24} color={accent} />
                     )}
                   </TouchableOpacity>
                 );
@@ -293,11 +296,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.primary + '55',
     backgroundColor: colors.primary + '12',
   },
+  // A circle (iOS "+" affordance). Colour is applied inline (white on dark, orange on light).
   createIcon: {
-    width: 40, height: 40, borderRadius: RADIUS.md,
-    backgroundColor: colors.primary + '22', alignItems: 'center', justifyContent: 'center',
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
   },
-  createRowText: { color: colors.primary, fontSize: 15, fontWeight: '700', flex: 1 },
+  createRowText: { fontSize: 16, fontWeight: '700', flex: 1 },
   createForm: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
     marginHorizontal: SPACING.md, marginTop: SPACING.md,
@@ -324,8 +328,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // job — a percentage can't resolve against an auto-height parent).
   contentArea: { minHeight: 210, maxHeight: 360 },
   emptyWrap: { alignItems: 'center', justifyContent: 'center', flex: 1, padding: SPACING.lg, gap: SPACING.sm },
-  emptyText: { color: colors.text, fontSize: 16, fontWeight: '700' },
-  emptySubtext: { color: colors.textSecondary, fontSize: 13, textAlign: 'center' },
+  emptyText: { color: colors.text, fontSize: 19, fontWeight: '800' },
   list: { padding: SPACING.md, gap: SPACING.sm },
   playlistRow: {
     flexDirection: 'row', alignItems: 'center',

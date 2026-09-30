@@ -80,6 +80,12 @@ export default function SongBrowser({ ownOnly = false, selectedId = null, onPick
   const s = dark ? darkStyles : themed;
   const accent = dark ? DARK_ACCENT : colors.primary;
   const soft = dark ? 'rgba(255,255,255,0.72)' : colors.textSecondary;
+  // Selected-tab highlight: white on the dark surfaces, orange in light mode (owner,
+  // 2026-09-29). The dark tone (over video) keeps its gold.
+  const tabHi = dark ? DARK_ACCENT : (isLight ? colors.primary : '#FFFFFF');
+  // The row "+" is a plain glyph in the theme's text colour (dark on light, light on
+  // dark) — no orange circle.
+  const addColor = dark ? '#fff' : colors.text;
   const { t } = useTranslation();
   const { playSong, stop: stopSong } = usePostMusicActions();
   const [query, setQuery] = useState('');
@@ -443,13 +449,13 @@ export default function SongBrowser({ ownOnly = false, selectedId = null, onPick
             return (
               <TouchableOpacity
                 key={tb}
-                style={[s.tab, on && s.tabOn]}
+                style={[s.tab, on && [s.tabOn, { borderColor: tabHi, backgroundColor: tabHi + '1A' }]]}
                 onPress={() => switchTab(tb)}
                 activeOpacity={0.8}
                 accessibilityRole="button"
                 accessibilityState={{ selected: on }}
               >
-                <Text style={[s.tabText, on && s.tabTextOn]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                <Text style={[s.tabText, on && { color: tabHi }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
                   {t(`songPicker.tab${tb.charAt(0).toUpperCase()}${tb.slice(1)}`)}
                 </Text>
               </TouchableOpacity>
@@ -551,7 +557,7 @@ export default function SongBrowser({ ownOnly = false, selectedId = null, onPick
                     color={dark ? '#fff' : isLight ? colors.textSecondary : colors.text}
                   />
                 </TouchableOpacity>
-                <Ionicons name={chosen ? 'checkmark-circle' : 'add-circle'} size={30} color={accent} />
+                <Ionicons name={chosen ? 'checkmark-circle' : 'add'} size={30} color={chosen ? accent : addColor} />
               </TouchableOpacity>
             );
           }}

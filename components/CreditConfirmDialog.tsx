@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import ConfirmDialog from './ConfirmDialog';
 import { useTheme } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
-import { formatPrice } from '../lib/shop';
+import { formatPrice, formatAmount } from '../lib/shop';
 
 // The last step before credits move: what it costs, what you hold, and — when
 // those don't meet — how far short you are and a way to fix it.
@@ -46,8 +46,9 @@ export default function CreditConfirmDialog({
 
   const enough = balanceCents >= priceCents;
   const price = formatPrice(priceCents, currency);
-  const balance = formatPrice(balanceCents, currency);
-  const short = formatPrice(Math.max(0, priceCents - balanceCents), currency);
+  // Balance and shortfall are AMOUNTS, so a zero reads "$0", never "FREE".
+  const balance = formatAmount(balanceCents, currency);
+  const short = formatAmount(Math.max(0, priceCents - balanceCents), currency);
 
   return (
     <ConfirmDialog

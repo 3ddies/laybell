@@ -33,9 +33,9 @@ import { SPACING, RADIUS, GRADIENTS, PLUS_RED, type ThemeMode, type ThemePalette
 
 // The three display modes shown in the Settings → Display section.
 const DISPLAY_MODES: { key: ThemeMode; label: string; sub: string; swatch: string; ring: string }[] = [
-  { key: 'dark',  label: 'Dark',  sub: 'Black background',  swatch: '#090909', ring: '#2A2A2A' },
+  { key: 'dark',  label: 'Dark',  sub: 'Obsidian black',    swatch: '#040406', ring: '#2A2A2A' },
   { key: 'grey',  label: 'Grey',  sub: 'Lighter graphite',  swatch: '#2B2B2F', ring: '#54545C' },
-  { key: 'light', label: 'Light', sub: 'Soft white',        swatch: '#F2F2F6', ring: '#DCDCE2' },
+  { key: 'light', label: 'Light', sub: 'Clean white',        swatch: '#FAFAFA', ring: '#DCDCE2' },
 ];
 
 const APP_VERSION = '1.0.0';

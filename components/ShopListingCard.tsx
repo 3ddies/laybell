@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
@@ -43,6 +44,8 @@ export default function ShopListingCard({
             <Ionicons name="musical-note" size={30} color={colors.textTertiary} />
           </View>
         )}
+        {/* A soft bottom scrim so the price + cart read on any cover art. */}
+        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.5)']} style={styles.coverScrim} pointerEvents="none" />
         {/* Cheapest way in, "+" when the listing offers more than one deal. */}
         <View style={styles.priceTag}>
           <Text style={styles.priceText}>{listingPriceLabel(listing, t('shop.free'))}</Text>
@@ -80,21 +83,25 @@ export default function ShopListingCard({
 }
 
 const makeStyles = (c: ThemePalette) => StyleSheet.create({
-  card: { flex: 1, gap: 4 },
-  coverWrap: { borderRadius: RADIUS.md, overflow: 'hidden', aspectRatio: 1, backgroundColor: c.surfaceLight },
+  card: { flex: 1, gap: 6 },
+  coverWrap: {
+    borderRadius: RADIUS.lg, overflow: 'hidden', aspectRatio: 1, backgroundColor: c.surfaceLight,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
+  },
   cover: { width: '100%', height: '100%' },
   coverFallback: { alignItems: 'center', justifyContent: 'center' },
+  coverScrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '45%' },
   priceTag: {
     position: 'absolute', left: 8, bottom: 8,
-    backgroundColor: c.success, borderRadius: RADIUS.sm,
-    paddingHorizontal: 8, paddingVertical: 3,
+    backgroundColor: c.success, borderRadius: RADIUS.full,
+    paddingHorizontal: 10, paddingVertical: 4,
   },
-  priceText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  priceText: { color: '#fff', fontSize: 12.5, fontWeight: '800', letterSpacing: 0.2 },
   // Mirrors the price tag across the cover: same 8pt inset, same bottom line.
   // Dark disc rather than a themed fill so it reads on any cover art.
   cartBtn: {
     position: 'absolute', right: 8, bottom: 8,
-    width: 28, height: 28, borderRadius: 14,
+    width: 30, height: 30, borderRadius: 15,
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center', justifyContent: 'center',
   },
@@ -104,6 +111,6 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   statusText: { color: '#fff', fontSize: 13, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
-  title: { color: c.text, fontSize: 13, fontWeight: '600', marginTop: 2 },
-  meta: { color: c.textTertiary, fontSize: 11 },
+  title: { color: c.text, fontSize: 14, fontWeight: '700', marginTop: 1 },
+  meta: { color: c.textTertiary, fontSize: 11.5, marginTop: 1 },
 });

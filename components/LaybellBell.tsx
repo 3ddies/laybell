@@ -99,7 +99,7 @@ const GAP_MAX_MS = 16_500;
 // so it emphasises rather than nags.
 const BADGE_POP_EVERY = 3;
 const BADGE_HOLD_MS = 3000;   // how long the count stays out before it retracts
-const BADGE_MAX = 999;
+const BADGE_MAX = 99;         // over this shows "99+" (owner, 2026-09-28)
 
 export default function LaybellBell({
   matchIconSize = 28, color, unreadColor, accent = '#FF8095', unread, focused, style,
@@ -123,7 +123,7 @@ export default function LaybellBell({
   unread: boolean;
   /** Animation runs only while the screen is on. */
   focused: boolean;
-  /** Unread-notification count for the badge. 0 hides it; over 999 shows "999+". */
+  /** Unread-notification count for the badge. 0 hides it; over 99 shows "99+". */
   count?: number;
   style?: ViewStyle;
 }) {
@@ -358,9 +358,12 @@ export default function LaybellBell({
 }
 
 const styles = StyleSheet.create({
-  // Full width of the bell box, centring the pill under it; `top` is set inline
-  // from the measured body size so it hangs off the base.
-  badgeAnchor: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  // Centres the pill under the bell. Extended well past the bell box on both sides
+  // (symmetrically, so the centre stays on the bell) because the box itself is only
+  // ~25pt wide — pinning the pill to that width squeezed a multi-digit count until it
+  // ellipsized to "1…". The extra room lets the pill size to its digits ("99+") and
+  // stay centred; it's invisible and non-interactive, so the extra span shows nothing.
+  badgeAnchor: { position: 'absolute', left: -60, right: -60, alignItems: 'center' },
   // A rounded rectangle, Instagram-style: corners clearly rounded (~a third of
   // the height) but the body stays rectangular. minWidth is wider than the
   // height so even a single digit is a horizontal rectangle, not a square; the

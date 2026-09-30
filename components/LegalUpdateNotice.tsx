@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
-import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 
 // Marketplace Terms §11 promises that material changes are communicated in the
@@ -23,7 +23,6 @@ import { useTranslation } from '../contexts/LanguageContext';
 const ACK_KEY = 'legal.marketplaceTerms.ack.2026-07-29';
 
 export default function LegalUpdateNotice() {
-  const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const router = useRouter();
@@ -51,7 +50,8 @@ export default function LegalUpdateNotice() {
       accessibilityRole="button"
       onPress={() => { ack(); router.push('/marketplace-terms'); }}
     >
-      <Ionicons name="document-text-outline" size={20} color={colors.primary} />
+      {/* Black glyph to match the title — the banner is monochrome black-on-white. */}
+      <Ionicons name="document-text-outline" size={20} color="#16161A" />
       <View style={styles.textWrap}>
         <Text style={styles.title}>{t('legalUpdate.marketplaceTitle')}</Text>
         <Text style={styles.body}>{t('legalUpdate.marketplaceBody')}</Text>
@@ -63,23 +63,27 @@ export default function LegalUpdateNotice() {
         accessibilityRole="button"
         accessibilityLabel={t('a11y.close')}
       >
-        <Ionicons name="close" size={18} color={colors.textSecondary} />
+        {/* Dark grey so the X stays visible on the white card in every theme. */}
+        <Ionicons name="close" size={18} color="#8A8A92" />
       </TouchableOpacity>
     </TouchableOpacity>
   );
 }
 
 const makeStyles = (c: ThemePalette) => StyleSheet.create({
+  // Always a white card with black text, in every theme — a deliberately loud,
+  // official-looking notice that pops against the dark Shop shell. Colors are
+  // hardcoded (not palette-derived) so it stays white in dark/grey mode too.
   card: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
     marginHorizontal: SPACING.md, marginBottom: SPACING.sm,
-    backgroundColor: c.surfaceLight,
+    backgroundColor: '#FFFFFF',
     borderRadius: RADIUS.lg,
-    borderWidth: 1, borderColor: c.primary + '3A',
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)',
     paddingVertical: SPACING.sm, paddingLeft: SPACING.md, paddingRight: SPACING.sm,
   },
   textWrap: { flex: 1, minWidth: 0 },
-  title: { color: c.text, fontSize: 13.5, fontWeight: '700' },
-  body: { color: c.textSecondary, fontSize: 12, marginTop: 1 },
+  title: { color: '#16161A', fontSize: 13.5, fontWeight: '700' },
+  body: { color: '#5E5E66', fontSize: 12, marginTop: 1 },
   closeBtn: { padding: 2 },
 });

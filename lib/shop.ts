@@ -179,8 +179,14 @@ export function shopSplit(priceCents: number): {
 
 export function formatPrice(cents: number, currency = 'USD'): string {
   if (cents <= 0) return 'FREE';
+  return formatAmount(cents, currency);
+}
+
+/** Like formatPrice, but a zero amount reads "$0" rather than "FREE" — for a
+ *  BALANCE or a shortfall, where "you have FREE" makes no sense. */
+export function formatAmount(cents: number, currency = 'USD'): string {
   const symbol = currency === 'USD' ? '$' : `${currency} `;
-  const dollars = cents / 100;
+  const dollars = Math.max(0, cents) / 100;
   return `${symbol}${Number.isInteger(dollars) ? dollars : dollars.toFixed(2)}`;
 }
 

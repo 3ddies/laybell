@@ -174,9 +174,11 @@ export default function TrackRow({
   // to load rather than a row that is playing.
   indicator?: 'cover' | 'button';
 }) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
+  // The add-to-playlist "+" is WHITE on the dark themes, orange in light (owner, 2026-09-28).
+  const addAccent = mode === 'light' ? colors.primary : '#FFFFFF';
   const durationLabel = formatDuration(duration);
   // Swipe-tap guard: a tab swipe gliding over the row must not start playback
   // or open a profile (presses during/just after a swipe are swallowed).
@@ -297,7 +299,7 @@ export default function TrackRow({
 
       {onAddToPlaylist && (
         <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.add')} style={styles.addBtn} onPress={safeAdd} onLongPress={onOptions}>
-          <Ionicons name="add-circle-outline" size={22} color={colors.primary} />
+          <Ionicons name="add-circle-outline" size={26} color={addAccent} />
         </TouchableOpacity>
       )}
 
