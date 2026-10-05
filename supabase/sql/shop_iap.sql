@@ -530,6 +530,30 @@ end $$;
 revoke all on function public.shop_sweep_iap_intents() from public;
 revoke all on function public.shop_sweep_iap_intents() from authenticated;
 
+-- ─── Revoke anon, BY NAME (the load-bearing one) ────────────────────────────
+-- Supabase's bootstrap runs `alter default privileges ... grant all on functions
+-- to postgres, anon, authenticated, service_role`, so EVERY new function in
+-- `public` is created with an explicit EXECUTE grant to `anon` — and
+-- `revoke ... from public`/`from authenticated` does NOT remove it (see the same
+-- warning in money_hardening_2026-07-29.sql). The anon key ships inside the app
+-- bundle, so without these revokes shop_deliver_paid_order / shop_iap_make_whole
+-- are callable with NO JWT -> anyone can mint withdrawable earnings and credits.
+-- Revoke anon by name on every function this file creates. Pre-flight (all false):
+--   select p.proname, has_function_privilege('anon', p.oid, 'execute')
+--     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--    where n.nspname='public' and p.proname like 'shop_%iap%';
+revoke all on function public.shop_price_tiers()                                             from anon;
+revoke all on function public.shop_is_price_tier(int)                                        from anon;
+-- begin/poll keep their explicit `grant to authenticated` (the client calls them)
+-- but must also drop the default PUBLIC execute grant — anon reaches a function
+-- through PUBLIC too, so revoking anon alone leaves the PUBLIC path open.
+revoke all on function public.shop_begin_iap_order(uuid, text)                               from public, anon;
+revoke all on function public.shop_deliver_paid_order(uuid, int, text, text, text, text, uuid) from anon;
+revoke all on function public.shop_iap_make_whole(uuid, uuid, int, text, text, text)         from anon;
+revoke all on function public.shop_poll_iap_order(uuid)                                       from public, anon;
+revoke all on function public.shop_mark_iap_refunded(text, text, text, text)                 from anon;
+revoke all on function public.shop_sweep_iap_intents()                                       from anon;
+
 
 -- ─── Checking it ────────────────────────────────────────────────────────────
 --   Exactly one ledger tx per processor event (should return NO rows):
