@@ -20,6 +20,7 @@ import {
   uploadListingCover, uploadListingFile, uploadListingPreview,
   type ListingCategory, type ListingTypesInput,
 } from '../../lib/shop';
+import { PRICE_TIERS_CENTS, formatUsd, nearestTier } from '../../lib/pricing';
 
 // Create / edit a listing. Three media slots (cover / public preview / private
 // deliverable) + MULTI-TYPE deals: the seller highlights any combination of
@@ -79,8 +80,12 @@ export default function NewListingScreen() {
     setFreeOn(types.free);
     const sp = l.sell_enabled ? (l.sell_price_cents ?? 0) : types.sell ? l.price_cents : 0;
     const lp = l.lease_enabled ? (l.lease_price_cents ?? 0) : types.lease ? l.price_cents : 0;
-    setSellPrice(sp > 0 ? String(sp / 100) : '');
-    setLeasePrice(lp > 0 ? String(lp / 100) : '');
+    // Prices are now fixed tiers; snap a legacy off-ladder price to the nearest so
+    // the picker shows a selection and the listing becomes one-tap buyable on save.
+    const spTier = sp > 0 ? (nearestTier(sp) ?? 0) : 0;
+    const lpTier = lp > 0 ? (nearestTier(lp) ?? 0) : 0;
+    setSellPrice(spTier > 0 ? String(spTier / 100) : '');
+    setLeasePrice(lpTier > 0 ? String(lpTier / 100) : '');
     setFreeFollow(!!l.free_requires_follow);
     setFreePostIds(l.free_like_post_ids ?? []);
     setExistingCover(l.cover_url);
@@ -220,19 +225,34 @@ export default function NewListingScreen() {
     );
   }
 
+  // Fixed price tiers (Apple/Google IAP needs fixed price points). Tap a chip to
+  // set the price; the selected one highlights. The value stays a dollar string so
+  // the cents derivation and typesInput() below are unchanged.
   function priceInput(value: string, setValue: (v: string) => void) {
+    const curCents = Math.round((parseFloat(value.replace(',', '.')) || 0) * 100);
     return (
-      <View style={styles.priceRow}>
-        <Text style={styles.priceSymbol}>$</Text>
-        <TextInput
-          style={[styles.input, styles.priceInput]}
-          placeholder="0.00"
-          placeholderTextColor={colors.textTertiary}
-          value={value}
-          onChangeText={setValue}
-          keyboardType="decimal-pad"
-          maxLength={9}
-        />
+      <View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tierRow}
+          keyboardShouldPersistTaps="handled"
+        >
+          {PRICE_TIERS_CENTS.map((cents) => {
+            const on = cents === curCents;
+            return (
+              <TouchableOpacity
+                key={cents}
+                style={[styles.tierChip, on && styles.tierChipOn]}
+                onPress={() => { tabTick(); setValue(String(cents / 100)); }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.tierChipText, on && styles.tierChipTextOn]}>{formatUsd(cents)}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+        <Text style={styles.tierHint}>{t('shop.tierHint')}</Text>
       </View>
     );
   }
@@ -496,6 +516,15 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   priceRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   priceSymbol: { color: c.text, fontSize: 18, fontWeight: '800' },
   priceInput: { flex: 1 },
+  tierRow: { gap: 7, paddingVertical: 2, paddingRight: 8 },
+  tierChip: {
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: c.border,
+    paddingHorizontal: 13, paddingVertical: 8, backgroundColor: c.surfaceLight,
+  },
+  tierChipOn: { backgroundColor: c.success, borderColor: c.success },
+  tierChipText: { color: c.textSecondary, fontSize: 13, fontWeight: '700' },
+  tierChipTextOn: { color: '#fff' },
+  tierHint: { color: c.textTertiary, fontSize: 11, lineHeight: 15, marginTop: 6 },
   earnCard: {
     backgroundColor: c.surface, borderRadius: RADIUS.md,
     borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,

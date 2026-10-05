@@ -29,6 +29,15 @@ function load(): Promise<any | null> {
   return modPromise;
 }
 
+// The module NAMESPACE (not the default export), for named exports like the
+// product-category enum used when fetching consumables directly.
+let nsPromise: Promise<any | null> | null = null;
+function loadNS(): Promise<any | null> {
+  if (Platform.OS === 'web') return Promise.resolve(null);
+  if (!nsPromise) nsPromise = import('react-native-purchases').then((m: any) => m ?? null).catch(() => null);
+  return nsPromise;
+}
+
 function apiKey(): string | null {
   const k = Platform.OS === 'ios' ? cfg.iosApiKey : cfg.androidApiKey;
   return k && k.length > 0 ? k : null;
@@ -204,6 +213,65 @@ export async function purchaseCredits(pkg: Pkg): Promise<CreditPurchaseResult> {
     // the webhook's [money-failure] logs to tell "never charged" apart from
     // "charged but never credited".
     reportError(e, { stage: 'purchases.credits', product: pkg.identifier, code: e?.code });
+    return 'error';
+  }
+}
+
+// ── Beat purchases (direct per-beat IAP) ─────────────────────────────────────
+// Like credits, delivery is NOT granted here. The purchase completes on-device,
+// then RevenueCat's webhook delivers the beat server-side
+// (shop_deliver_paid_order) and the client polls shop_poll_iap_order. A client
+// that could deliver its own purchase could steal beats, so it only reports what
+// it bought and waits.
+//
+// The webhook can't see WHICH listing was bought, so the purchase is TAGGED with
+// its intent id (from shop_begin_iap_order) via a custom subscriber attribute the
+// webhook reads back. The items are fetched directly by their store id — no
+// RevenueCat offering/package needed (they're à-la-carte SKUs, not a paywall).
+
+export type ItemPurchaseResult = 'ok' | 'cancelled' | 'error';
+
+/**
+ * Buy a single beat at a fixed tier (productId e.g. 'laybell_item_999'). 'ok'
+ * means the STORE charged — not that the beat is unlocked. Unlocking happens when
+ * the webhook delivers server-side; poll shop_poll_iap_order after this returns.
+ */
+export async function purchaseItem(productId: string, intentId: string): Promise<ItemPurchaseResult> {
+  const Purchases = await load();
+  if (!Purchases) return 'error';
+  try {
+    // Tag the purchase so the webhook can map it back to the shop listing. A
+    // custom subscriber attribute rides along with the purchase event. If the tag
+    // doesn't arrive, the server credits the buyer back rather than guessing.
+    try { await Purchases.setAttributes({ laybellPendingOrder: intentId }); }
+    catch (e) { reportError(e, { stage: 'purchases.item.tag', product: productId }); }
+
+    // Fetch the consumable directly by its store id and buy it — no RevenueCat
+    // offering/package needed. getProducts defaults to the SUBSCRIPTION category,
+    // so request NON_SUBSCRIPTION (the enum's value varies across SDK versions, so
+    // read it from the module and fall back gracefully).
+    const ns = await loadNS();
+    const cat =
+      ns?.PRODUCT_CATEGORY?.NON_SUBSCRIPTION ??
+      ns?.PURCHASE_TYPE?.INAPP ??
+      'NON_SUBSCRIPTION';
+    let products: any[] = [];
+    try { products = (await Purchases.getProducts([productId], cat)) ?? []; } catch { /* fall back to default category */ }
+    if (!products.length) { try { products = (await Purchases.getProducts([productId])) ?? []; } catch { /* handled below */ } }
+    const product = products.find((p: any) => (p?.identifier ?? '') === productId) ?? products[0];
+    if (!product) {
+      reportError(new Error('item product not found in store'), { stage: 'purchases.item.lookup', product: productId });
+      return 'error';
+    }
+    await Purchases.purchaseStoreProduct(product);
+    // Deliberately NOT unlocking anything locally — only the server may deliver.
+    return 'ok';
+  } catch (e: any) {
+    if (e?.userCancelled) return 'cancelled';
+    // The store may have charged before this threw — pair with the webhook's
+    // [money-failure]/beat_deliver logs to tell "never charged" from "charged,
+    // not delivered".
+    reportError(e, { stage: 'purchases.item', product: productId, code: e?.code });
     return 'error';
   }
 }

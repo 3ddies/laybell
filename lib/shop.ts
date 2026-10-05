@@ -318,9 +318,16 @@ export async function uploadListingFile(listingId: string, uri: string, mime: st
   return path;
 }
 
-/** Signed URL for a deliverable — works for the seller and delivered buyers. */
-export async function getDeliverableUrl(filePath: string): Promise<string> {
-  const { data, error } = await supabase.storage.from('shop-files').createSignedUrl(filePath, 3600);
+/** Signed URL for a deliverable — works for the seller and delivered buyers.
+ *  `download` sets Content-Disposition: attachment so the file saves as a real
+ *  named download instead of rendering inline — an inline audio/zip opens as a
+ *  blank grey Safari page on iOS with no obvious way to save it. Callers that omit
+ *  a name get the seller's original upload filename (minus the "<ts>-" prefix). */
+export async function getDeliverableUrl(filePath: string, downloadName?: string): Promise<string> {
+  const name = (downloadName || filePath.split('/').pop() || 'beat').replace(/^\d+-/, '');
+  const { data, error } = await supabase.storage
+    .from('shop-files')
+    .createSignedUrl(filePath, 3600, { download: name });
   if (error || !data?.signedUrl) throw error ?? new Error('no url');
   return data.signedUrl;
 }
@@ -493,6 +500,45 @@ export async function exploreListings(opts: {
 // --- Orders ---------------------------------------------------------------------
 
 const ORDER_COLS = '*';
+
+// --- Direct IAP purchase (beats) ------------------------------------------------
+// Begin → (store purchase in lib/purchases.purchaseItem) → poll. The server
+// (shop_iap.sql) is the authority: begin validates + records an intent and returns
+// the product to buy, the RevenueCat webhook delivers, and poll reflects the
+// result. A price off the tier ladder returns reason 'price_not_tier', the caller's
+// cue to fall back to the credits path. See docs/BEATS_IAP_PLAN.md.
+
+export type IapBeginResult =
+  | { ok: true; intentId: string; productId: string; priceCents: number }
+  | { ok: false; reason: string };
+
+export async function beginIapOrder(listingId: string, kind: 'sell' | 'lease'): Promise<IapBeginResult> {
+  const { data, error } = await supabase.rpc('shop_begin_iap_order', {
+    p_listing_id: listingId,
+    p_kind: kind,
+  });
+  if (error) return { ok: false, reason: error.message };
+  if (!(data as any)?.ok) return { ok: false, reason: (data as any)?.reason ?? 'begin_failed' };
+  return {
+    ok: true,
+    intentId: (data as any).intent_id,
+    productId: (data as any).product_id,
+    priceCents: (data as any).price_cents,
+  };
+}
+
+export type IapPollResult = { status: string; delivered: boolean; credited: boolean; orderId: string | null };
+
+export async function pollIapOrder(intentId: string): Promise<IapPollResult | null> {
+  const { data, error } = await supabase.rpc('shop_poll_iap_order', { p_intent_id: intentId });
+  if (error || !data) return null;
+  return {
+    status: String((data as any).status ?? ''),
+    delivered: !!(data as any).delivered,
+    credited: !!(data as any).credited,
+    orderId: (data as any).order_id ?? null,
+  };
+}
 
 /**
  * Files a buy request for ONE deal type and drops a marketplace-style DM to

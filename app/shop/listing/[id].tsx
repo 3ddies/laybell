@@ -5,6 +5,7 @@ import {
   Animated, Easing, useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,12 +28,23 @@ import {
   checkFreeConditions, fetchListing, formatPrice, getDeliverableUrl, hasDeliveredSales,
   logDeliverableDownload,
   freeHasConditions, legacyKindOf, listingPriceLabel, listingStats, myOrdersForListing, priceForKind, refundAndRemoveListing,
+  beginIapOrder, pollIapOrder,
   requestToBuy, saleTypes, setOrderStatus, updateListing,
   type FreeConditionState, type SaleKind, type ShopListing, type ShopOrder,
 } from '../../../lib/shop';
 import { addToCart, removeFromCart, useInCart, useShopCart } from '../../../lib/shopCart';
+import { purchaseItem, purchasesConfigured } from '../../../lib/purchases';
+import { canBuyWithIap } from '../../../lib/pricing';
 
 const PREVIEW_HOST = 'shop-preview';
+
+// A clean, human filename for a saved deliverable: the seller's original upload
+// name with the "<timestamp>-" prefix stripped and anything filesystem-hostile
+// replaced. Used for both the saved file and the download disposition.
+function deliverableName(filePath: string): string {
+  const base = (filePath.split('/').pop() || 'beat').replace(/^\d+-/, '');
+  return base.replace(/[^\w.() -]/g, '_').slice(-80) || 'beat';
+}
 
 // Listing detail — the marketplace "product page": cover, tap-to-play preview,
 // seller row, and a CTA PER DEAL TYPE (a listing can offer any mix):
@@ -312,6 +324,54 @@ export default function ListingScreen() {
     setBusyKind(null);
   }
 
+  // Direct IAP purchase (sell/lease). Payment is Apple/Google-mediated, so there
+  // is no off-platform safety primer. begin → store → poll for server delivery.
+  async function buyIap(kind: 'sell' | 'lease') {
+    if (!listing || busyKind) return;
+    setError(null);
+    setBusyKind(kind);
+    try {
+      const begun = await beginIapOrder(listing.id, kind);
+      if (!begun.ok) {
+        setBusyKind(null);
+        // Off-ladder price → there is no IAP product; fall back to credits.
+        if (begun.reason.includes('price_not_tier')) return buy(kind);
+        if (begun.reason.includes('already_purchased')) { await load(); return; }
+        if (begun.reason.includes('cannot_buy_own')) { setError(t('shop.cannotBuyOwn')); return; }
+        if (begun.reason.includes('listing_not_available') || begun.reason.includes('listing_sold')) {
+          setError(t('shop.noLongerAvailable')); await load(); return;
+        }
+        setError(t('shop.purchaseError'));
+        return;
+      }
+      const res = await purchaseItem(begun.productId, begun.intentId);
+      if (res === 'cancelled') { setBusyKind(null); return; }
+      if (res === 'error') { setBusyKind(null); setError(t('shop.purchaseError')); return; }
+      // Charged — wait for the webhook to deliver (or credit back) server-side.
+      const outcome = await waitForDelivery(begun.intentId);
+      setBusyKind(null);
+      await load();
+      if (outcome === 'delivered') { notifySuccess(); setBoughtOpen(true); }
+      else if (outcome === 'credited') setError(t('shop.iapCredited'));
+      else setError(t('shop.iapProcessing'));
+    } catch {
+      setBusyKind(null);
+      setError(t('shop.purchaseError'));
+    }
+  }
+
+  // Poll the intent until the webhook resolves it (~21s), so the UI shows the
+  // unlocked state the moment delivery lands.
+  async function waitForDelivery(intentId: string): Promise<'delivered' | 'credited' | 'pending'> {
+    for (let i = 0; i < 14; i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const p = await pollIapOrder(intentId);
+      if (p?.delivered) return 'delivered';
+      if (p?.credited) return 'credited';
+    }
+    return 'pending';
+  }
+
   async function ackSafetyAndBuy() {
     setSafetyOpen(false);
     // Persist the ack BEFORE re-entering buy(), which re-reads it.
@@ -331,12 +391,25 @@ export default function ListingScreen() {
     if (!listing?.file_path || busyKind) return;
     setBusyKind('download');
     try {
-      const url = await getDeliverableUrl(listing.file_path);
-      // Log BEFORE opening: this row is the dispute evidence that the buyer took
-      // delivery, and it must not depend on the handoff to the browser succeeding.
+      const name = deliverableName(listing.file_path);
+      const url = await getDeliverableUrl(listing.file_path, name);
+      // Log BEFORE the handoff: this row is the dispute evidence that the buyer
+      // took delivery, and it must not depend on the download/share succeeding.
       logDeliverableDownload(deliveredOrder?.id, listing.file_path);
-      Linking.openURL(url).catch(() => {});
-    } catch { /* not delivered / revoked */ }
+      if (Platform.OS === 'ios') {
+        // Pull the file into the app, then present the native share sheet so the
+        // buyer gets "Save to Files" / AirDrop / "Open in…" instead of a raw grey
+        // Safari preview page. expo-file-system + RN Share are already in the
+        // binary (same idiom as the privacy-center data export) — no new native
+        // module, ships without a rebuild.
+        const dl = await FileSystem.downloadAsync(url, (FileSystem.cacheDirectory ?? '') + name);
+        await Share.share({ url: dl.uri });
+      } else {
+        // Android: the Content-Disposition download opens cleanly in the system
+        // download manager (RN Share can't attach a binary file without a dep).
+        await Linking.openURL(url);
+      }
+    } catch { /* not delivered / revoked / share sheet dismissed */ }
     setBusyKind(null);
   }
 
@@ -553,13 +626,17 @@ export default function ListingScreen() {
         </View>
       );
     }
-    const price = formatPrice(priceForKind(listing, kind), listing.currency);
+    const priceCents = priceForKind(listing, kind);
+    const price = formatPrice(priceCents, listing.currency);
+    // Direct IAP is the primary path when the price is on the tier ladder and
+    // billing is configured; otherwise the green button spends credits as before.
+    const iap = canBuyWithIap(priceCents) && purchasesConfigured();
     const open = expanded === kind;
     return (
       <View key={kind} style={styles.ctaBlock}>
         <TouchableOpacity
           style={[styles.greenBtn, kind === 'lease' && styles.leaseBtn]}
-          onPress={() => buy(kind)}
+          onPress={() => (iap ? buyIap(kind) : buy(kind))}
           disabled={!!busyKind}
           activeOpacity={0.85}
         >
@@ -572,6 +649,18 @@ export default function ListingScreen() {
             </>
           )}
         </TouchableOpacity>
+        {iap && (
+          <TouchableOpacity
+            onPress={() => buy(kind)}
+            disabled={!!busyKind}
+            style={styles.useCreditsRow}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+          >
+            <Ionicons name="wallet-outline" size={13} color={colors.textSecondary} />
+            <Text style={styles.useCreditsText}>{t('shop.useCredits')}</Text>
+          </TouchableOpacity>
+        )}
         {!!caption && (
           <TouchableOpacity
             onPress={() => setExpanded(open ? null : kind)}
@@ -1109,6 +1198,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   },
   // The lease button reads as its own deal, not a twin of Buy.
   leaseBtn: { backgroundColor: '#0EA5E9' },
+  // Secondary path under the one-tap "Buy": spend credits instead.
+  useCreditsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 4 },
+  useCreditsText: { color: c.textSecondary, fontSize: 12.5, fontWeight: '600' },
   greenBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   freeBtn: { paddingVertical: 9 },
   freeBtnInner: { alignItems: 'center' },
