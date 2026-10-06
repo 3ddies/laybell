@@ -550,8 +550,12 @@ revoke all on function public.shop_sweep_iap_intents() from authenticated;
 --   select p.proname, has_function_privilege('anon', p.oid, 'execute')
 --     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
 --    where n.nspname='public' and p.proname like 'shop_%iap%';
-revoke all on function public.shop_price_tiers()                                             from anon;
-revoke all on function public.shop_is_price_tier(int)                                        from anon;
+-- Pure, side-effect-free helpers returning the public price ladder — harmless,
+-- but revoke the default PUBLIC path too (not just the direct anon grant) so the
+-- lockdown is consistent with the RPCs below. The internal callers reach these
+-- from inside SECURITY DEFINER functions (owner role), so this breaks nothing.
+revoke all on function public.shop_price_tiers()                                             from public, anon;
+revoke all on function public.shop_is_price_tier(int)                                        from public, anon;
 -- begin/poll keep their explicit `grant to authenticated` (the client calls them)
 -- but must also drop the default PUBLIC execute grant — anon reaches a function
 -- through PUBLIC too, so revoking anon alone leaves the PUBLIC path open.
