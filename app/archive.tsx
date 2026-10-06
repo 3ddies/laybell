@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Image, Alert, RefreshControl, Platform,
+  ScrollView, Image, Alert, RefreshControl, Platform, Dimensions,
 } from 'react-native';
 import { FullWindowOverlay } from 'react-native-screens';
 import { useRouter } from 'expo-router';
@@ -12,11 +12,17 @@ import { restorePostById, deletePostById } from '../lib/postActions';
 import { fetchArchivedStories, restoreStory, deleteStory, type Story } from '../lib/stories';
 import { isAudioPost } from '../lib/genres';
 import VideoThumb from '../components/VideoThumb';
+import StoryThumb from '../components/StoryThumb';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { GridSkeleton } from '../components/Skeleton';
+
+const SCREEN_W = Dimensions.get('window').width;
+// Stories archive: 3 columns of 9:16 (vertical) thumbnails — stories are portrait,
+// so they're shown as the rectangle they are, not squashed into a square.
+const STORY_W = Math.floor(SCREEN_W / 3);
 
 type Tab = 'posts' | 'stories';
 
@@ -204,12 +210,8 @@ export default function ArchiveScreen() {
                     </TouchableOpacity>
                   ))
                 : stories.map(story => (
-                    <TouchableOpacity key={story.id} style={styles.cell} onPress={() => playArchivedStory(story)} onLongPress={() => onStoryPress(story)} activeOpacity={0.85}>
-                      {story.media_type === 'video' && !story.thumbnail_url ? (
-                        <VideoThumb thumbnailUrl={story.thumbnail_url} mediaUrl={story.media_url} style={styles.cellMedia} />
-                      ) : (
-                        <Image source={{ uri: story.thumbnail_url ?? story.media_url }} style={styles.cellMedia} resizeMode="cover" />
-                      )}
+                    <TouchableOpacity key={story.id} style={styles.storyCell} onPress={() => playArchivedStory(story)} onLongPress={() => onStoryPress(story)} activeOpacity={0.85}>
+                      <StoryThumb story={story} width={STORY_W - 2} />
                       {story.media_type === 'video' && (
                         <View style={styles.typeBadge}><Ionicons name="play" size={11} color="#fff" /></View>
                       )}
@@ -261,6 +263,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   cell: { width: '33.33%', aspectRatio: 1, position: 'relative', padding: 1 },
+  // Stories are portrait: a 9:16 cell (height comes from StoryThumb), 1px gutter.
+  storyCell: { width: STORY_W, padding: 1, position: 'relative' },
   cellMedia: { width: '100%', height: '100%' },
   cellPlaceholder: {
     width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center',

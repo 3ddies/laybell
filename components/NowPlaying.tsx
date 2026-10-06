@@ -805,10 +805,15 @@ export default function NowPlaying() {
                     (every song after worked, the node being warm by then). One
                     stable animated node makes the reveal deterministic. */}
                 <View style={styles.statBar}>
-                  <TouchableOpacity disabled={!statsReady} style={[styles.tapStat, isLiked && styles.tapStatActiveLike]} onPress={handleLike} activeOpacity={0.8}>
-                    <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={26} color={isLiked ? colors.like : colors.text} />
-                    <Animated.Text style={[styles.tapStatNum, { opacity: statsFade }]}>{formatCount(likeCount)}</Animated.Text>
-                  </TouchableOpacity>
+                  <View style={[styles.tapStat, isLiked && styles.tapStatActiveLike]}>
+                    <TouchableOpacity disabled={!statsReady} onPress={handleLike} activeOpacity={0.8} hitSlop={6}>
+                      <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={26} color={isLiked ? colors.like : colors.text} />
+                    </TouchableOpacity>
+                    {/* The COUNT (not the heart) opens who liked / reposted / saved. */}
+                    <TouchableOpacity disabled={!statsReady} onPress={() => { collapse(); router.push(`/post-engagement/${pid}`); }} activeOpacity={0.8} hitSlop={6}>
+                      <Animated.Text style={[styles.tapStatNum, { opacity: statsFade }]}>{formatCount(likeCount)}</Animated.Text>
+                    </TouchableOpacity>
+                  </View>
                   <View style={styles.centerStat}>
                     <Animated.Text style={[styles.centerStatNum, { opacity: statsFade }]}>{formatCount(streams)}</Animated.Text>
                     <Text style={styles.centerStatLbl}>{t('nowPlaying.streams')}</Text>

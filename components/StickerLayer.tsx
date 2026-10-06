@@ -255,7 +255,7 @@ function pinch(touches: any[]) {
 
 export default function StickerLayer({
   stickers, frameW, frameH, editingId, onManipulate, onTapSticker, onTapEmpty,
-  onDragActive, onDragMove, onRelease, faintIds, constrain, renderKind,
+  onDragActive, onDragMove, onRelease, faintIds, constrain, renderKind, onPhotoGesture,
 }: {
   stickers: Sticker[];
   frameW: number;
@@ -284,6 +284,11 @@ export default function StickerLayer({
   // returns a FIXED-SIZE node — StickerLayer measures, centres and transforms it
   // exactly like a text sticker. Returning null skips the sticker.
   renderKind?: (s: Sticker) => ReactNode;
+  // Background (photo) reposition/zoom: fired when a drag/pinch is NOT on a sticker,
+  // so the host can pan/zoom the media under the stickers. Deltas are from the gesture
+  // start (dx/dy in px, scale as a ratio). Absent → old behaviour (a drag anywhere
+  // moves the nearest sticker). A tap on empty still adds a sticker.
+  onPhotoGesture?: (e: { phase: 'move' | 'end'; dx: number; dy: number; scale: number }) => void;
 }) {
   const animRef = useRef<Record<string, Anim>>({});
   const curRef = useRef<Record<string, Cur>>({});
@@ -304,8 +309,8 @@ export default function StickerLayer({
 
   // Latest props for the once-created PanResponder.
   const stickersRef = useRef(stickers); stickersRef.current = stickers;
-  const cbRef = useRef({ onManipulate, onTapSticker, onTapEmpty, onDragActive, onDragMove, onRelease });
-  cbRef.current = { onManipulate, onTapSticker, onTapEmpty, onDragActive, onDragMove, onRelease };
+  const cbRef = useRef({ onManipulate, onTapSticker, onTapEmpty, onDragActive, onDragMove, onRelease, onPhotoGesture });
+  cbRef.current = { onManipulate, onTapSticker, onTapEmpty, onDragActive, onDragMove, onRelease, onPhotoGesture };
 
   const active = useRef<string | null>(null);
   const nearTap = useRef(false); // was the touch-down close enough to count a TAP as "edit this sticker"
@@ -315,6 +320,13 @@ export default function StickerLayer({
   const last = useRef({ x: 0, y: 0 });
   const base = useRef({ cx: 0, cy: 0, dist: 0, angle: 0, px: 0, py: 0, scale: 1, rotation: 0 });
   const prevCount = useRef(0);
+  // Background (photo) gesture tracking — see onPhotoGesture. `photoAcc` holds the
+  // delta committed before the last finger-count change; `photoRef` is this
+  // segment's baseline; `photoLast` is the latest reported (reused on release).
+  const bg = useRef(false);
+  const photoAcc = useRef({ dx: 0, dy: 0, scale: 1 });
+  const photoRef = useRef({ cx: 0, cy: 0, dist: 0 });
+  const photoLast = useRef({ dx: 0, dy: 0, scale: 1 });
 
   // The host's limits on a live placement (px offsets from the frame's centre).
   function fit(id: string, cur: Cur) {
@@ -358,6 +370,14 @@ export default function StickerLayer({
   // End of a gesture (last finger up, or the system terminated it). A tap edits
   // the nearest sticker / creates one in open area; a drag commits the new placement.
   function endGesture() {
+    if (bg.current) {
+      bg.current = false;
+      // A tap on open media still adds a sticker; a drag/pinch finishes the photo move.
+      if (!moved.current) cbRef.current.onTapEmpty(grant.current.x / frameW, grant.current.y / frameH);
+      else cbRef.current.onPhotoGesture?.({ phase: 'end', ...photoLast.current });
+      active.current = null;
+      return;
+    }
     const id = active.current;
     if (!moved.current) {
       if (id && nearTap.current) cbRef.current.onTapSticker(id);
@@ -390,19 +410,58 @@ export default function StickerLayer({
           const d = Math.hypot(c.x - sx, c.y - sy);
           if (d < best) { best = d; nearest = s.id; }
         }
-        // Grab the nearest sticker ALWAYS, so a drag/pinch anywhere on the screen
-        // manipulates it. The distance only gates a TAP (near → edit; far → create).
-        active.current = nearest;
         nearTap.current = !!nearest && best <= NEAR_PX;
-        rebaseline(touches);
+        // When the host opts into photo gestures (onPhotoGesture), a drag/pinch that
+        // ISN'T on a sticker repositions/zooms the media instead; a tap still adds a
+        // sticker. Without the callback, keep the old behaviour: grab the nearest
+        // sticker so a drag/pinch anywhere manipulates it.
+        bg.current = !!cbRef.current.onPhotoGesture && !nearTap.current;
+        if (bg.current) {
+          active.current = null;
+          photoAcc.current = { dx: 0, dy: 0, scale: 1 };
+          photoLast.current = { dx: 0, dy: 0, scale: 1 };
+          const p0 = touches.length >= 2 ? pinch(touches) : { dist: 0, angle: 0 };
+          photoRef.current = { cx: c.x, cy: c.y, dist: p0.dist };
+          prevCount.current = touches.length;
+        } else {
+          active.current = nearest;
+          rebaseline(touches);
+        }
       },
       onPanResponderMove: (e: GestureResponderEvent) => {
         const touches = e.nativeEvent.touches;
         if (touches.length === 0) return;
-        if (touches.length !== prevCount.current) rebaseline(touches); // finger added/removed → no jump
         const c = centroid(touches);
         last.current = { x: c.x, y: c.y };
         if (Math.abs(c.x - grant.current.x) > 5 || Math.abs(c.y - grant.current.y) > 5) moved.current = true;
+
+        if (bg.current) {
+          // A two-finger gesture is a resize, never a tap — so releasing it must not
+          // fall through to "add text". (A pinch barely moves the centroid, so the
+          // 5px check above won't catch it.)
+          if (touches.length >= 2) moved.current = true;
+          // Reposition/zoom the photo. Accumulate across finger-count changes so that
+          // adding or lifting a finger never jumps the image.
+          if (touches.length !== prevCount.current) {
+            photoAcc.current.dx += c.x - photoRef.current.cx;
+            photoAcc.current.dy += c.y - photoRef.current.cy;
+            if (photoRef.current.dist > 0 && touches.length >= 2) {
+              photoAcc.current.scale *= pinch(touches).dist / photoRef.current.dist;
+            }
+            const pr = touches.length >= 2 ? pinch(touches) : { dist: 0, angle: 0 };
+            photoRef.current = { cx: c.x, cy: c.y, dist: pr.dist };
+            prevCount.current = touches.length;
+          }
+          const dx = photoAcc.current.dx + (c.x - photoRef.current.cx);
+          const dy = photoAcc.current.dy + (c.y - photoRef.current.cy);
+          let sc = photoAcc.current.scale;
+          if (photoRef.current.dist > 0 && touches.length >= 2) sc *= pinch(touches).dist / photoRef.current.dist;
+          photoLast.current = { dx, dy, scale: sc };
+          cbRef.current.onPhotoGesture?.({ phase: 'move', dx, dy, scale: sc });
+          return;
+        }
+
+        if (touches.length !== prevCount.current) rebaseline(touches); // finger added/removed → no jump
         const id = active.current;
         if (!id) return; // open-area drag: nothing to manipulate
         const a = animRef.current[id]; const cur = curRef.current[id];

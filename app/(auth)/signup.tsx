@@ -300,7 +300,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
-  consent: { flex: 1, color: colors.textTertiary, fontSize: 12, lineHeight: 18 },
+  // textSecondary, not textTertiary: on the warm AuthBackdrop the dim tertiary grey
+  // was the lowest-contrast thing on the screen (it blended into the wash). Secondary
+  // reads clearly in both themes while staying quieter than the white ToS/Privacy links.
+  consent: { flex: 1, color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
   // Neutral, not orange (owner, 2026-08-28). These are the ToS and Privacy
   // links inside the consent line, and orange made them read as the loudest
   // thing on the screen — competing with the Create account button for the eye

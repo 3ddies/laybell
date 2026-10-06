@@ -104,6 +104,7 @@ type ReelPageApi = {
   toggleSave: (item: any) => void;
   share: (item: any) => void;
   openComments: (item: any) => void;
+  openLikes: (item: any) => void;
   showOptionsFor: (item: any) => void;
   openProfile: (userId: string) => void;
   dismiss: () => void;
@@ -152,10 +153,17 @@ const ReelControls = memo(function ReelControls({
         onStartShouldSetResponder={absorb}
         hitSlop={compact ? { left: 24, right: 8, top: 14, bottom: 14 } : undefined}
       >
-        <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => api.toggleLike(item)}>
-          <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={32} color={isLiked ? colors.like : '#fff'} />
-          {likeCount > 0 && <Text style={styles.railText}>{formatCount(likeCount)}</Text>}
-        </TouchableOpacity>
+        <View style={styles.railBtn}>
+          <TouchableOpacity hitSlop={railHit} onPress={() => api.toggleLike(item)}>
+            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={32} color={isLiked ? colors.like : '#fff'} />
+          </TouchableOpacity>
+          {/* The COUNT (not the heart) opens who liked / reposted / saved. */}
+          {likeCount > 0 && (
+            <TouchableOpacity hitSlop={railHit} onPress={() => api.openLikes(item)}>
+              <Text style={styles.railText}>{formatCount(likeCount)}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
         <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => api.openComments(item)}>
           <Ionicons name="chatbubble-outline" size={30} color="#fff" />
           {commentCount > 0 && <Text style={styles.railText}>{formatCount(commentCount)}</Text>}
@@ -1773,6 +1781,7 @@ export default function ReelScreen() {
   const pageImpl = {
     toggleLike, toggleSave, share,
     openComments: (item: any) => setCommentsFor({ id: item.id, ownerId: item.user_id }),
+    openLikes: (item: any) => router.push(`/post-engagement/${item.id}`),
     showOptionsFor: (item: any) => showOptions({
       postId: item.id,
       isOwn: item.user_id === currentUserId,
@@ -1831,6 +1840,7 @@ export default function ReelScreen() {
     toggleSave: (i) => pageImplRef.current.toggleSave(i),
     share: (i) => pageImplRef.current.share(i),
     openComments: (i) => pageImplRef.current.openComments(i),
+    openLikes: (i) => pageImplRef.current.openLikes(i),
     showOptionsFor: (i) => pageImplRef.current.showOptionsFor(i),
     openProfile: (u) => pageImplRef.current.openProfile(u),
     dismiss: () => pageImplRef.current.dismiss(),

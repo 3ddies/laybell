@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Image as ExpoImage } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useProfile } from './ProfileContext';
-import { fetchStoryTray, fetchActiveStoryFlags, type StoryGroup, type SourceRect, type StoryRingInfo } from '../lib/stories';
+import { fetchStoryTray, fetchActiveStoryFlags, fetchStoriesForUsers, type StoryGroup, type SourceRect, type StoryRingInfo } from '../lib/stories';
 import { chosenTier, badgeRingColors, specialRingTier, type Tier } from '../lib/badges';
 
 // Global source of truth for "who (that I can see) has an active story". Lets any
@@ -19,6 +20,9 @@ type StoriesContextValue = {
   // story — drives the "seen rings dim to gray except diamond" policy app-wide.
   ringTier: (userId?: string | null) => Tier | null;
   openStory: (userId: string, orderedIds?: string[], src?: SourceRect) => void;
+  // The user whose story ring is mid-open (pre-loading its first frame), or null — an
+  // avatar shows the travelling-light loading sweep while it equals its own userId.
+  openingUserId: string | null;
   openCamera: () => void;
   // Optimistically flip a user's ring to "seen" the moment their story is watched,
   // so the ring updates instantly everywhere (any avatar app-wide) without waiting
@@ -36,6 +40,7 @@ const StoriesContext = createContext<StoriesContextValue>({
   ringColors: () => null,
   ringTier: () => null,
   openStory: () => {},
+  openingUserId: null,
   openCamera: () => {},
   markSeen: () => {},
   refresh: () => {},
@@ -49,6 +54,9 @@ export function StoriesProvider({ children }: { children: React.ReactNode }) {
   const { profile } = useProfile();
   const currentUserId = profile?.id ?? null;
   const router = useRouter();
+  // Which ring is currently pre-loading its first frame before the viewer opens (null = none).
+  // Drives the travelling-light loading sweep on that avatar's story ring (IG-style).
+  const [openingUserId, setOpeningUserId] = useState<string | null>(null);
   const [groups, setGroups] = useState<StoryGroup[]>([]);
   // Global user_id -> ring info (unseen + badge tier) for ALL active stories the
   // viewer can see (powers story + badge rings on any avatar app-wide). `groups`
@@ -96,16 +104,49 @@ export function StoriesProvider({ children }: { children: React.ReactNode }) {
     (uid: string, orderedIds?: string[], src?: SourceRect) => {
       const ids = orderedIds ?? groups.map((g) => g.user.id);
       const list = ids.includes(uid) ? ids : [uid];
-      router.push({
-        pathname: '/story/[userId]',
-        params: {
-          userId: uid,
-          users: JSON.stringify(list),
-          ...(src ? { src: JSON.stringify(src) } : {}),
-        },
-      });
+      const push = (seedGroup?: StoryGroup | null) =>
+        router.push({
+          pathname: '/story/[userId]',
+          params: {
+            userId: uid,
+            users: JSON.stringify(list),
+            ...(src ? { src: JSON.stringify(src) } : {}),
+            // Hand the viewer the group we already have/fetched, so it renders instantly
+            // instead of showing its own grey skeleton while it re-fetches.
+            ...(seedGroup ? { seed: JSON.stringify(seedGroup) } : {}),
+          },
+        });
+      // Show the ring's loading sweep, warm the first frame (DECODED, in memory via
+      // 'memory-disk' so the viewer paints it instantly), THEN open — so it never flashes
+      // grey. If the tray hasn't loaded this user's group yet (e.g. the very first tap after
+      // launch), fetch just their group first so we can both warm the frame AND seed the
+      // viewer. Capped at 2s; on slow wifi the cap wins and the grey loader shows, as before.
+      setOpeningUserId(uid);
+      let done = false;
+      const finish = (seedGroup?: StoryGroup | null) => {
+        if (done) return;
+        done = true;
+        setOpeningUserId(null);
+        push(seedGroup ?? null);
+      };
+      setTimeout(() => finish(), 2000);
+      const warm = (g: StoryGroup | null, passSeed: boolean) => {
+        const s = g?.stories?.[0];
+        const url = s ? (s.media_type === 'image' ? s.media_url : s.thumbnail_url) : null;
+        const onWarm = () => finish(passSeed ? g : null);
+        if (url) ExpoImage.prefetch(url, 'memory-disk').then(onWarm).catch(onWarm);
+        else onWarm();
+      };
+      const existing = groups.find((g) => g.user.id === uid) ?? null;
+      if (existing && existing.stories.length > 0) { warm(existing, false); return; }
+      // Tray not loaded for this user yet → fetch their group, warm it, and seed the viewer.
+      if (currentUserId) {
+        fetchStoriesForUsers([uid], currentUserId).then((gs) => warm(gs[0] ?? null, true)).catch(() => finish(null));
+      } else {
+        finish(null);
+      }
     },
-    [groups, router],
+    [groups, router, currentUserId],
   );
 
   const openCamera = useCallback(() => router.navigate('/story-camera'), [router]);
@@ -136,8 +177,8 @@ export function StoriesProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ groups, hasStory, hasUnseen, ringColors, ringTier, openStory, openCamera, markSeen, refresh }),
-    [groups, hasStory, hasUnseen, ringColors, ringTier, openStory, openCamera, markSeen, refresh],
+    () => ({ groups, hasStory, hasUnseen, ringColors, ringTier, openStory, openingUserId, openCamera, markSeen, refresh }),
+    [groups, hasStory, hasUnseen, ringColors, ringTier, openStory, openingUserId, openCamera, markSeen, refresh],
   );
 
   return <StoriesContext.Provider value={value}>{children}</StoriesContext.Provider>;

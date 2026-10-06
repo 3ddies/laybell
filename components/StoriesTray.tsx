@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Reanimated, { FadeIn } from 'react-native-reanimated';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SPACING, type ThemePalette } from '../constants/theme';
@@ -59,12 +60,23 @@ export default function StoriesTray() {
   const router = useRouter();
   const { profile } = useProfile();
   const { groups, openCamera, refresh } = useStories();
-  const { following } = useFollow();
+  const { following, toggleFollow } = useFollow();
   const currentUserId = profile?.id ?? null;
   const [suggestions, setSuggestions] = useState<SuggestedAccount[]>([]);
+  // Suggested profiles the user just followed FROM this rail. Their ＋ flips to a
+  // check and they STAY put (so the user can still tap through to the profile) —
+  // they only drop out / normalise on the next tray refresh (clears below).
+  const [justFollowed, setJustFollowed] = useState<Set<string>>(new Set());
 
-  // Keep the tray fresh on every return to Home (e.g. after posting/viewing).
-  useFocusEffect(useCallback(() => { refresh(); }, [refresh]));
+  // Keep the tray fresh on every return to Home (e.g. after posting/viewing). The
+  // return trip is also the "refresh" that retires the just-followed checks: a
+  // discovery story becomes a normal followed ring, a suggested account drops off.
+  useFocusEffect(useCallback(() => { refresh(); setJustFollowed(new Set()); }, [refresh]));
+
+  const onFollow = useCallback((id: string) => {
+    toggleFollow(id);
+    setJustFollowed((prev) => { const n = new Set(prev); n.add(id); return n; });
+  }, [toggleFollow]);
 
   // Fetched once per mount, NOT per focus: this is several queries behind
   // lib/suggestions, and re-running it every time Home regains focus would put
@@ -121,10 +133,34 @@ export default function StoriesTray() {
   const shownSuggestions = followedWithStories < MIN_STORIES
     ? suggestions
         .filter((s) => s.id !== currentUserId
-          && !following.has(s.id)
+          // A just-followed suggestion is KEPT (with its check) until the next
+          // refresh, instead of blinking out the instant `following` updates.
+          && (!following.has(s.id) || justFollowed.has(s.id))
           && !groups.some((g) => g.user.id === s.id))
         .slice(0, MAX_SUGGESTIONS)
     : [];
+
+  // The follow ＋ (→ check once tapped) at the bottom-right of a SUGGESTED profile.
+  // Shown for anyone the viewer doesn't already follow; hidden on the own circle and
+  // on people already followed. Returns null when there's nothing to show.
+  const followControl = (id: string) => {
+    if (!id || id === currentUserId) return null;
+    const checked = justFollowed.has(id);
+    if (!checked && following.has(id)) return null; // already followed before → no button
+    return (
+      <TouchableOpacity
+        style={[styles.followBadge, checked && styles.followBadgeDone]}
+        onPress={() => { if (!checked) onFollow(id); }}
+        disabled={checked}
+        activeOpacity={0.8}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel={checked ? t('storiesTray.followed') : t('storiesTray.follow')}
+      >
+        <Ionicons name={checked ? 'checkmark' : 'add'} size={16} color="#0A0A0C" />
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <ScrollView
@@ -158,13 +194,17 @@ export default function StoriesTray() {
       {/* Followed users with active stories */}
       {others.map((g, i) => (
         <Reanimated.View key={g.user.id} style={styles.item} entering={enterAt(i + 1)}>
-          <StoryAvatar
-            userId={g.user.id}
-            avatarUrl={g.user.avatar_url}
-            name={g.user.display_name || g.user.username}
-            size={RING}
-            raised
-          />
+          <View style={styles.avatarWrap}>
+            <StoryAvatar
+              userId={g.user.id}
+              avatarUrl={g.user.avatar_url}
+              name={g.user.display_name || g.user.username}
+              size={RING}
+              raised
+            />
+            {/* ＋ only on discovery (not-followed) stories — followControl self-gates. */}
+            {followControl(g.user.id)}
+          </View>
           <Text style={styles.label} numberOfLines={1}>
             {g.user.username || g.user.display_name}
           </Text>
@@ -183,13 +223,16 @@ export default function StoriesTray() {
           {/* onPressProfile is the fallback StoryAvatar uses when there is no
               active story. When there IS one it ignores this and opens the
               story instead — which is what should happen. */}
-          <StoryAvatar
-            userId={s.id}
-            avatarUrl={s.avatar_url}
-            name={s.display_name || s.username}
-            size={RING}
-            onPressProfile={() => router.push(`/profile/${s.id}`)}
-          />
+          <View style={styles.avatarWrap}>
+            <StoryAvatar
+              userId={s.id}
+              avatarUrl={s.avatar_url}
+              name={s.display_name || s.username}
+              size={RING}
+              onPressProfile={() => router.push(`/profile/${s.id}`)}
+            />
+            {followControl(s.id)}
+          </View>
           <Text style={styles.label} numberOfLines={1}>
             {s.username || s.display_name}
           </Text>
@@ -217,6 +260,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   row: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, gap: SPACING.sm },
   item: { width: RING + 4, alignItems: 'center', gap: 5 },
+  // Relative box the exact size of the avatar, so the follow ＋ can pin to its corner.
+  avatarWrap: { width: RING, height: RING },
+  // Follow ＋ badge at the avatar's lower-right: white disc, black glyph (floats on
+  // the avatar photo, so it stays white/black in both themes). Dims a touch once
+  // followed, where the glyph becomes a check.
+  followBadge: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 26, height: 26, borderRadius: 13,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 2, borderColor: colors.background,
+  },
+  followBadgeDone: { backgroundColor: 'rgba(255,255,255,0.8)' },
   label: { color: colors.textSecondary, fontSize: 12, maxWidth: RING + 4, textAlign: 'center' },
   // Sized to the circles and centred on them, so it reads as a break in the row
   // rather than a full-height wall — the labels below hang past it on purpose.

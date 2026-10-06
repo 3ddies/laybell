@@ -53,15 +53,21 @@ export type Story = {
 //   • kind:'bg'    — the chosen background behind the post (blurred still / solid /
 //     gradient). Absent = the blurred default.
 //   • kind:'draw'  — pen strokes, normalised to the frame.
+//   • kind:'frame' — how a plain library PHOTO is framed (drag/pinch): x/y are the
+//     translate as a FRACTION of the frame, scale is relative to a cover fit, and
+//     w/h are the source image's pixels. The viewer redraws the photo with this
+//     transform over a blurred backdrop, so a zoomed-OUT photo shows the backdrop
+//     around it. Absent → the photo is shown plain cover (unchanged).
 // Every field is optional so a plain text sticker (the only kind before this) still
 // validates and renders exactly as before.
 export type StorySticker = {
-  kind?: 'text' | 'post' | 'bg' | 'draw';
+  kind?: 'text' | 'post' | 'bg' | 'draw' | 'frame';
   text?: string; x?: number; y?: number; scale?: number; rotation?: number;
   font?: string; color?: string; bg?: string; size?: number; emoji?: boolean;
   id?: string;                                                        // post layer
   background?: { type: 'blur' | 'color' | 'gradient'; color?: string; colors?: string[] }; // bg layer
   strokes?: { c: string; w: number; p: [number, number][] }[];       // draw layer
+  w?: number; h?: number;                                             // frame layer: source image px
 };
 
 export type StoryGroup = {
@@ -666,6 +672,43 @@ export async function fetchStoryViewers(storyId: string): Promise<StoryViewer[]>
   return ((profiles ?? []) as StoryProfile[])
     .map((p) => ({ ...maskHiddenProfile(p as any), liked: likedIds.has(p.id) }))
     .sort((a, b) => Number(!!b.liked) - Number(!!a.liked));
+}
+
+// Owner-facing per-story analytics (the Insights "Analytics" tab). Everything
+// here is derived from data we ACTUALLY store — unique viewers (story_views) and
+// likes (story_likes) — plus a followers/non-followers split of those viewers.
+// Deeper Instagram-style metrics (repeat-view counts, navigation forward/exit/
+// next, profile taps from a story) would need per-view event tracking we don't
+// record yet, so they're deliberately absent rather than faked.
+export type StoryAnalytics = {
+  viewers: number;        // unique accounts that watched this story
+  likes: number;          // likes on this story
+  followers: number;      // of those viewers, how many follow the author
+  nonFollowers: number;   // viewers − followers
+};
+
+export async function fetchStoryAnalytics(storyId: string, authorId: string): Promise<StoryAnalytics> {
+  const [viewsRes, likesRes] = await Promise.all([
+    supabase.from('story_views').select('viewer_id').eq('story_id', storyId),
+    supabase.from('story_likes').select('story_id', { count: 'exact', head: true }).eq('story_id', storyId),
+  ]);
+  const viewerIds = Array.from(new Set((viewsRes.data ?? []).map((v: any) => v.viewer_id)));
+  const viewers = viewerIds.length;
+  const likes = likesRes.count ?? 0;
+
+  let followers = 0;
+  if (viewerIds.length) {
+    // Bounded by the viewer list (small), so this stays cheap even for a popular
+    // account — we only ask which of THESE viewers follow the author, never the
+    // author's whole follower graph.
+    const { data } = await supabase
+      .from('follows')
+      .select('follower_id')
+      .eq('following_id', authorId)
+      .in('follower_id', viewerIds);
+    followers = new Set((data ?? []).map((r: any) => r.follower_id)).size;
+  }
+  return { viewers, likes, followers, nonFollowers: Math.max(0, viewers - followers) };
 }
 
 // Whether the viewer has liked a story (drives the heart button state).

@@ -266,10 +266,17 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
   // Social row — the on-TV video is still a Laybell post. Lives skip this.
   const socialEl = postId ? (
     <View style={styles.socialRow}>
-      <TouchableOpacity onPress={toggleLike} hitSlop={8} style={styles.socialBtn}>
-        <Ionicons name={liked ? 'heart' : 'heart-outline'} size={24} color={liked ? COLORS.like : colors.text} />
-        {likeCount > 0 && <Text style={styles.socialCount}>{formatCount(likeCount)}</Text>}
-      </TouchableOpacity>
+      <View style={styles.socialBtn}>
+        <TouchableOpacity onPress={toggleLike} hitSlop={8}>
+          <Ionicons name={liked ? 'heart' : 'heart-outline'} size={24} color={liked ? COLORS.like : colors.text} />
+        </TouchableOpacity>
+        {/* The COUNT (not the heart) opens who liked / reposted / saved. */}
+        {likeCount > 0 && (
+          <TouchableOpacity onPress={() => router.push(`/post-engagement/${postId}`)} hitSlop={8}>
+            <Text style={styles.socialCount}>{formatCount(likeCount)}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
       <TouchableOpacity onPress={() => { selection(); openComments(); }} hitSlop={8} style={styles.socialBtn}>
         <Ionicons name="chatbubble-outline" size={22} color={colors.text} />
         {commentCount > 0 && <Text style={styles.socialCount}>{formatCount(commentCount)}</Text>}

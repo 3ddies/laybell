@@ -593,10 +593,17 @@ export default function PostDetailScreen() {
 
             {/* Actions */}
             <View style={styles.actions}>
-              <TouchableOpacity style={styles.actionBtn} onPress={handleLike} activeOpacity={0.6} hitSlop={8}>
-                <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={23} color={isLiked ? colors.like : colors.textSecondary} />
-                {likeCount > 0 && <Text style={[styles.actionCount, isLiked && { color: colors.like }]}>{likeCount}</Text>}
-              </TouchableOpacity>
+              <View style={styles.actionBtn}>
+                <TouchableOpacity onPress={handleLike} activeOpacity={0.6} hitSlop={8}>
+                  <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={23} color={isLiked ? colors.like : colors.textSecondary} />
+                </TouchableOpacity>
+                {/* The COUNT (not the heart) opens the list of who engaged. */}
+                {likeCount > 0 && (
+                  <TouchableOpacity onPress={() => router.push(`/post-engagement/${id}`)} activeOpacity={0.6} hitSlop={8}>
+                    <Text style={[styles.actionCount, isLiked && { color: colors.like }]}>{likeCount}</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
               <TouchableOpacity style={styles.actionBtn} onPress={handleSave} activeOpacity={0.6} hitSlop={8}>
                 <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={22} color={isSaved ? colors.text : colors.textSecondary} />
                 {saveCount > 0 && <Text style={[styles.actionCount, isSaved && { color: colors.text }]}>{saveCount}</Text>}

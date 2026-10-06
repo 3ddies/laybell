@@ -290,6 +290,8 @@ type PostCardProps = {
   onOpenPost: (item: Post, src?: SourceRect, index?: number) => void;
   onOpenReel: (item: Post, src?: SourceRect) => void;
   onComments: (item: Post) => void;
+  /** Tap the like COUNT (not the heart) → who liked / reposted / saved. */
+  onLikesPress: (item: Post) => void;
   onPlayTrack: (item: Post) => void;
   onExpandTrack: (item: Post) => void;
   onToggleMuted: () => void;
@@ -338,9 +340,9 @@ function songSquareArtist(item: Post): string | null {
 
 const PostCard = memo(function PostCard({
   item, isOwn, isLiked, isSaved, audioActive, songSquare, videoMuted, songMuted,
-  onProfile, onProfileId, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onMediaZoom,
+  onProfile, onProfileId, onOptions, onOpenPost, onOpenReel, onComments, onLikesPress, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onMediaZoom,
 }: PostCardProps) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   // Per-card playback subscription (lib/feedVideo): this card re-renders on a
@@ -350,6 +352,10 @@ const PostCard = memo(function PostCard({
   // shouldPlayVideo → mounted AND centered AND settled/focused: actually plays.
   const { isVisibleVideo, shouldPlayVideo } = useCardPlayback(item.id);
   const likeCount = item.likes[0]?.count || 0;
+  // Action-row count labels read white (colors.text) in the obsidian dark theme —
+  // its muted grey (#A0A0A0) is too dim there. The grey + light themes keep their
+  // secondary grey, which already has enough contrast.
+  const countColor = mode === 'dark' ? colors.text : colors.textSecondary;
   const commentCount = item.comments[0]?.count || 0;
   const saveCount = item.save_count || 0;
   const imgRef = useRef<any>(null);
@@ -778,22 +784,27 @@ const PostCard = memo(function PostCard({
 
       {/* Actions */}
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => { selection(); popLike(); onLike(item); }} activeOpacity={0.6} hitSlop={8}>
-          <Animated.View style={{ transform: [{ scale: likeScale }] }}>
-            <Ionicons
-              name={isLiked ? 'heart' : 'heart-outline'}
-              size={23}
-              color={isLiked ? colors.like : colors.textSecondary}
-            />
-          </Animated.View>
+        <View style={styles.actionBtn}>
+          <TouchableOpacity onPress={() => { selection(); popLike(); onLike(item); }} activeOpacity={0.6} hitSlop={8}>
+            <Animated.View style={{ transform: [{ scale: likeScale }] }}>
+              <Ionicons
+                name={isLiked ? 'heart' : 'heart-outline'}
+                size={23}
+                color={isLiked ? colors.like : colors.textSecondary}
+              />
+            </Animated.View>
+          </TouchableOpacity>
+          {/* The COUNT (not the heart) opens the list of who engaged. */}
           {likeCount > 0 && (
-            <Text style={[styles.actionCount, isLiked && { color: colors.like }]}>{likeCount}</Text>
+            <TouchableOpacity onPress={() => onLikesPress(item)} activeOpacity={0.6} hitSlop={8}>
+              <Text style={[styles.actionCount, { color: countColor }, isLiked && { color: colors.like }]}>{likeCount}</Text>
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
+        </View>
 
         <TouchableOpacity style={styles.actionBtn} onPress={() => onComments(item)} activeOpacity={0.6} hitSlop={8}>
           <Ionicons name="chatbubble-outline" size={22} color={colors.textSecondary} />
-          {commentCount > 0 && <Text style={styles.actionCount}>{commentCount}</Text>}
+          {commentCount > 0 && <Text style={[styles.actionCount, { color: countColor }]}>{commentCount}</Text>}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionBtn} onPress={() => { selection(); onSave(item); }} activeOpacity={0.6} hitSlop={8}>
@@ -803,7 +814,7 @@ const PostCard = memo(function PostCard({
             color={isSaved ? colors.text : colors.textSecondary}
           />
           {saveCount > 0 && (
-            <Text style={[styles.actionCount, isSaved && { color: colors.text }]}>{saveCount}</Text>
+            <Text style={[styles.actionCount, { color: countColor }, isSaved && { color: colors.text }]}>{saveCount}</Text>
           )}
         </TouchableOpacity>
 
@@ -2331,6 +2342,11 @@ export default function HomeScreen() {
     if (isScrollTap()) return;
     setCommentsFor({ id: item.id, ownerId: item.user_id, item });
   }, []);
+  // Tap the like COUNT → who liked / reposted / saved this post.
+  const onLikesPress = useCallback((item: Post) => {
+    if (isScrollTap()) return;
+    router.push(`/post-engagement/${item.id}`);
+  }, [router]);
   // Track which slideshows have their video audio on (ref + imperative sync —
   // never renders; idempotent so a repeated report is a no-op).
   const onSlideAudioActive = useCallback((item: Post, on: boolean) => {
@@ -2436,6 +2452,7 @@ export default function HomeScreen() {
           onOpenPost={onOpenPost}
           onOpenReel={onOpenReel}
           onComments={onComments}
+          onLikesPress={onLikesPress}
           onPlayTrack={onPlayTrack}
           onExpandTrack={onExpandTrack}
           onToggleMuted={onToggleMuted}
@@ -2456,7 +2473,7 @@ export default function HomeScreen() {
   // the square positions can move — so it belongs here. Leaving it out would
   // freeze the pattern at whatever the first load happened to be.
   ), [currentUserId, likedPosts, savedPosts, isPlaying, playingTrackId, videoMuted, songMuted, songSquareIds,
-      onProfile, onProfileId, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions, onGateArm]);
+      onProfile, onProfileId, onOptions, onOpenPost, onOpenReel, onComments, onLikesPress, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions, onGateArm]);
 
   if (loading) {
     return (

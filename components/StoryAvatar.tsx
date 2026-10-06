@@ -54,7 +54,7 @@ export default function StoryAvatar({
 }: Props) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const { hasStory, hasUnseen, openStory, ringColors, ringTier } = useStories();
+  const { hasStory, hasUnseen, openStory, ringColors, ringTier, openingUserId } = useStories();
   const story = hasStory(userId);
   const unseen = hasUnseen(userId);
   const wrapRef = useRef<View>(null);
@@ -64,6 +64,31 @@ export default function StoryAvatar({
   // avatars where the pill would be unreadable.
   const liveStreamId = useLiveStreamId(userId);
   const showLive = !!liveStreamId && size >= 32;
+
+  // Loading shimmer: while THIS ring's story is pre-opening (warming its first frame so it
+  // doesn't flash grey), a SOFT light bleeds through the ring — a wide, feathered gradient
+  // band that slowly flows around AND breathes in/out, so it reads as the ring's own surface
+  // shifting (chameleon-like) rather than a hard segment running a track. Both native-driven,
+  // and the loops only run while this ring is the one opening.
+  const isOpening = !!userId && openingUserId === userId && story;
+  const loadingSpin = useRef(new Animated.Value(0)).current;
+  const loadingBreath = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!isOpening) return;
+    loadingSpin.setValue(0);
+    loadingBreath.setValue(0);
+    const spin = Animated.loop(
+      Animated.timing(loadingSpin, { toValue: 1, duration: 1600, easing: Easing.linear, useNativeDriver: true }),
+    );
+    const breath = Animated.loop(Animated.sequence([
+      Animated.timing(loadingBreath, { toValue: 1, duration: 950, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(loadingBreath, { toValue: 0, duration: 950, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+    ]));
+    spin.start(); breath.start();
+    return () => { spin.stop(); breath.stop(); };
+  }, [isOpening, loadingSpin, loadingBreath]);
+  const loadingRotate = loadingSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const loadingOpacity = loadingBreath.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] });
 
   // Story nudge on the "Your story" circle while the user has NO active story: a
   // ~3-second burst of continuous, smooth shrink-and-expand (a few breaths back to
@@ -194,6 +219,36 @@ export default function StoryAvatar({
           <TouchableOpacity activeOpacity={0.8} onPress={onPress}>{content}</TouchableOpacity>
         ) : (
           content
+        )}
+        {/* Soft loading shimmer — a feathered gradient band flows + breathes through the
+            story circle (clipped to it), so the light BLEEDS across the surface rather than
+            running a track. */}
+        {isOpening && (
+          <Animated.View
+            pointerEvents="none"
+            style={{
+              position: 'absolute', top: 0, left: 0,
+              width: size, height: size, borderRadius: size / 2,
+              overflow: 'hidden', opacity: loadingOpacity,
+            }}
+          >
+            <Animated.View
+              style={{
+                position: 'absolute',
+                width: size * 1.8, height: size * 1.8,
+                left: -size * 0.4, top: -size * 0.4,
+                transform: [{ rotate: loadingRotate }],
+              }}
+            >
+              <LinearGradient
+                colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.9)', 'rgba(255,255,255,0)', 'rgba(255,255,255,0)']}
+                locations={[0, 0.34, 0.5, 0.66, 1]}
+                start={{ x: 0.12, y: 0.15 }}
+                end={{ x: 0.88, y: 0.85 }}
+                style={StyleSheet.absoluteFill}
+              />
+            </Animated.View>
+          </Animated.View>
         )}
         {showAdd && (
           <TouchableOpacity style={styles.add} onPress={onPressAdd} activeOpacity={0.85} hitSlop={6}>

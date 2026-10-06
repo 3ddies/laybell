@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList, Alert, TextInput, Modal, ScrollView,
+  KeyboardAvoidingView, TouchableWithoutFeedback, Keyboard, Platform,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -11,12 +12,14 @@ import { supabase } from '../../lib/supabase';
 import { coverFade } from '../../lib/coverFade';
 import { useAudio } from '../../contexts/AudioContext';
 import SwipeBackPager from '../../components/SwipeBackPager';
-import TrackRow from '../../components/TrackRow';
+import { formatCount } from '../../lib/format';
+import { titleWithoutTrailingArtist } from '../../lib/postSong';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { countLabel } from '../../lib/i18n';
 import { SPACING, RADIUS, GRADIENTS, quietText, type ThemePalette } from '../../constants/theme';
 import { Skeleton, SkeletonLine, TrackListSkeleton } from '../../components/Skeleton';
+import ReorderableList from '../../components/ReorderableList';
 import {
   type Album, type AlbumTrack, albumCover, trackTitle,
   fetchAlbum, fetchAddableTracks, addTrack, removeTrack, renameTrack,
@@ -28,18 +31,31 @@ import {
 // does not have — several of these durations are decoded estimates.
 const fmtRuntime = (sec: number) => `${Math.max(1, Math.round(sec / 60))} min`;
 
+// mm:ss for a single track's length in the list (null when unknown).
+const formatDuration = (sec?: number | null): string | null => {
+  if (!sec || sec <= 0) return null;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+};
+
+// Fixed height of an edit-mode row — the reorder list positions rows by this, so
+// the row's content (cover 46 + vertical breathing room) must sit inside it.
+const DRAG_ROW_H = 64;
+
 // The album screen: a listener's view, and the artist's workshop behind an Edit
 // toggle. Both live here rather than in two screens, because the thing being
 // edited IS the thing being looked at — a separate editor would mean judging
 // the running order somewhere it does not look like a running order.
 //
-// REORDERING IS BUTTONS, NOT DRAG, and that is a decision rather than a
-// shortcut. This project has spent whole sessions on gestures inside scrollers
-// (the slideshow arranger, the reel pager, pinch-to-zoom abandoned after three
-// attempts), and the lesson written into its notes is to give each surface one
-// job. A list that scrolls cannot also be dragged without one of them losing.
-// Up and down move a track exactly one place, are obvious, and work for someone
-// with a tremor or a screen reader — none of which drag can claim.
+// REORDERING IS HOLD-AND-DRAG (owner's call, superseding the earlier buttons).
+// The old note here warned off drag-inside-scrollers after the slideshow arranger
+// / reel-pager / pinch-to-zoom fights, and that lesson is why this does NOT drag
+// inside a virtualised FlatList: edit mode swaps to `ReorderableList`, a
+// non-recycling list where each row holds a known Y and only the one lifted row
+// is driven by the finger (see that component). The listener view keeps the plain
+// FlatList. Drag is initiated from a dedicated ≡ handle, so a hold anywhere else
+// never hijacks a scroll.
 
 export default function AlbumScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -90,14 +106,54 @@ export default function AlbumScreen() {
       caption: trackTitle(t), artist: artist?.display_name ?? '', cover: t.post!.cover_url,
     }));
 
+  const isActiveTrack = (item: AlbumTrack) => !!item.post?.id && currentTrack?.id === item.post?.id;
+
+  // The shared middle of a track row — cover (with the now-playing mark) + title
+  // and meta. Both the listener FlatList and the edit reorder list wrap this; the
+  // number, the edit tools and the drag handle are added by each wrapper.
+  const renderRowBody = (item: AlbumTrack, active: boolean) => {
+    const rawTitle = trackTitle(item);
+    const title = titleWithoutTrailingArtist(rawTitle, artist?.display_name ?? artist?.username ?? '') || rawTitle;
+    const dur = formatDuration(item.post?.duration_seconds);
+    return (
+      <>
+        <View style={styles.trackCoverWrap}>
+          {item.post?.cover_url ? (
+            <ExpoImage source={{ uri: item.post.cover_url }} style={styles.trackCover} contentFit="cover" cachePolicy="memory-disk" transition={coverFade(item.post.cover_url)} />
+          ) : (
+            <View style={[styles.trackCover, styles.trackCoverEmpty]}>
+              <Ionicons name="musical-note" size={16} color={colors.textTertiary} />
+            </View>
+          )}
+          {active && (
+            <View style={styles.trackCoverOverlay}>
+              <Ionicons name={isPlaying ? 'musical-notes' : 'pause'} size={16} color={colors.text} />
+            </View>
+          )}
+        </View>
+        <View style={styles.trackMain}>
+          <Text style={[styles.trackTitle, active && styles.trackTitleActive]} numberOfLines={1}>
+            {title || t('album.untitled')}
+          </Text>
+          <View style={styles.trackMeta}>
+            <Ionicons name="play" size={9} color={colors.textTertiary} />
+            <Text style={styles.trackMetaText}>{formatCount(item.post?.stream_count ?? 0)}</Text>
+            {dur && <Text style={styles.trackMetaText}>· {dur}</Text>}
+          </View>
+        </View>
+      </>
+    );
+  };
+
   // ── Edits. Every one of them writes THROUGH the local list rather than
   // reloading: the order is the thing being judged, and a round trip that
   // repaints from scratch loses the reading position mid-decision.
-  async function move(from: number, to: number) {
-    if (to < 0 || to >= tracks.length) return;
-    const next = tracks.slice();
-    const [row] = next.splice(from, 1);
-    next.splice(to, 0, row);
+  // Commit a dragged reorder: the reorder list hands back the full id order, we
+  // rebuild the row list in that order and persist it.
+  async function persistOrder(orderedIds: string[]) {
+    const byId = new Map(tracks.map((t) => [t.post_id, t]));
+    const next = orderedIds.map((pid) => byId.get(pid)).filter(Boolean) as AlbumTrack[];
+    if (next.length !== tracks.length) return; // stale order — ignore rather than corrupt
     setTracks(next);
     try { await reorderTracks(String(id), next.map((r) => r.post_id)); } catch { load(); }
   }
@@ -111,6 +167,15 @@ export default function AlbumScreen() {
       // matters — otherwise a later insert lands on a number already in use.
       await reorderTracks(String(id), keep.map((r) => r.post_id));
     } catch { load(); }
+  }
+
+  // The red "-" asks first — taking a song off an album is easy to fat-finger and
+  // (unlike the song itself) there's no undo once the row is gone.
+  function confirmDrop(postId: string) {
+    Alert.alert(t('album.removeTrackTitle'), t('album.removeTrackBody'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('album.removeTrackConfirm'), style: 'destructive', onPress: () => drop(postId) },
+    ]);
   }
 
   async function commitRename() {
@@ -232,68 +297,91 @@ export default function AlbumScreen() {
             </View>
             <View style={styles.divider} />
 
-            <FlatList
-              data={tracks}
-              keyExtractor={(item) => item.post_id}
-              // Home-indicator inset added to the list's own tail, so Add tracks
-              // clears the gesture bar instead of sitting on it.
-              contentContainerStyle={[styles.listContent, { paddingBottom: SPACING.xxl + insets.bottom }]}
-              ListEmptyComponent={
-                <View style={styles.center}>
-                  <Ionicons name="musical-notes-outline" size={40} color={colors.textTertiary} />
-                  <Text style={styles.unavailable}>{t('album.empty')}</Text>
-                  {isOwn && <Text style={styles.emptyHint}>{t('album.emptyHint')}</Text>}
-                </View>
-              }
-              ListFooterComponent={isOwn ? (
-                <View style={styles.footer}>
-                  <TouchableOpacity style={styles.addBtn} onPress={openPicker} activeOpacity={0.85}>
-                    <Ionicons name="add" size={19} color={colors.background} />
-                    <Text style={styles.addBtnText}>{t('album.addTracks')}</Text>
-                  </TouchableOpacity>
-                  {editing && (
-                    <TouchableOpacity onPress={confirmDelete} hitSlop={8} style={styles.deleteBtn}>
-                      <Text style={styles.deleteText}>{t('album.delete')}</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ) : null}
-              renderItem={({ item, index }) => (
-                <View style={styles.row}>
-                  <Text style={styles.rowNum}>{index + 1}</Text>
-                  <View style={{ flex: 1 }}>
-                    <TrackRow
-                      caption={trackTitle(item)}
-                      artist={artist?.display_name}
-                      username={artist?.username}
-                      duration={item.post?.duration_seconds ?? undefined}
-                      streams={item.post?.stream_count ?? 0}
-                      cover={item.post?.cover_url}
-                      isPlaying={currentTrack?.id === item.post?.id && isPlaying}
-                      trackId={item.post?.id}
-                      onPlay={() => playQueue(queue(), index)}
-                      onCoverPress={() => { playQueue(queue(), index); expand(); }}
-                    />
-                  </View>
-                  {editing && (
-                    <View style={styles.rowTools}>
-                      <TouchableOpacity onPress={() => move(index, index - 1)} disabled={index === 0} hitSlop={6} style={styles.tool}>
-                        <Ionicons name="chevron-up" size={18} color={index === 0 ? colors.textTertiary : colors.text} />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => move(index, index + 1)} disabled={index === tracks.length - 1} hitSlop={6} style={styles.tool}>
-                        <Ionicons name="chevron-down" size={18} color={index === tracks.length - 1 ? colors.textTertiary : colors.text} />
-                      </TouchableOpacity>
+            {editing ? (
+              <>
+                {/* Edit view — hold the ≡ handle and drag to reorder. A separate
+                    non-virtualised list (ReorderableList) because a recycling
+                    FlatList fights a drag that needs rows to hold a known Y. */}
+                <ReorderableList
+                  data={tracks}
+                  keyExtractor={(it) => it.post_id}
+                  rowHeight={DRAG_ROW_H}
+                  rowBackground={colors.background}
+                  onReorder={persistOrder}
+                  renderItem={(item, index) => {
+                    const active = isActiveTrack(item);
+                    // The body (number + cover + title) is the drag target — hold
+                    // anywhere on it and drag. The active cue rides the cover + title.
+                    return (
+                      <View style={styles.editRow}>
+                        <View style={styles.trackNumCol}>
+                          <Text style={styles.trackNum}>{index + 1}</Text>
+                        </View>
+                        {renderRowBody(item, active)}
+                      </View>
+                    );
+                  }}
+                  renderActions={(item) => (
+                    <>
                       <TouchableOpacity onPress={() => setRenaming({ postId: item.post_id, value: trackTitle(item) })} hitSlop={6} style={styles.tool}>
                         <Ionicons name="pencil" size={16} color={colors.text} />
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => drop(item.post_id)} hitSlop={6} style={styles.tool}>
+                      <TouchableOpacity onPress={() => confirmDrop(item.post_id)} hitSlop={6} style={styles.tool}>
                         <Ionicons name="remove-circle-outline" size={18} color={colors.error} />
                       </TouchableOpacity>
-                    </View>
+                    </>
                   )}
-                </View>
-              )}
-            />
+                />
+                {isOwn && (
+                  <View style={[styles.footer, { paddingBottom: SPACING.lg + insets.bottom }]}>
+                    <Text style={styles.dragHint}>{t('album.dragHint')}</Text>
+                    <TouchableOpacity style={styles.addBtn} onPress={openPicker} activeOpacity={0.85}>
+                      <Ionicons name="add" size={19} color={colors.background} />
+                      <Text style={styles.addBtnText}>{t('album.addTracks')}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={confirmDelete} hitSlop={8} style={styles.deleteBtn}>
+                      <Text style={styles.deleteText}>{t('album.delete')}</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </>
+            ) : (
+              <FlatList
+                data={tracks}
+                keyExtractor={(item) => item.post_id}
+                // Home-indicator inset added to the list's own tail, so Add tracks
+                // clears the gesture bar instead of sitting on it.
+                contentContainerStyle={[styles.listContent, { paddingBottom: SPACING.xxl + insets.bottom }]}
+                ListEmptyComponent={
+                  <View style={styles.center}>
+                    <Ionicons name="musical-notes-outline" size={40} color={colors.textTertiary} />
+                    <Text style={styles.unavailable}>{t('album.empty')}</Text>
+                    {isOwn && <Text style={styles.emptyHint}>{t('album.emptyHint')}</Text>}
+                  </View>
+                }
+                ListFooterComponent={isOwn ? (
+                  <View style={styles.footer}>
+                    <TouchableOpacity style={styles.addBtn} onPress={openPicker} activeOpacity={0.85}>
+                      <Ionicons name="add" size={19} color={colors.background} />
+                      <Text style={styles.addBtnText}>{t('album.addTracks')}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+                ItemSeparatorComponent={() => <View style={styles.trackSep} />}
+                renderItem={({ item, index }) => {
+                  const active = isActiveTrack(item);
+                  return (
+                    <TouchableOpacity
+                      style={[styles.trackRow, active && styles.trackRowActive]}
+                      activeOpacity={0.6}
+                      onPress={() => playQueue(queue(), index)}
+                    >
+                      {renderRowBody(item, active)}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            )}
           </>
         )}
 
@@ -332,37 +420,56 @@ export default function AlbumScreen() {
           </View>
         </Modal>
 
-        {/* Rename — the album, or one track's name inside it. */}
+        {/* Rename — the album, or one track's name inside it. The dialog sits at
+            the bottom, so it rides a KeyboardAvoidingView up above the keyboard
+            (otherwise the keyboard covers the very field you're typing in), and a
+            tap on the dimmed area dismisses the keyboard. */}
         <Modal visible={renaming !== null} animationType="fade" transparent onRequestClose={() => setRenaming(null)}>
-          <View style={styles.sheetBackdrop}>
-            <View style={styles.dialog}>
-              <Text style={styles.sheetTitle}>
-                {renaming?.postId === null ? t('album.renameAlbum') : t('album.renameTrack')}
-              </Text>
-              {/* The note that makes the override understandable: this is the
-                  name HERE, and the published song keeps its own. */}
-              {renaming?.postId !== null && <Text style={styles.dialogHint}>{t('album.renameTrackHint')}</Text>}
-              <TextInput
-                style={styles.input}
-                value={renaming?.value ?? ''}
-                onChangeText={(v) => setRenaming((r) => (r ? { ...r, value: v } : r))}
-                placeholder={t('album.namePlaceholder')}
-                placeholderTextColor={colors.textTertiary}
-                maxLength={120}
-                autoFocus
-                returnKeyType="done"
-                onSubmitEditing={commitRename}
-              />
-              <View style={styles.dialogBtns}>
-                <TouchableOpacity onPress={() => setRenaming(null)} style={[styles.dialogBtn, styles.dialogBtnGhost]}>
-                  <Text style={styles.dialogBtnGhostText}>{t('common.cancel')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={commitRename} style={[styles.dialogBtn, styles.dialogBtnSolid]}>
-                  <Text style={styles.dialogBtnSolidText}>{t('common.save')}</Text>
-                </TouchableOpacity>
+          <KeyboardAvoidingView style={styles.kav} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <TouchableWithoutFeedback
+              onPress={() => {
+                // First tap with the keyboard up just lowers it; once it's down, a
+                // tap outside closes the dialog — fading back to the album menu.
+                if (Keyboard.isVisible()) Keyboard.dismiss();
+                else setRenaming(null);
+              }}
+              accessible={false}
+            >
+              <View style={styles.sheetBackdrop}>
+                {/* Absorbs taps so pressing the dialog itself never dismisses the
+                    keyboard or closes it — only the dimmed area outside does. */}
+                <TouchableWithoutFeedback onPress={() => {}} accessible={false}>
+                  <View style={styles.dialog}>
+                    <Text style={styles.sheetTitle}>
+                      {renaming?.postId === null ? t('album.renameAlbum') : t('album.renameTrack')}
+                    </Text>
+                    {/* The note that makes the override understandable: this is the
+                        name HERE, and the published song keeps its own. */}
+                    {renaming?.postId !== null && <Text style={styles.dialogHint}>{t('album.renameTrackHint')}</Text>}
+                    <TextInput
+                      style={styles.input}
+                      value={renaming?.value ?? ''}
+                      onChangeText={(v) => setRenaming((r) => (r ? { ...r, value: v } : r))}
+                      placeholder={t('album.namePlaceholder')}
+                      placeholderTextColor={colors.textTertiary}
+                      maxLength={120}
+                      autoFocus
+                      returnKeyType="done"
+                      onSubmitEditing={commitRename}
+                    />
+                    <View style={styles.dialogBtns}>
+                      <TouchableOpacity onPress={() => setRenaming(null)} style={[styles.dialogBtn, styles.dialogBtnGhost]}>
+                        <Text style={styles.dialogBtnGhostText}>{t('common.cancel')}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={commitRename} style={[styles.dialogBtn, styles.dialogBtnSolid]}>
+                        <Text style={styles.dialogBtnSolidText}>{t('common.save')}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </TouchableWithoutFeedback>
               </View>
-            </View>
-          </View>
+            </TouchableWithoutFeedback>
+          </KeyboardAvoidingView>
         </Modal>
       </View>
     </SwipeBackPager>
@@ -406,12 +513,40 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   playAllText: { color: colors.background, fontSize: 13.5, fontWeight: '800' },
 
   listContent: { paddingBottom: SPACING.xxl },
-  row: { flexDirection: 'row', alignItems: 'center' },
-  // Tabular so the column does not shuffle sideways as it passes 9 to 10.
-  rowNum: {
-    width: 26, textAlign: 'center', color: quietText(colors),
-    fontSize: 12, fontWeight: '700', fontVariant: ['tabular-nums'],
+  // A flat, tight album row — number (or a now-playing mark) · cover · title ·
+  // plays/length. No per-row card, border or repeated artist/handle: the album
+  // art and the one artist already live in the header, so the list stays about
+  // the songs and the numbers line up in a clean column.
+  trackRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    paddingVertical: 9, paddingHorizontal: SPACING.md,
   },
+  trackRowActive: { backgroundColor: colors.text + '0D' },
+  // Tabular so the column does not shuffle sideways as it passes 9 to 10.
+  trackNumCol: { width: 22, alignItems: 'center', justifyContent: 'center' },
+  trackNum: { color: quietText(colors), fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  trackCoverWrap: { width: 46, height: 46, borderRadius: RADIUS.md, overflow: 'hidden' },
+  trackCover: { width: 46, height: 46, borderRadius: RADIUS.md, backgroundColor: colors.surfaceLight },
+  trackCoverEmpty: { alignItems: 'center', justifyContent: 'center' },
+  // Scrim + mark over the artwork of the loaded row — the page colour, so the
+  // text-colour glyph on top contrasts in every theme (same idea as TrackRow).
+  trackCoverOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background + '8C',
+  },
+  trackMain: { flex: 1, justifyContent: 'center' },
+  trackTitle: { color: colors.text, fontSize: 15.5, fontWeight: '700', letterSpacing: -0.2 },
+  trackTitleActive: { color: colors.primary },
+  trackMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  trackMetaText: { color: colors.textTertiary, fontSize: 12 },
+  // Hairline between rows, inset to begin at the title (past the number + cover),
+  // so the list reads as grouped songs rather than detached cards.
+  trackSep: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: SPACING.md * 2 + 46, marginRight: SPACING.md },
+  // Edit-mode row body (the drag target): centred, horizontal padding only. The
+  // opaque background now lives on the reorder row itself, and the pencil/remove
+  // actions are rendered beside this by ReorderableList, outside the drag gesture.
+  editRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: SPACING.md, paddingLeft: SPACING.md },
+  dragHint: { color: quietText(colors), fontSize: 12.5, textAlign: 'center' },
   rowTools: { flexDirection: 'row', alignItems: 'center', paddingRight: SPACING.sm },
   tool: { paddingHorizontal: 5, paddingVertical: 6 },
 
@@ -425,6 +560,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   deleteBtn: { paddingVertical: SPACING.sm },
   deleteText: { color: colors.error, fontSize: 14, fontWeight: '700' },
 
+  kav: { flex: 1 },
   sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.background, borderTopLeftRadius: RADIUS.lg, borderTopRightRadius: RADIUS.lg,
@@ -445,7 +581,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   pickTitle: { flex: 1, color: colors.text, fontSize: 14, fontWeight: '600' },
 
   dialog: {
-    margin: SPACING.md, marginBottom: SPACING.xxl, padding: SPACING.md, gap: SPACING.sm,
+    // marginBottom 0: the KeyboardAvoidingView already lifts this to the keyboard's
+    // top edge, so ANY bottom margin just reopens the gap. Sit flush on the keys.
+    margin: SPACING.md, marginBottom: 0, padding: SPACING.md, gap: SPACING.sm,
     backgroundColor: colors.background, borderRadius: RADIUS.lg,
   },
   dialogHint: { color: quietText(colors), fontSize: 12.5, lineHeight: 17 },

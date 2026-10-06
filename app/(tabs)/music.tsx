@@ -319,6 +319,8 @@ export default function MusicScreen() {
   // Top 20 most-streamed songs app-wide (pure stream_count chart, no affinity).
   const [top20Tracks, setTop20Tracks]           = useState<any[]>([]);
   const [top20Expanded, setTop20Expanded]       = useState(false);
+  // "Hot Albums" rail — best-performing albums by summed track streams.
+  const [hotAlbums, setHotAlbums]               = useState<any[]>([]);
   const [forYouTracks, setForYouTracks]         = useState<any[]>([]);
   const [todaysPick, setTodaysPick]             = useState<any | null>(null);
   const [discoverLoading, setDiscoverLoading]   = useState(true);
@@ -729,6 +731,7 @@ export default function MusicScreen() {
       fetchTodaysPick(userId),
       fetchCommunityPlaylists(), // feeds the Upcoming/Popular Playlists rails
       fetchTop20(),
+      fetchHotAlbums(), // best-performing albums rail (under Top on Laybell)
     ]);
     setDiscoverLoading(false);
   }
@@ -753,6 +756,7 @@ export default function MusicScreen() {
         fetchTodaysPick(currentUserId),
         fetchCommunityPlaylists(),
         fetchTop20(),
+        fetchHotAlbums(),
       ]);
     }
     setDiscoverRefreshing(false);
@@ -808,6 +812,56 @@ export default function MusicScreen() {
       .order('stream_count', { ascending: false })
       .limit(20);
     if (data) setTop20Tracks(data.filter((p: any) => !blockedIdsRef.current.has(p.user_id)));
+  }
+
+  // "Hot Albums": the best-performing albums on Laybell. There is no album-level
+  // play counter, so performance is the SUM of the album's visible tracks'
+  // stream_count. An album with no visible track can't be shown or played, so it
+  // drops out. Hidden artists (RLS can't see profiles.hidden — see the
+  // public-surface notes) and blocked artists are filtered in app code, the same
+  // as every other discover surface. Two-step (albums → profiles), mirroring
+  // fetchCommunityPlaylists. Wrapped so a DB without the albums schema, or an
+  // offline load, simply leaves the rail hidden.
+  async function fetchHotAlbums() {
+    try {
+      const { data: albumsData } = await supabase
+        .from('albums')
+        .select('id, user_id, title, cover_url, updated_at, album_tracks(position, posts(cover_url, stream_count, archived_at))')
+        .limit(200);
+      if (!albumsData || albumsData.length === 0) { setHotAlbums([]); return; }
+
+      // Sum visible-track streams; derive the album face (explicit cover, else
+      // the first visible track's artwork — same rule as lib/albums albumCover).
+      const ranked = (albumsData as any[])
+        .map((a: any) => {
+          const tracks = ((a.album_tracks ?? []) as any[])
+            .filter((at) => at.posts && !at.posts.archived_at)
+            .sort((x, y) => x.position - y.position);
+          const streams = tracks.reduce((s, at) => s + (at.posts?.stream_count ?? 0), 0);
+          const cover = a.cover_url ?? tracks.find((at) => at.posts?.cover_url)?.posts?.cover_url ?? null;
+          return { id: a.id, user_id: a.user_id, title: a.title, cover, streams, trackCount: tracks.length, updated_at: a.updated_at };
+        })
+        .filter((a) => a.trackCount > 0 && !blockedIdsRef.current.has(a.user_id));
+      if (ranked.length === 0) { setHotAlbums([]); return; }
+
+      // Attach the artist profile and drop hidden accounts (and any album whose
+      // profile row is missing — never surface an orphan).
+      const { data: profs } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url, hidden')
+        .in('id', [...new Set(ranked.map((a) => a.user_id))]);
+      const profMap = Object.fromEntries((profs ?? []).map((p: any) => [p.id, p]));
+
+      const hot = ranked
+        .filter((a) => profMap[a.user_id] && !profMap[a.user_id].hidden)
+        .map((a) => ({ ...a, artist: profMap[a.user_id] }))
+        .sort((x, y) => (y.streams - x.streams)
+          || (new Date(y.updated_at).getTime() - new Date(x.updated_at).getTime()))
+        .slice(0, 12);
+      setHotAlbums(hot);
+    } catch {
+      // albums schema not applied yet / offline — the rail just stays hidden.
+    }
   }
 
   // ── Listen-mode curated mix ──────────────────────────────────────────────
@@ -1276,8 +1330,88 @@ export default function MusicScreen() {
               onOpenProfile={(id) => router.push(`/profile/${id}`)}
             />
 
-            {/* — Genres label (the major genre tabs live directly below) — */}
-            <Text style={styles.discoverSectionTitleLg}>{t('music.genres')}</Text>
+            {/* — Hot Albums: the best-performing albums on Laybell (ranked by
+                   summed track streams), directly under Top on Laybell and above
+                   Genres. With FEWER than 5 qualifying albums the single best one
+                   is showcased big — the same big-cover slot as Top on Laybell —
+                   so a short list reads as a feature, not a gap; with 5+ it's a
+                   horizontal rail identical to "More of what you like". Hidden
+                   when none qualify. — */}
+            {hotAlbums.length > 0 && (
+              <>
+                {/* Singular superlative when only the one big album is showcased
+                    (<5 qualifying); the plural rail keeps "Hot Albums". */}
+                <Text style={styles.discoverSectionTitleLg}>{t(hotAlbums.length < 5 ? 'music.hottestAlbum' : 'music.hotAlbums')}</Text>
+                {hotAlbums.length < 5 ? (
+                  <TouchableOpacity
+                    activeOpacity={0.92}
+                    style={styles.hotAlbumBig}
+                    onPress={() => router.push(`/album/${hotAlbums[0].id}`)}
+                  >
+                    {hotAlbums[0].cover ? (
+                      <ExpoImage source={{ uri: hotAlbums[0].cover }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" transition={coverFade(hotAlbums[0].cover)} />
+                    ) : (
+                      <View style={[StyleSheet.absoluteFill, styles.hotAlbumBigNoCover]}>
+                        <Ionicons name="musical-notes" size={56} color={colors.textTertiary} />
+                      </View>
+                    )}
+                    {/* Bottom scrim so the title holds on artwork nobody chose —
+                        same construction as the Top-on-Laybell slot. */}
+                    <LinearGradient
+                      colors={['transparent', 'rgba(0,0,0,0.35)', 'rgba(0,0,0,0.88)']}
+                      locations={[0.45, 0.7, 1]}
+                      style={StyleSheet.absoluteFill}
+                      pointerEvents="none"
+                    />
+                    <View style={styles.hotAlbumBigBadge}>
+                      <Ionicons name="albums" size={12} color="#fff" />
+                      <Text style={styles.hotAlbumBigBadgeText}>{t('music.albumTag')}</Text>
+                    </View>
+                    <View style={styles.hotAlbumBigInfo}>
+                      <TouchableOpacity
+                        style={styles.hotAlbumBigByline}
+                        activeOpacity={0.8}
+                        onPress={() => hotAlbums[0].artist?.id && router.push(`/profile/${hotAlbums[0].artist.id}`)}
+                      >
+                        <StoryAvatar userId={hotAlbums[0].artist?.id} avatarUrl={hotAlbums[0].artist?.avatar_url} name={hotAlbums[0].artist?.display_name ?? hotAlbums[0].artist?.username} size={30} />
+                        <Text style={styles.hotAlbumBigArtist} numberOfLines={1}>
+                          {hotAlbums[0].artist?.display_name ?? hotAlbums[0].artist?.username}
+                        </Text>
+                      </TouchableOpacity>
+                      <Text style={styles.hotAlbumBigTitle} numberOfLines={2}>{hotAlbums[0].title}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : (
+                  <GuardedRail onGuardStart={railGuardStart} onGuardEnd={railGuardEnd} contentContainerStyle={styles.forYouScroll}>
+                    {hotAlbums.map(album => (
+                      <TouchableOpacity
+                        key={album.id}
+                        style={styles.forYouCard}
+                        activeOpacity={0.8}
+                        onPress={() => router.push(`/album/${album.id}`)}
+                      >
+                        {album.cover ? (
+                          <ExpoImage source={{ uri: album.cover }} style={styles.forYouCover} contentFit="cover" cachePolicy="memory-disk" transition={coverFade(album.cover)} />
+                        ) : (
+                          <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.forYouCover}>
+                            <Ionicons name="musical-notes" size={28} color={colors.textSecondary} />
+                          </LinearGradient>
+                        )}
+                        <Text style={styles.forYouTitle} numberOfLines={2}>{album.title}</Text>
+                        <Text style={styles.forYouArtist} numberOfLines={1}>
+                          {album.artist?.display_name ?? album.artist?.username}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </GuardedRail>
+                )}
+              </>
+            )}
+
+            {/* — Genres label (the major genre tabs live directly below). Gets a
+                   top margin only when Hot Albums sits above it, so with no albums
+                   it still tucks right under the spotlight as before. — */}
+            <Text style={[styles.discoverSectionTitleLg, hotAlbums.length > 0 && { marginTop: SPACING.xl }]}>{t('music.genres')}</Text>
 
             {/* — Genre + content-type pills (All · genres · Podcasts · Audiobooks) — */}
             <GuardedRail onGuardStart={railGuardStart} onGuardEnd={railGuardEnd} contentContainerStyle={styles.genrePills}>
@@ -2290,6 +2424,27 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   forYouTitle: { color: colors.text, fontSize: 13, fontWeight: '700' },
   forYouArtist: { color: colors.textSecondary, fontSize: 12 },
+
+  // Hot Albums "showcase" (shown when <5 qualifying albums): one big cover,
+  // echoing the Top-on-Laybell slot — full-width-inset square, bottom scrim,
+  // title + artist over the artwork, so a short list reads as a feature.
+  hotAlbumBig: {
+    marginHorizontal: SPACING.md, aspectRatio: 1,
+    borderRadius: RADIUS.xl, overflow: 'hidden', backgroundColor: colors.surfaceLight,
+  },
+  hotAlbumBigNoCover: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceLight },
+  hotAlbumBigInfo: { position: 'absolute', left: SPACING.md, right: SPACING.md, bottom: SPACING.md },
+  hotAlbumBigByline: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, marginBottom: 6 },
+  hotAlbumBigArtist: { color: 'rgba(255,255,255,0.92)', fontSize: 13, fontWeight: '600', flexShrink: 1 },
+  hotAlbumBigTitle: {
+    color: '#FFFFFF', fontSize: 23, fontWeight: '800', letterSpacing: -0.4, lineHeight: 27,
+    textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
+  hotAlbumBigBadge: {
+    position: 'absolute', top: SPACING.sm, left: SPACING.sm, flexDirection: 'row', alignItems: 'center',
+    gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: RADIUS.md, backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  hotAlbumBigBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
 
   artistScroll: { paddingHorizontal: SPACING.md, gap: SPACING.md, paddingBottom: SPACING.md },
   artistCircleItem: { width: 68, alignItems: 'center', gap: 6 },

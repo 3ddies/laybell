@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, Dimensions,
-  Pressable, Animated, PanResponder, ActivityIndicator, Alert, Easing, FlatList,
-  TextInput, KeyboardAvoidingView, Platform,
+  Pressable, Animated, PanResponder, ActivityIndicator, Alert, Easing, FlatList, ScrollView,
+  TextInput, KeyboardAvoidingView, Platform, Keyboard,
 } from 'react-native';
 import AppVideo from '../../components/AppVideo';
 import { Image as ExpoImage } from 'expo-image';
@@ -17,8 +17,8 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { timeAgo } from '../../lib/timeAgo';
 import {
   fetchStoriesForUsers, recordStoryView, deleteStory, fetchStoryViewerCount, fetchStoryViewers,
-  fetchStoryLiked, setStoryLike, REPOST_MAX_SEC,
-  type Story, type StoryProfile, type StoryGroup, type SourceRect, type StoryViewer,
+  fetchStoryLiked, setStoryLike, fetchStoryAnalytics, REPOST_MAX_SEC,
+  type Story, type StoryProfile, type StoryGroup, type SourceRect, type StoryViewer, type StoryAnalytics,
 } from '../../lib/stories';
 import { saveRemoteToLibrary } from '../../lib/saveToLibrary';
 import { reportUser } from '../../lib/postActions';
@@ -43,6 +43,18 @@ import { StorySkeleton, Skeleton } from '../../components/Skeleton';
 import Spinner from '../../components/Spinner';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+// Insights sheet: the swipeable Viewers/Analytics pager. One page spans the sheet's
+// inner width; the sliding tab indicator maps the scroll offset to a tab position.
+const INSIGHTS_PAGE_W = SCREEN_W - SPACING.md * 2;
+const INSIGHTS_TAB_W = INSIGHTS_PAGE_W / 2;
+const INSIGHTS_IND_W = 54;
+// IG-style insights: a tall sheet whose top is a swipeable strip of the author's
+// own stories (one card per page); swiping it reloads the insights below.
+const INSIGHTS_SHEET_H = Math.round(SCREEN_H * 0.86);
+const INS_CARD_H = Math.round(SCREEN_H * 0.24);
+const INS_CARD_W = Math.round(INS_CARD_H * 9 / 16);
+const CARD_GAP = SPACING.sm;              // space between story cards in the strip
+const INS_SNAP = INS_CARD_W + CARD_GAP;   // carousel snap interval (one card)
 const IMAGE_DURATION_MS = 10000;
 // A reshared VIDEO plays for at most this long in the story, then advances (ms).
 const REPOST_MAX_MS = REPOST_MAX_SEC * 1000;
@@ -51,6 +63,9 @@ const REPOST_MAX_MS = REPOST_MAX_SEC * 1000;
 const VIDEO_PROGRESS_INTERVAL_MS = 250;
 // Horizontal swipe past this (or a flick) jumps to the next/previous person.
 const SWIPE_DIST = SCREEN_W * 0.25;
+// Insights story strip/panel: a short, low threshold — one card is small, so a brief
+// swipe or flick should move exactly one story.
+const INS_SWIPE = 38;
 
 export default function StoryViewerScreen() {
   const { colors } = useTheme();
@@ -59,7 +74,7 @@ export default function StoryViewerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
-  const { refresh: refreshStories, markSeen } = useStories();
+  const { refresh: refreshStories, markSeen, openCamera, groups: trayGroups } = useStories();
   const { profile: myProfile } = useProfile();
   const { playSong, stop: stopSong, toggleMuted: toggleSongMuted } = usePostMusicActions();
   const songMuted = usePostMusicMuted();
@@ -73,7 +88,12 @@ export default function StoryViewerScreen() {
   // shared audio session and mutes it (see useAudioControls).
   const { pause: pauseMainSong } = useAudioControls();
   useEffect(() => { if (isFocused) pauseMainSong(); }, [isFocused, pauseMainSong]);
-  const { userId, users, src, story: storyParam, archived: archivedParam } = useLocalSearchParams<{ userId: string; users?: string; src?: string; story?: string; archived?: string }>();
+  const { userId, users, src, story: storyParam, archived: archivedParam, seed: seedParam } = useLocalSearchParams<{ userId: string; users?: string; src?: string; story?: string; archived?: string; seed?: string }>();
+  // The tapped user's group, handed over by openStory when the tray hadn't loaded it yet —
+  // lets this screen paint the first story instantly instead of its own grey skeleton.
+  const seedGroup = useMemo<StoryGroup | null>(() => {
+    try { return seedParam ? (JSON.parse(seedParam) as StoryGroup) : null; } catch { return null; }
+  }, [seedParam]);
 
   // Archived replay (from Settings → Archive): play ONE expired story back like
   // the original, but read-only — the viewer COUNT shows, the per-viewer list
@@ -101,20 +121,69 @@ export default function StoryViewerScreen() {
     return null;
   }, [src]);
 
-  const [groups, setGroups] = useState<StoryGroup[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Seed from the tray the context already loaded, so the viewer PAINTS the story on the
+  // first frame instead of showing the grey skeleton while it (re)fetches. The fetch below
+  // still runs to refresh; if the context had nothing (e.g. a deep link) we fall back to it.
+  const [groups, setGroups] = useState<StoryGroup[]>(() => {
+    if (archived) return [];
+    const byId = new Map(trayGroups.map((g) => [g.user.id, g]));
+    if (seedGroup) byId.set(seedGroup.user.id, seedGroup); // handed over when the tray wasn't ready yet
+    return orderedIds.map((id) => byId.get(id)).filter((g): g is StoryGroup => !!g && g.stories.length > 0);
+  });
+  const [loading, setLoading] = useState(() => groups.length === 0);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [userIndex, setUserIndex] = useState(0);
+  const [userIndex, setUserIndex] = useState(() => {
+    const i = groups.findIndex((g) => g.user.id === userId);
+    return i >= 0 ? i : 0;
+  });
   const [storyIndex, setStoryIndex] = useState(0);
+  // Did we open from seeded tray data? If so the background fetch must not re-position us.
+  const didSeedRef = useRef(groups.length > 0);
   const [paused, setPaused] = useState(false);
   const [viewerCount, setViewerCount] = useState<number | null>(null);
   // Own-story viewers sheet (who watched this story; likers ride on top).
   const [showViewers, setShowViewers] = useState(false);
+  // Bottom-right "⋯" options menu — a Laybell-styled slide-up (not a system sheet).
+  const [showStoryMenu, setShowStoryMenu] = useState(false);
+  const storyMenuAnim = useRef(new Animated.Value(0)).current; // 0 = hidden, 1 = up
   const [viewers, setViewers] = useState<StoryViewer[]>([]);
   const [viewersLoading, setViewersLoading] = useState(false);
-  const sheetAnim = useRef(new Animated.Value(0)).current; // 0 = hidden, 1 = up
-  // Finger-following drag offset while pulling the sheet's top bar down.
-  const sheetDragY = useRef(new Animated.Value(0)).current;
+  // Insights sheet is two tabs IG-style: the people list ('viewers') and the
+  // analytics panel ('analytics'). Analytics is fetched alongside the list.
+  const [insightsTab, setInsightsTab] = useState<'viewers' | 'analytics'>('viewers');
+  // Which of the author's own stories the insights are currently showing (the card
+  // strip swipes this; the viewers/analytics below reload for it).
+  const [insightsIdx, setInsightsIdx] = useState(0);
+  const [analytics, setAnalytics] = useState<StoryAnalytics | null>(null);
+  // Analytics/Viewers switch by TAPPING the header; a horizontal swipe on the panel
+  // (or the card strip) moves between the author's own stories instead. These refs let
+  // the once-created pan responders reach the latest nav fn + list scroll position.
+  const insightsNavRef = useRef<(delta: number) => void>(() => {});
+  const listAtTopRef = useRef(true); // viewers list at scroll-top → a pull-down dismisses
+  // Per-story insights cache so swiping between your own stories is INSTANT instead of
+  // re-spinning each time; the current story also refreshes quietly in the background.
+  const insightsCache = useRef<Map<string, { count: number | null; viewers: StoryViewer[]; analytics: StoryAnalytics | null }>>(new Map());
+  const insightsReqRef = useRef<string | null>(null); // which story the visible panel is for (race guard)
+  // The card strip is a DISPLAY ONLY (scrollEnabled=false), driven programmatically; every
+  // navigation goes through goToInsightsStory in ±1 steps from this live index ref, so a swipe
+  // can never fling/snap past a story. The ref avoids stale closures in the once-made handlers.
+  const insightsIdxRef = useRef(0);
+  // The story-card strip at the top of the insights sheet (one card per own story).
+  // The strip is a plain translated row (NOT a ScrollView) — this value is its offset
+  // (= insightsIdx * INS_SNAP), driving both the row's translateX and each card's depth.
+  const insightsStripX = useRef(new Animated.Value(0)).current;
+  const addPulse = useRef(new Animated.Value(0)).current;       // gentle breathing for the "Add Story" prompt
+  // ONE value drives the entire viewers sheet: its px offset from the open position
+  // (0 = fully open, INSIGHTS_SHEET_H = closed/off-screen). The open/close animations AND
+  // the finger-drag all write to it, so the sheet, the backdrop, and the story behind it
+  // move TOGETHER — dragging down smoothly reverses the whole thing (no choppy handoff).
+  const sheetY = useRef(new Animated.Value(INSIGHTS_SHEET_H)).current;
+  // Story behind: fully open (sheetY 0) it's slid up + shrunk + faded to nothing; as the
+  // sheet eases/drags down (→ INSIGHTS_SHEET_H) it returns to full-screen, in lock-step.
+  const viewersRecedeScale = useRef(sheetY.interpolate({ inputRange: [0, INSIGHTS_SHEET_H], outputRange: [0.9, 1], extrapolate: 'clamp' })).current;
+  const viewersSlideUp = useRef(sheetY.interpolate({ inputRange: [0, INSIGHTS_SHEET_H], outputRange: [-Math.round(SCREEN_H * 0.09), 0], extrapolate: 'clamp' })).current;
+  const viewersFade = useRef(sheetY.interpolate({ inputRange: [0, INSIGHTS_SHEET_H], outputRange: [0, 1], extrapolate: 'clamp' })).current;
+  const viewersBackdropOpacity = useRef(sheetY.interpolate({ inputRange: [0, INSIGHTS_SHEET_H], outputRange: [1, 0], extrapolate: 'clamp' })).current;
   const closeViewersRef = useRef<() => void>(() => {});
   // Viewer's like on someone else's story (heart button, bottom-right).
   const [liked, setLiked] = useState(false);
@@ -122,6 +191,9 @@ export default function StoryViewerScreen() {
   const [replying, setReplying] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
+  // Drives the composer's entrance/exit (dim fade + bar rise), synced to the
+  // keyboard so the whole thing slides up as one piece instead of snapping in.
+  const replyAnim = useRef(new Animated.Value(0)).current;
   const [sentFlash, setSentFlash] = useState(false);
   // Camera-roll save: `saving` gates re-taps during the download, `savedFlash`
   // reuses the reply confirmation so a save says so in the same voice.
@@ -135,6 +207,9 @@ export default function StoryViewerScreen() {
   // never text or chrome over a blank/half-loaded frame, and never a stale frame
   // from the previous story bleeding through (the old overlap bug).
   const [readyId, setReadyId] = useState<string | null>(null);
+  // Every story whose frame has painted at least once this session. Going BACK to one of
+  // these is instant — it's already loaded — so it must never flash the grey placeholder.
+  const loadedIdsRef = useRef<Set<string>>(new Set());
   // Per-remount tick to retry a transiently-failing image URL (a just-uploaded
   // public URL can 404 for a beat) instead of revealing a broken frame.
   const [reloadTick, setReloadTick] = useState(0);
@@ -150,7 +225,7 @@ export default function StoryViewerScreen() {
   // rect the entrance is a quick Instagram-style slide-in from the right
   // (notification taps and deep links used to hard-cut in).
   const expand = useRef(new Animated.Value(0)).current;
-  const contentFadeIn = useRef(new Animated.Value(srcRect ? 0 : 1)).current; // slower open fade
+  const contentFadeIn = useRef(new Animated.Value(srcRect ? 0 : 1)).current; // open fade (media + chrome together)
   // Free-floating text (stickers + a positioned caption) is hidden until the layout
   // has settled (and, when opening from a ring, until the zoom is essentially done),
   // then faded in at its composed positions. Without this the screen-sized translate
@@ -159,17 +234,28 @@ export default function StoryViewerScreen() {
   // for EVERY open path (including no-zoom opens, e.g. from a notification) so it's
   // fixed globally, not just when expanding out of a tapped circle.
   const textReveal = useRef(new Animated.Value(0)).current;
+  // Own-story viewers count: a small fade + rise that rides in WITH the story (no
+  // delay), so it never pops in after the media has already settled.
+  const pillIn = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(pillIn, { toValue: 1, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [pillIn]);
   // Grey loading cover's opacity: 1 = opaque (still loading), fades to 0 when this
-  // story's first frame is ready — a crossfade to the media instead of a hard pop.
+  // story's first frame is ready. Raised only AFTER a short beat (coverTimerRef) so a
+  // loaded/cached story shows instantly instead of flashing the placeholder.
   const coverAnim = useRef(new Animated.Value(1)).current;
+  const coverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closingRef = useRef(false);
   const panningRef = useRef(false);
   const gestureAxisRef = useRef<'h' | 'v' | null>(null);
-  const pressInfo = useRef({ t: 0, x: 0 });
+  const pressInfo = useRef({ t: 0, x: 0, y: 0 });
 
   const group = groups[userIndex] ?? null;
   const story = group?.stories[storyIndex] ?? null;
   const isOwn = !!currentUserId && group?.user.id === currentUserId;
+  // The insights card strip is showing the trailing "+" (add-a-story) card — there
+  // are no viewers for it, so the panel shows an "Add Story" prompt instead.
+  const onAddStory = !!group && insightsIdx >= group.stories.length;
 
   // A reshared post the author EDITED (Post-to-story editor) carries its layout in
   // the stickers jsonb: a kind:'post' frame (its transform), an optional kind:'bg'
@@ -193,8 +279,10 @@ export default function StoryViewerScreen() {
   }, [story?.id, story?.stickers, story?.shared_post_id, story?.aspect_ratio, insets.top, insets.bottom]);
 
   // Render-derived so a story flip re-raises the grey cover in the SAME commit:
-  // "ready" only once THIS story's own media has painted its first frame.
-  const ready = !!story && readyId === story.id;
+  // "ready" once THIS story's media has painted — OR once it painted earlier this session
+  // (going back to it is instant, so it shows with no placeholder).
+  if (readyId) loadedIdsRef.current.add(readyId);
+  const ready = !!story && (readyId === story.id || loadedIdsRef.current.has(story.id));
   const readyRef = useRef(ready);
   readyRef.current = ready;
   // Loading circle on the grey cover — shown only if the story stays un-ready for
@@ -240,9 +328,13 @@ export default function StoryViewerScreen() {
 
       const fetched = await fetchStoriesForUsers(orderedIds, viewerId);
       setGroups(fetched);
-      const startIdx = Math.max(0, fetched.findIndex((g) => g.user.id === userId));
-      setUserIndex(startIdx === -1 ? 0 : startIdx);
-      setStoryIndex(0);
+      // Only (re)position when we did NOT seed — a seeded open is already on the right
+      // story, and resetting here would yank the viewer back if they'd started swiping.
+      if (!didSeedRef.current) {
+        const startIdx = Math.max(0, fetched.findIndex((g) => g.user.id === userId));
+        setUserIndex(startIdx === -1 ? 0 : startIdx);
+        setStoryIndex(0);
+      }
       setLoading(false);
     })();
     // On close, refresh global story state so newly-seen rings update everywhere.
@@ -255,7 +347,10 @@ export default function StoryViewerScreen() {
   useEffect(() => {
     if (srcRect) {
       Animated.timing(expand, { toValue: 1, duration: 360, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-      Animated.timing(contentFadeIn, { toValue: 1, duration: 340, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
+      // Snappy opacity (shorter than the zoom) so the chrome — reply bar, header actions,
+      // viewers count — reaches full strength WITH the media instead of lagging behind the
+      // bright image while it's still at half opacity.
+      Animated.timing(contentFadeIn, { toValue: 1, duration: 230, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
     } else {
       Animated.timing(expand, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
     }
@@ -270,22 +365,27 @@ export default function StoryViewerScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Crossfade the grey cover away once this story's first frame has painted, and
-  // snap it back to opaque the instant the story flips to a not-yet-ready one.
-  // useLayoutEffect so the re-raise commits BEFORE paint — the next story never
-  // flashes its half-loaded frame from under a still-lifting cover.
+  // Reveal the next story INSTANTLY when it's already loaded; only drop the grey
+  // placeholder over it if it's still not painted after a short beat (so a cached/fast
+  // story never flashes grey, and a slow one shows grey until it loads).
   useLayoutEffect(() => {
+    if (coverTimerRef.current) { clearTimeout(coverTimerRef.current); coverTimerRef.current = null; }
     if (ready) {
+      // Painted → quick crossfade from the placeholder (a no-op/instant if it never showed).
       Animated.timing(coverAnim, {
         toValue: 0,
-        duration: 260,
+        duration: 150,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }).start();
     } else {
+      // Not painted yet. Clear the cover so the story can appear immediately, and only
+      // raise the grey placeholder if it's STILL not ready a beat later.
       coverAnim.stopAnimation();
-      coverAnim.setValue(1);
+      coverAnim.setValue(0);
+      coverTimerRef.current = setTimeout(() => { coverAnim.setValue(1); }, 130);
     }
+    return () => { if (coverTimerRef.current) { clearTimeout(coverTimerRef.current); coverTimerRef.current = null; } };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, story?.id]);
 
@@ -308,7 +408,7 @@ export default function StoryViewerScreen() {
 
     setViewerCount(null);
     setShowViewers(false);
-    sheetAnim.setValue(0);
+    sheetY.setValue(INSIGHTS_SHEET_H);
     setLiked(false);
     if (isOwn) fetchStoryViewerCount(story.id).then(setViewerCount).catch(() => {});
     else if (currentUserId) fetchStoryLiked(story.id, currentUserId).then(setLiked).catch(() => {});
@@ -354,6 +454,15 @@ export default function StoryViewerScreen() {
     const t = setTimeout(() => setShowLoader(true), 280);
     return () => clearTimeout(t);
   }, [ready, story?.id]);
+
+  // Warm the NEXT story's frame while this one plays, so swiping forward is ready too
+  // (the tap-to-open prefetch only covers the first story). Image URL, or a video poster.
+  useEffect(() => {
+    const next = group?.stories?.[storyIndex + 1];
+    if (!next) return;
+    const url = next.media_type === 'image' ? next.media_url : next.thumbnail_url;
+    if (url) ExpoImage.prefetch(url, 'memory-disk').catch(() => {});
+  }, [group, storyIndex]);
 
   // Freeze progress while the viewer is covered (e.g. you tapped through to a
   // profile) and resume from where it left off on return.
@@ -477,6 +586,28 @@ export default function StoryViewerScreen() {
     }
   }, [srcRect, router, expand, panY]);
 
+  // Swipe-down dismiss: carry the card the rest of the way DOWN and fade it (and the
+  // backdrop) out together, then pop — one continuous motion, instead of snapping panY
+  // back to 0 while shrinking into the ring (which looked jittery).
+  // Swipe-down release → one smooth, deliberate close: the story eases back into the ring
+  // it opened from. `expand` and `panY` run with the SAME duration + easing so the card
+  // travels a single continuous arc from wherever the drag left it into the ring — no snap,
+  // no two-speed jitter. (No ring to return to → it simply glides the rest of the way down.)
+  const dismissDown = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    stopProgressAnim();
+    if (srcRect) {
+      Animated.parallel([
+        Animated.timing(expand, { toValue: 0, duration: 360, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(panY, { toValue: 0, duration: 360, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
+      ]).start(() => router.back());
+    } else {
+      Animated.timing(panY, { toValue: SCREEN_H, duration: 320, easing: Easing.inOut(Easing.cubic), useNativeDriver: true })
+        .start(() => router.back());
+    }
+  }, [srcRect, router, expand, panY]);
+
   // ─── pause / resume + tap handling ───────────────────────────────────────────
   function pause() {
     pausedRef.current = true;
@@ -492,14 +623,20 @@ export default function StoryViewerScreen() {
   }
 
   function onPressIn(e: any) {
-    pressInfo.current = { t: Date.now(), x: e.nativeEvent.locationX };
+    pressInfo.current = { t: Date.now(), x: e.nativeEvent.locationX, y: e.nativeEvent.locationY };
     pause();
   }
   function onPressOut(e: any) {
-    if (panningRef.current) return; // a drag, not a tap
-    const dt = Date.now() - pressInfo.current.t;
+    if (panningRef.current) return; // a drag the pan responder already handled
+    const { t, x, y } = pressInfo.current;
+    const nx = e?.nativeEvent?.locationX ?? x;
+    const ny = e?.nativeEvent?.locationY ?? y;
+    // A finger that traveled — especially downward — is a SWIPE (e.g. a quick swipe-down to
+    // dismiss that didn't cross the pan threshold), never a tap. So don't advance the story.
+    if (Math.abs(ny - y) > 14 || Math.abs(nx - x) > 14) { resume(); return; }
+    const dt = Date.now() - t;
     if (dt < 250) {
-      if (pressInfo.current.x < SCREEN_W * 0.33) goPrev();
+      if (x < SCREEN_W * 0.33) goPrev();
       else goNext();
     } else {
       resume();
@@ -536,8 +673,11 @@ export default function StoryViewerScreen() {
       else if (g.dx >= SWIPE_DIST || g.vx > 0.4) goPrevUser();
       else resume();
     } else if (axis === 'v') {
-      if (g.dy > 130) { dismiss(); return; }
-      Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+      // Only a deliberate pull-down closes (no flick/velocity shortcut) so it never feels
+      // twitchy; then it eases smoothly into the ring.
+      if (g.dy > 140) { dismissDown(); return; }
+      // Didn't cross the threshold → ease the card gently back into place.
+      Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 0, speed: 12 }).start();
       resume();
     } else {
       resume();
@@ -548,7 +688,7 @@ export default function StoryViewerScreen() {
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) =>
         (Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy)) ||
-        (g.dy > 12 && g.dy > Math.abs(g.dx) * 1.2),
+        (g.dy > 8 && g.dy > Math.abs(g.dx) * 1.2),
       onPanResponderGrant: () => gh.grant(),
       onPanResponderMove: (_, g) => gh.move(g),
       onPanResponderRelease: (_, g) => gh.release(g),
@@ -559,7 +699,7 @@ export default function StoryViewerScreen() {
   async function onDelete() {
     if (!story) return;
     Alert.alert(t('story.deleteTitle'), t('story.deleteBody'), [
-      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.cancel'), style: 'cancel', onPress: resume },
       {
         text: t('common.delete'), style: 'destructive',
         onPress: async () => {
@@ -576,25 +716,117 @@ export default function StoryViewerScreen() {
     ]);
   }
 
-  // Own-story viewers sheet: pause the story AND its music while it's open,
-  // slide the sheet up IG-style, resume both on close.
+  // Fetch (count, viewers, analytics) for one story and cache the result.
+  function fetchInsights(s: Story) {
+    return Promise.all([
+      fetchStoryViewerCount(s.id).catch(() => null),
+      fetchStoryViewers(s.id).catch(() => [] as StoryViewer[]),
+      fetchStoryAnalytics(s.id, s.user_id).catch(() => null),
+    ]).then(([count, viewers, analytics]) => {
+      const data = { count, viewers, analytics };
+      insightsCache.current.set(s.id, data);
+      return data;
+    });
+  }
+
+  // Show the viewers list, analytics and count for ONE story — used on open and whenever
+  // the strip/panel swipes to another of the author's stories. A cached story shows
+  // INSTANTLY (no spinner) and refreshes quietly; only a never-seen story spins.
+  function loadInsightsFor(s: Story) {
+    insightsReqRef.current = s.id;
+    const cached = insightsCache.current.get(s.id);
+    if (cached) {
+      setViewerCount(cached.count); setViewers(cached.viewers); setAnalytics(cached.analytics); setViewersLoading(false);
+    } else {
+      setViewerCount(null); setViewers([]); setAnalytics(null); setViewersLoading(true);
+    }
+    fetchInsights(s).then((data) => {
+      if (insightsReqRef.current !== s.id) return; // a newer story was selected mid-flight
+      setViewerCount(data.count); setViewers(data.viewers); setAnalytics(data.analytics); setViewersLoading(false);
+    });
+  }
+
+  // Warm the cache for the author's OTHER stories so swiping the strip never spins.
+  function prefetchInsights(stories: Story[]) {
+    stories.forEach((s) => { if (!insightsCache.current.has(s.id)) fetchInsights(s).catch(() => {}); });
+  }
+
+  // Own-story insights sheet: pause the story AND its music while it's open, slide
+  // the sheet up IG-style, resume both on close. The top is a swipeable strip of
+  // the author's own stories; the panel below reloads for whichever is shown.
   function openViewers() {
     if (!story) return;
     pause();
     if (story.song_id) stopSong(story.id);
+    setInsightsTab('viewers');
+    listAtTopRef.current = true;              // list opens scrolled to the top (pull-down dismisses)
+    insightsStripX.setValue(storyIndex * INS_SNAP); // current card starts centered + full-size
+    insightsIdxRef.current = storyIndex;
+    setInsightsIdx(storyIndex);
     setShowViewers(true);
-    sheetAnim.setValue(0);
-    sheetDragY.setValue(0);
-    Animated.timing(sheetAnim, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-    setViewersLoading(true);
-    fetchStoryViewers(story.id)
-      .then(setViewers)
-      .catch(() => setViewers([]))
-      .finally(() => setViewersLoading(false));
+    sheetY.setValue(INSIGHTS_SHEET_H);
+    Animated.timing(sheetY, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    loadInsightsFor(story);
+    if (group) prefetchInsights(group.stories.filter((s) => s.id !== story.id));
   }
+
+  // Add a story from the insights sheet. Drop the whole viewer back to the tabs FIRST so
+  // the camera doesn't pile on top of it (that was the "two extra layers"), then open the
+  // story camera — same idiom the notifications/saved deep-links use.
+  function addStoryFromInsights() {
+    setShowViewers(false);
+    try { router.dismissAll?.(); } catch {}
+    openCamera();
+  }
+
+  // Tap the header to switch panels (Analytics icon = 0, Viewers title = 1). Swiping
+  // left/right is reserved for moving between stories (see goToInsightsStory).
+  function goInsightsTab(i: number) {
+    listAtTopRef.current = true; // the freshly shown panel starts scrolled to the top
+    setInsightsTab(i === 0 ? 'analytics' : 'viewers');
+  }
+  // Move the insights to another of the author's own stories, keeping the card strip
+  // and the panel below in lock-step: driving the strip animates the card depth, and
+  // the panel reloads for the landed story. index === stories.length ⇒ the "+" add card.
+  function goToInsightsStory(i: number) {
+    if (!group) return;
+    const clamped = Math.max(0, Math.min(i, group.stories.length));
+    if (clamped === insightsIdxRef.current) return;
+    listAtTopRef.current = true;                    // new story → its viewers list starts at the top
+    insightsIdxRef.current = clamped;               // update the live ref FIRST so rapid swipes compound correctly
+    setInsightsIdx(clamped);
+    // Slide the strip + its card-depth to the landed card. Pure Animated value (no
+    // ScrollView), so this can ONLY ever move one card per swipe — no momentum, no skip.
+    Animated.timing(insightsStripX, { toValue: clamped * INS_SNAP, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    const s = group.stories[clamped];
+    if (s) loadInsightsFor(s);
+  }
+  // delta is +1 (next) / −1 (previous); always one step from wherever we actually are.
+  insightsNavRef.current = (delta: number) => goToInsightsStory(insightsIdxRef.current + Math.sign(delta));
+  // Depth for the card at index `i`: full size/opacity when centred, smaller + faded
+  // (pushed into the background) as it moves off-centre. Native-driven by the scroll.
+  function cardDepth(i: number) {
+    const inputRange = [(i - 1) * INS_SNAP, i * INS_SNAP, (i + 1) * INS_SNAP];
+    return {
+      opacity: insightsStripX.interpolate({ inputRange, outputRange: [0.4, 1, 0.4], extrapolate: 'clamp' }),
+      transform: [{ scale: insightsStripX.interpolate({ inputRange, outputRange: [0.82, 1, 0.82], extrapolate: 'clamp' }) }],
+    };
+  }
+  // Gentle breathing for the "Add Story" prompt — runs continuously (cheap, native).
+  useEffect(() => {
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(addPulse, { toValue: 1, duration: 850, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(addPulse, { toValue: 0, duration: 850, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   function closeViewers(navigatingAway = false) {
-    Animated.timing(sheetAnim, { toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true })
-      .start(() => setShowViewers(false));
+    // Spring (critically damped) from wherever the drag left it, so a swipe-down flows
+    // straight into the close instead of snapping, and the story eases back in with it.
+    Animated.spring(sheetY, { toValue: INSIGHTS_SHEET_H, useNativeDriver: true, bounciness: 0, speed: 15 })
+      .start(() => { setShowViewers(false); sheetY.setValue(INSIGHTS_SHEET_H); });
     if (!navigatingAway) {
       resume();
       if (story?.song_id && isFocused) playSong(story.id, story.song_id);
@@ -603,18 +835,57 @@ export default function StoryViewerScreen() {
 
   closeViewersRef.current = () => closeViewers();
 
-  // Drag the sheet down by its top bar (handle + "Viewers" header) to dismiss —
-  // follows the finger, springs back on a short pull.
-  const sheetPan = useRef(
+  // The black "stage" (handle + story strip) owns its gestures, since the strip no longer
+  // scrolls itself: swipe left/right to move ONE story, or pull DOWN to dismiss.
+  const stagePan = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderMove: (_e, g) => { if (g.dy > 0) sheetDragY.setValue(g.dy); },
+      onMoveShouldSetPanResponderCapture: (_e, g) => {
+        const horiz = Math.abs(g.dx) > 14 && Math.abs(g.dx) > Math.abs(g.dy) * 1.2;
+        const down = g.dy > 8 && g.dy > Math.abs(g.dx) * 1.3;
+        return horiz || down;
+      },
+      onPanResponderMove: (_e, g) => { if (Math.abs(g.dy) > Math.abs(g.dx) && g.dy > 0) sheetY.setValue(Math.min(g.dy, INSIGHTS_SHEET_H)); },
       onPanResponderRelease: (_e, g) => {
-        if (g.dy > 90 || g.vy > 0.5) closeViewersRef.current();
-        else Animated.spring(sheetDragY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+        if (Math.abs(g.dx) >= Math.abs(g.dy)) {
+          if (g.dx <= -INS_SWIPE || g.vx < -0.25) insightsNavRef.current(1);
+          else if (g.dx >= INS_SWIPE || g.vx > 0.25) insightsNavRef.current(-1);
+        } else if (g.dy > 90 || g.vy > 0.5) {
+          closeViewersRef.current();
+        } else {
+          Animated.spring(sheetY, { toValue: 0, useNativeDriver: true, bounciness: 0, speed: 16 }).start();
+        }
       },
       onPanResponderTerminate: () =>
-        Animated.spring(sheetDragY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start(),
+        Animated.spring(sheetY, { toValue: 0, useNativeDriver: true, bounciness: 0, speed: 16 }).start(),
+    }),
+  ).current;
+
+  // The insights PANEL: swipe left/right to move between stories (lock-step with the
+  // strip), or pull DOWN from the top of the list to dismiss. Capture so a decisive
+  // horizontal / vertical-down gesture beats the viewers list's own vertical scroll;
+  // anything else falls through so the list scrolls normally.
+  const panePan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponderCapture: (_e, g) => {
+        const horiz = Math.abs(g.dx) > 16 && Math.abs(g.dx) > Math.abs(g.dy) * 1.4;
+        const pullDown = g.dy > 14 && g.dy > Math.abs(g.dx) * 1.4 && listAtTopRef.current;
+        return horiz || pullDown;
+      },
+      onPanResponderMove: (_e, g) => {
+        if (Math.abs(g.dy) > Math.abs(g.dx) && g.dy > 0) sheetY.setValue(Math.min(g.dy, INSIGHTS_SHEET_H));
+      },
+      onPanResponderRelease: (_e, g) => {
+        if (Math.abs(g.dx) >= Math.abs(g.dy)) {
+          if (g.dx <= -INS_SWIPE || g.vx < -0.25) insightsNavRef.current(1);
+          else if (g.dx >= INS_SWIPE || g.vx > 0.25) insightsNavRef.current(-1);
+        } else if (g.dy > 90 || g.vy > 0.5) {
+          closeViewersRef.current();
+        } else {
+          Animated.spring(sheetY, { toValue: 0, useNativeDriver: true, bounciness: 0, speed: 16 }).start();
+        }
+      },
+      onPanResponderTerminate: () =>
+        Animated.spring(sheetY, { toValue: 0, useNativeDriver: true, bounciness: 0, speed: 16 }).start(),
     }),
   ).current;
 
@@ -631,10 +902,13 @@ export default function StoryViewerScreen() {
     if (!story || isOwn) return;
     pause();
     setReplying(true);
+    replyAnim.setValue(0);
+    Animated.timing(replyAnim, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
   }
   function closeReply() {
-    setReplying(false);
-    resume();
+    Keyboard.dismiss();
+    Animated.timing(replyAnim, { toValue: 0, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true })
+      .start(() => { setReplying(false); resume(); });
   }
   async function sendReply() {
     if (!story || !group || !currentUserId || !replyText.trim() || sendingReply) return;
@@ -654,7 +928,9 @@ export default function StoryViewerScreen() {
       if (error) throw error;
       createNotification({ userId: group.user.id, actorId: currentUserId, type: 'message' });
       setReplyText('');
-      setReplying(false);
+      Keyboard.dismiss();
+      Animated.timing(replyAnim, { toValue: 0, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true })
+        .start(() => setReplying(false));
       setSentFlash(true);
       setTimeout(() => setSentFlash(false), 1500);
       resume();
@@ -697,6 +973,32 @@ export default function StoryViewerScreen() {
     Alert.alert(t('storyCamera.saveFailTitle'), t('storyCamera.saveFailBody'));
   }
 
+  // Bottom-right "⋯" menu — all of the story's secondary actions, moved off the top bar
+  // (now just the X). Own story → save / delete; someone else's → report; plus a song
+  // mute toggle when there's an attached track. Pause while it's open so the story
+  // doesn't advance behind the sheet.
+  //
+  // Save stays OWN-ONLY on purpose: the media is in a public bucket so this adds no new
+  // capability, but a one-tap save of someone else's disappearing story — often an
+  // unreleased snippet, sometimes a minor's — is a different norm, and exactly the kind of
+  // download-others'-media feature both app stores scrutinise. Archived own stories keep
+  // save (that's when saving your own work matters most) but drop delete (managed from
+  // the Archive screen).
+  function onStoryMenu() {
+    if (!story) return;
+    pause();
+    setShowStoryMenu(true);
+    storyMenuAnim.setValue(0);
+    Animated.timing(storyMenuAnim, { toValue: 1, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }
+  // resumeStory=false when the picked action manages its own pause/resume (save/delete/
+  // report); true for a tap that just closes (mute/cancel/backdrop).
+  function closeStoryMenu(resumeStory: boolean) {
+    Animated.timing(storyMenuAnim, { toValue: 0, duration: 170, easing: Easing.in(Easing.cubic), useNativeDriver: true })
+      .start(() => setShowStoryMenu(false));
+    if (resumeStory) resume();
+  }
+
   // After a delete reshapes groups, keep indices in range.
   useEffect(() => {
     if (loading) return;
@@ -709,6 +1011,9 @@ export default function StoryViewerScreen() {
 
   // ─── expand transform (rect → fullscreen) + swipe-down ───────────────────────
   const { contentTransform, backdropOpacity, contentOpacity } = useMemo(() => {
+    // Swipe-down feedback: a gentle, understated shrink as the card is pulled (not a
+    // reactive one) — the real shrink-into-the-ring happens on release. Native-driven off panY.
+    const dragScale = panY.interpolate({ inputRange: [0, SCREEN_H], outputRange: [1, 0.93], extrapolate: 'clamp' });
     if (!srcRect) {
       // No source rect → the push-style slide: content rides `expand` in from
       // the right edge (and back out on dismiss); the backdrop dims with it so
@@ -718,6 +1023,7 @@ export default function StoryViewerScreen() {
         contentTransform: [
           { translateX: expand.interpolate({ inputRange: [0, 1], outputRange: [SCREEN_W, 0] }) },
           { translateY: panY },
+          { scale: dragScale },
         ] as any[],
         backdropOpacity: expand as Animated.Value | number,
         contentOpacity: 1 as Animated.Value | number,
@@ -732,6 +1038,7 @@ export default function StoryViewerScreen() {
         { translateY: expand.interpolate({ inputRange: [0, 1], outputRange: [ty0, 0] }) },
         { scale: expand.interpolate({ inputRange: [0, 1], outputRange: [s0, 1] }) },
         { translateY: panY },
+        { scale: dragScale },
       ] as any[],
       backdropOpacity: expand as any,
       contentOpacity: Animated.multiply(
@@ -752,8 +1059,20 @@ export default function StoryViewerScreen() {
       {/* The current story — expands out of the tapped rect on open, follows the
           finger down to dismiss; tap / horizontal-swipe change story instantly. */}
       <Animated.View
-        style={[styles.container, { opacity: contentOpacity, transform: contentTransform as any }]}
-        {...(group && story ? panResponder.panHandlers : {})}
+        style={[
+          styles.container,
+          showViewers && styles.containerReceded,
+          // Only tie the story's opacity/transform to the sheet WHILE it's open. Once the
+          // sheet is closed the story is always fully itself again — so a stuck sheet value
+          // can never leave the screen blacked out (the regression this fixes).
+          showViewers
+            ? {
+                opacity: Animated.multiply(contentOpacity as any, viewersFade),
+                transform: [...(contentTransform as any[]), { translateY: viewersSlideUp }, { scale: viewersRecedeScale }],
+              }
+            : { opacity: contentOpacity as any, transform: contentTransform as any },
+        ]}
+        {...panResponder.panHandlers}
       >
         {loading ? (
           <View style={StyleSheet.absoluteFill}>
@@ -775,21 +1094,60 @@ export default function StoryViewerScreen() {
                 framed. The grey cover below hides it until its first frame paints. */}
             {/* Default media (NOT a reshared post) — full-bleed. */}
             {!story.shared_post_id && (story.media_type === 'image' ? (
-              <ExpoImage
-                key={`${story.id}:${reloadTick}`}
-                source={{ uri: story.media_url }}
-                style={StyleSheet.absoluteFill}
-                contentFit="cover"
-                onLoad={() => setReadyId(story.id)}
-                onError={() => {
-                  // A freshly-posted URL can 404 for a beat — retry a few times
-                  // (remount refetches) before giving up and revealing anyway.
+              (() => {
+                const onImgLoad = () => setReadyId(story.id);
+                // A freshly-posted URL can 404 for a beat — retry a few times
+                // (remount refetches) before giving up and revealing anyway.
+                const onImgErr = () => {
                   const n = (imgErrorsRef.current[story.id] ?? 0) + 1;
                   imgErrorsRef.current[story.id] = n;
                   if (n <= 3) setTimeout(() => setReloadTick((t) => t + 1), 500 * n);
                   else setReadyId(story.id);
-                }}
-              />
+                };
+                // A 'frame' layer means the author repositioned/zoomed the photo:
+                // redraw it with that transform over a blurred backdrop, so a
+                // zoomed-OUT photo shows the backdrop around it. x/y are fractions of
+                // the frame; scale is relative to a cover fit; w/h are source px —
+                // cover is recomputed for THIS screen, so framing is portable.
+                const fr = (story.stickers ?? []).find((l: any) => l?.kind === 'frame') as any;
+                if (fr && fr.w > 0 && fr.h > 0) {
+                  const cs = Math.max(SCREEN_W / fr.w, SCREEN_H / fr.h);
+                  const bw = fr.w * cs, bh = fr.h * cs;
+                  return (
+                    <View style={StyleSheet.absoluteFill}>
+                      <ExpoImage source={{ uri: story.media_url }} style={StyleSheet.absoluteFill} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
+                      <ExpoImage
+                        key={`${story.id}:${reloadTick}`}
+                        source={{ uri: story.media_url }}
+                        contentFit="cover"
+                        cachePolicy="memory-disk"
+                        style={{
+                          position: 'absolute', width: bw, height: bh,
+                          left: (SCREEN_W - bw) / 2, top: (SCREEN_H - bh) / 2,
+                          transform: [
+                            { translateX: (fr.x ?? 0) * SCREEN_W },
+                            { translateY: (fr.y ?? 0) * SCREEN_H },
+                            { scale: fr.scale ?? 1 },
+                          ],
+                        }}
+                        onLoad={onImgLoad}
+                        onError={onImgErr}
+                      />
+                    </View>
+                  );
+                }
+                return (
+                  <ExpoImage
+                    key={`${story.id}:${reloadTick}`}
+                    source={{ uri: story.media_url }}
+                    style={StyleSheet.absoluteFill}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    onLoad={onImgLoad}
+                    onError={onImgErr}
+                  />
+                );
+              })()
             ) : (
               <AppVideo
                 key={story.id}
@@ -953,80 +1311,28 @@ export default function StoryViewerScreen() {
                 the author + song-mute + trash/report reveal WITH the media. The
                 spacer keeps the X pinned right when the author is hidden. */}
             <View style={[styles.header, { top: insets.top + 18 }]}>
-              {ready ? (
-                <TouchableOpacity
-                  style={styles.author}
-                  onPress={() => { stopProgressAnim(); router.push(`/profile/${group.user.id}`); }}
-                >
-                  {group.user.avatar_url ? (
-                    <Image source={{ uri: group.user.avatar_url }} style={styles.avatar} />
-                  ) : (
-                    <LinearGradient colors={GRADIENTS.avatar} style={styles.avatar}>
-                      <Text style={styles.avatarText}>{group.user.display_name?.charAt(0).toUpperCase()}</Text>
-                    </LinearGradient>
-                  )}
-                  <Text style={styles.authorName} numberOfLines={1}>{group.user.username || group.user.display_name}</Text>
-                  <BadgeEmblem profile={group.user} size={13} />
-                  <Text style={styles.time}>{timeAgo(story.created_at)}</Text>
-                </TouchableOpacity>
-              ) : (
-                <View style={{ flex: 1 }} />
-              )}
-
-              <View style={styles.headerRight}>
-                {ready && !!story.song_id && (
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={songMuted ? t('a11y.unmute') : t('a11y.mute')} style={styles.headerBtn} onPress={toggleSongMuted} hitSlop={8}>
-                    <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={21} color="#fff" />
-                  </TouchableOpacity>
-                )}
-                {/* Save to camera roll — YOUR OWN stories only.
-
-                    Briefly shipped for any story, and withdrawn deliberately.
-                    The media sits in a public bucket so downloading was never a
-                    new capability, but a one-tap button is a different norm from
-                    "somebody could screenshot this", and a story's whole premise
-                    is that it disappears in 24 hours. Three things followed from
-                    that, and the account holder is told about none of them:
-
-                      • Minors. 13-17s are on Laybell with parental consent, and
-                        this made an adult saving a 14-year-old's video to their
-                        camera roll a single tap with no signal to anyone.
-                      • Artists. The content most worth saving here is an
-                        unreleased snippet, on an app whose pitch is monetising
-                        your music. One traced leak and that artist stops posting.
-                      • Both stores review download-other-people's-media features
-                        closely, which is largely why Instagram restricts it the
-                        same way.
-
-                    Archived (expired) own stories keep the button on purpose —
-                    that is the case where saving your own work matters most. */}
-                {ready && isOwn && (
-                  <TouchableOpacity
-                    style={styles.headerBtn}
-                    onPress={onSaveStory}
-                    hitSlop={8}
-                    disabled={saving}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('story.saveToPhotos')}
-                  >
-                    {saving
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <Ionicons name="download-outline" size={22} color="#fff" />}
-                  </TouchableOpacity>
-                )}
-                {ready && (isOwn ? (
-                  // Archived replay is read-only — manage (restore/delete) from the
-                  // Archive screen, so no trash button here.
-                  archived ? null : (
-                    <TouchableOpacity style={styles.headerBtn} onPress={onDelete} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('a11y.delete')}>
-                      <Ionicons name="trash-outline" size={22} color="#fff" />
-                    </TouchableOpacity>
-                  )
+              {/* Author stays mounted across story swipes — the avatar/name come from the
+                  group, not the media — so the profile picture never flickers in and out
+                  while the next story loads. */}
+              <TouchableOpacity
+                style={styles.author}
+                onPress={() => { stopProgressAnim(); router.push(`/profile/${group.user.id}`); }}
+              >
+                {group.user.avatar_url ? (
+                  <Image source={{ uri: group.user.avatar_url }} style={styles.avatar} />
                 ) : (
-                  <TouchableOpacity style={styles.headerBtn} onPress={onReport} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}>
-                    <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
-                  </TouchableOpacity>
-                ))}
+                  <LinearGradient colors={GRADIENTS.avatar} style={styles.avatar}>
+                    <Text style={styles.avatarText}>{group.user.display_name?.charAt(0).toUpperCase()}</Text>
+                  </LinearGradient>
+                )}
+                <Text style={styles.authorName} numberOfLines={1}>{group.user.username || group.user.display_name}</Text>
+                <BadgeEmblem profile={group.user} size={13} />
+                <Text style={styles.time}>{timeAgo(story.created_at)}</Text>
+              </TouchableOpacity>
+
+              {/* Top-right is just the close X now — every other action lives in the
+                  "⋯" menu at the bottom-right (see onStoryMenu). */}
+              <View style={styles.headerRight}>
                 <TouchableOpacity style={styles.headerBtn} onPress={dismiss} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
                   <Ionicons name="close" size={28} color="#fff" />
                 </TouchableOpacity>
@@ -1094,26 +1400,38 @@ export default function StoryViewerScreen() {
             {/* Own-story footer: viewer count. Live → tap to see WHO watched.
                 Archived replay → count only, read-only (no per-viewer list). */}
             {isOwn && (
-              archived ? (
-                <View style={[styles.seenRow, { bottom: insets.bottom + 18 }]}>
-                  <Ionicons name="eye-outline" size={18} color="#fff" />
-                  <Text style={styles.seenText}>{viewerCount ?? 0}</Text>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.seenRow, { bottom: insets.bottom + 18 }]}
-                  onPress={openViewers}
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 10, bottom: 10, left: 12, right: 12 }}
-                >
-                  <Ionicons name="eye-outline" size={18} color="#fff" />
-                  <Text style={styles.seenText}>{viewerCount ?? 0}</Text>
-                  <Ionicons name="chevron-up" size={14} color="rgba(255,255,255,0.7)" />
-                </TouchableOpacity>
-              )
+              <Animated.View
+                style={[
+                  styles.viewersCountWrap,
+                  { bottom: insets.bottom + 14, opacity: pillIn, transform: [{ translateY: pillIn.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] },
+                ]}
+                pointerEvents="box-none"
+              >
+                {archived ? (
+                  <Text style={styles.viewersCountNum}>{viewerCount ?? 0}</Text>
+                ) : (
+                  <TouchableOpacity onPress={openViewers} activeOpacity={0.7} hitSlop={{ top: 16, bottom: 16, left: 16, right: 24 }}>
+                    <Text style={styles.viewersCountNum}>{viewerCount ?? 0}</Text>
+                  </TouchableOpacity>
+                )}
+              </Animated.View>
             )}
 
-            {/* Someone else's story: reply pill + heart */}
+            {/* Own story: "⋯" menu (save / delete) at the bottom-right, opposite the
+                viewer count on the left. */}
+            {isOwn && (
+              <TouchableOpacity
+                style={[styles.moreBtn, { bottom: insets.bottom + 16 }]}
+                onPress={onStoryMenu}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel={t('a11y.moreOptions')}
+              >
+                <Ionicons name="ellipsis-horizontal" size={24} color="#fff" />
+              </TouchableOpacity>
+            )}
+
+            {/* Someone else's story: reply pill + heart + "⋯" (report) */}
             {!isOwn && !!currentUserId && (
               <View style={[styles.replyRow, { bottom: insets.bottom }]}>
                 <TouchableOpacity style={styles.replyPill} activeOpacity={0.8} onPress={openReply}>
@@ -1125,6 +1443,13 @@ export default function StoryViewerScreen() {
                   hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
                 >
                   <Ionicons name={liked ? 'heart' : 'heart-outline'} size={30} color={liked ? '#F43F5E' : '#fff'} />
+                </TouchableOpacity>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}
+                  onPress={onStoryMenu}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                >
+                  <Ionicons name="ellipsis-horizontal" size={26} color="#fff" />
                 </TouchableOpacity>
               </View>
             )}
@@ -1180,9 +1505,13 @@ export default function StoryViewerScreen() {
                 opacity is driven by coverAnim: opaque while loading, crossfading to
                 the media when the first frame is ready. pointerEvents none so it never
                 blocks a swipe-down-to-dismiss, even mid-fade. */}
-            <Animated.View style={[StyleSheet.absoluteFill, styles.greyCover, { opacity: coverAnim }]} pointerEvents="none">
-              {showLoader && <Spinner size={34} color="#fff" thickness={3} />}
-            </Animated.View>
+            {/* A video with a poster shows that first frame while it buffers, so the grey
+                loader is only for images (and posterless video) — never greys over a poster. */}
+            {!(story.media_type === 'video' && !!story.thumbnail_url && !story.shared_post_id) && (
+              <Animated.View style={[StyleSheet.absoluteFill, styles.greyCover, { opacity: coverAnim }]} pointerEvents="none">
+                {showLoader && <Spinner size={34} color="rgba(255,255,255,0.55)" thickness={3} />}
+              </Animated.View>
+            )}
           </>
         )}
       </Animated.View>
@@ -1190,35 +1519,97 @@ export default function StoryViewerScreen() {
       {/* Reply composer — keyboard-attached input; the story stays paused
           behind the dim until it's sent or dismissed. */}
       {replying && (
-        <KeyboardAvoidingView
-          style={[StyleSheet.absoluteFill, styles.replyOverlay]}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <Pressable style={{ flex: 1 }} onPress={closeReply} />
-          <View style={[styles.replyComposer, { paddingBottom: insets.bottom + SPACING.sm }]}>
-            <TextInput
-              style={styles.replyInput}
-              value={replyText}
-              onChangeText={setReplyText}
-              placeholder={t('story.replyTo', { name: group?.user.display_name || group?.user.username || t('story.fallbackName') })}
-              placeholderTextColor="rgba(255,255,255,0.55)"
-              selectionColor="#FAB525"
-              cursorColor="#FAB525"
-              autoFocus
-              multiline
-              maxLength={500}
-            />
-            <TouchableOpacity
-              style={[styles.replySend, (!replyText.trim() || sendingReply) && { opacity: 0.4 }]}
-              onPress={sendReply}
-              disabled={!replyText.trim() || sendingReply}
+        <View style={StyleSheet.absoluteFill}>
+          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.replyOverlay, { opacity: replyAnim }]} />
+          <KeyboardAvoidingView
+            style={StyleSheet.absoluteFill}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <Pressable style={{ flex: 1 }} onPress={closeReply} />
+            <Animated.View
+              style={[
+                styles.replyComposer,
+                {
+                  paddingBottom: SPACING.sm,
+                  opacity: replyAnim,
+                  transform: [{ translateY: replyAnim.interpolate({ inputRange: [0, 1], outputRange: [26, 0] }) }],
+                },
+              ]}
             >
-              {sendingReply
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <Ionicons name="arrow-up" size={20} color="#fff" />}
+              <TextInput
+                style={styles.replyInput}
+                value={replyText}
+                onChangeText={setReplyText}
+                placeholder={t('story.replyTo', { name: group?.user.display_name || group?.user.username || t('story.fallbackName') })}
+                placeholderTextColor="rgba(255,255,255,0.55)"
+                selectionColor="#FAB525"
+                cursorColor="#FAB525"
+                autoFocus
+                multiline
+                maxLength={500}
+              />
+              <TouchableOpacity
+                style={[styles.replySend, (!replyText.trim() || sendingReply) && { opacity: 0.4 }]}
+                onPress={sendReply}
+                disabled={!replyText.trim() || sendingReply}
+              >
+                {sendingReply
+                  ? <ActivityIndicator color="#0a0a0c" size="small" />
+                  : <Ionicons name="arrow-up" size={20} color="#0a0a0c" />}
+              </TouchableOpacity>
+            </Animated.View>
+          </KeyboardAvoidingView>
+        </View>
+      )}
+
+      {/* Story options — a Laybell-styled slide-up menu opened by the bottom-right "⋯".
+          A plain animated overlay (not a system sheet / RN Modal), so the delete
+          confirmation Alert can present cleanly on top of it. */}
+      {showStoryMenu && !!story && (
+        <View style={StyleSheet.absoluteFill}>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.storyMenuBackdrop, { opacity: storyMenuAnim }]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => closeStoryMenu(true)} />
+          </Animated.View>
+          <Animated.View
+            style={[
+              styles.storyMenuSheet,
+              {
+                paddingBottom: insets.bottom + SPACING.md,
+                transform: [{ translateY: storyMenuAnim.interpolate({ inputRange: [0, 1], outputRange: [320, 0] }) }],
+              },
+            ]}
+          >
+            <View style={styles.storyMenuHandle} />
+            {isOwn ? (
+              <>
+                <TouchableOpacity style={styles.storyMenuRow} activeOpacity={0.7} onPress={() => { closeStoryMenu(false); onSaveStory(); }}>
+                  <Ionicons name="download-outline" size={22} color="#fff" />
+                  <Text style={styles.storyMenuLabel}>{t('story.saveToPhotos')}</Text>
+                </TouchableOpacity>
+                {!archived && (
+                  <TouchableOpacity style={styles.storyMenuRow} activeOpacity={0.7} onPress={() => { closeStoryMenu(false); onDelete(); }}>
+                    <Ionicons name="trash-outline" size={22} color="#FF4D4F" />
+                    <Text style={[styles.storyMenuLabel, styles.storyMenuDestructive]}>{t('common.delete')}</Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            ) : (
+              <TouchableOpacity style={styles.storyMenuRow} activeOpacity={0.7} onPress={() => { closeStoryMenu(false); onReport(); }}>
+                <Ionicons name="flag-outline" size={22} color="#FF4D4F" />
+                <Text style={[styles.storyMenuLabel, styles.storyMenuDestructive]}>{t('story.report')}</Text>
+              </TouchableOpacity>
+            )}
+            {!!story.song_id && (
+              <TouchableOpacity style={styles.storyMenuRow} activeOpacity={0.7} onPress={() => { toggleSongMuted(); closeStoryMenu(true); }}>
+                <Ionicons name={songMuted ? 'volume-mute-outline' : 'volume-high-outline'} size={22} color="#fff" />
+                <Text style={styles.storyMenuLabel}>{songMuted ? t('a11y.unmute') : t('a11y.mute')}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.storyMenuCancel} activeOpacity={0.7} onPress={() => closeStoryMenu(true)}>
+              <Text style={styles.storyMenuCancelText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
+          </Animated.View>
+        </View>
       )}
 
       {/* Viewers sheet — who watched (and who LIKED — hearts ride on top).
@@ -1226,80 +1617,250 @@ export default function StoryViewerScreen() {
           the list is short; story + music pause while it's open. */}
       {showViewers && (
         <View style={StyleSheet.absoluteFill}>
-          <Animated.View style={[StyleSheet.absoluteFill, styles.viewersBackdrop, { opacity: sheetAnim }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.viewersBackdrop, { opacity: viewersBackdropOpacity }]}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => closeViewers()} />
           </Animated.View>
           <Animated.View
             style={[
               styles.viewersSheet,
               {
-                height: SCREEN_H * 0.62,
+                height: INSIGHTS_SHEET_H,
                 paddingBottom: insets.bottom + SPACING.md,
-                transform: [
-                  { translateY: sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [SCREEN_H * 0.62, 0] }) },
-                  { translateY: sheetDragY },
-                ],
+                transform: [{ translateY: sheetY }],
               },
             ]}
           >
-            {/* Top bar is the drag target: pull anywhere on it to dismiss */}
-            <View {...sheetPan.panHandlers}>
+            {/* Black "stage" above the separator — the cards sit on pure black. Pull
+                down anywhere on it to dismiss; swipe sideways to change story. */}
+            <View style={styles.insTopStage} {...stagePan.panHandlers}>
               <View style={styles.viewersHandle} />
-              <View style={styles.viewersHeader}>
-                <Text style={styles.viewersTitle}>{t('story.viewers')}</Text>
-                <View style={styles.viewersCountChip}>
-                  <Ionicons name="eye-outline" size={13} color="rgba(255,255,255,0.8)" />
-                  <Text style={styles.viewersCountText}>{viewerCount ?? viewers.length}</Text>
-                </View>
-              </View>
-              <View style={styles.viewersDivider} />
+              {/* Story-card strip: a PEEKING carousel of every story you've posted. The
+                  off-centre cards sit smaller + faded (depth); swipe to centre one and the
+                  panel below reloads for it. The last card is a "+" to add another story. */}
+              {group && (
+                <>
+                  <View style={[styles.insStrip, { overflow: 'hidden' }]}>
+                    <Animated.View
+                      style={{
+                        flexDirection: 'row',
+                        paddingHorizontal: (INSIGHTS_PAGE_W - INS_CARD_W - CARD_GAP) / 2,
+                        transform: [{ translateX: Animated.multiply(insightsStripX, -1) }],
+                      }}
+                    >
+                      {group.stories.map((s, i) => {
+                        const prev = s.media_type === 'image' ? s.media_url : s.thumbnail_url;
+                        return (
+                          <Animated.View key={s.id} style={[styles.insCardPage, cardDepth(i)]}>
+                            <View style={styles.insCard}>
+                              {!prev && (
+                                <View style={[StyleSheet.absoluteFill, styles.insCardFallback]}>
+                                  <Ionicons name="play" size={26} color="rgba(255,255,255,0.7)" />
+                                </View>
+                              )}
+                              {/* A uniformly scaled-down copy of the FULL story frame (media +
+                                  stickers), so text sits exactly where it does in the real viewer.
+                                  The frame is screen-sized + centred, then scaled to the card width;
+                                  the card's overflow:hidden clips the extra height — the same centre
+                                  band the viewer's cover-fit shows, instead of squashing the layout
+                                  into the card's shorter 9:16 aspect. */}
+                              <View
+                                pointerEvents="none"
+                                style={{
+                                  position: 'absolute',
+                                  width: SCREEN_W, height: SCREEN_H,
+                                  left: (INS_CARD_W - SCREEN_W) / 2,
+                                  top: (INS_CARD_H - SCREEN_H) / 2,
+                                  transform: [{ scale: INS_CARD_W / SCREEN_W }],
+                                }}
+                              >
+                                {!!prev && <ExpoImage source={{ uri: prev }} style={StyleSheet.absoluteFill} contentFit="cover" />}
+                                {(s.stickers ?? []).filter((st: any) => (!st.kind || st.kind === 'text') && st.text).map((st: any, k: number) => (
+                                  <View key={k} style={StyleSheet.absoluteFill}>
+                                    <View style={styles.captionStickerCenter}>
+                                      <View
+                                        style={{
+                                          transform: [
+                                            { translateX: (st.x - 0.5) * SCREEN_W },
+                                            { translateY: (st.y - 0.5) * SCREEN_H },
+                                            { scale: st.scale ?? 1 },
+                                            { rotate: `${st.rotation ?? 0}deg` },
+                                          ],
+                                        }}
+                                      >
+                                        <StickerContent sticker={st} />
+                                      </View>
+                                    </View>
+                                  </View>
+                                ))}
+                              </View>
+                            </View>
+                          </Animated.View>
+                        );
+                      })}
+                      {/* "+" card at the end of the cycle → add another story. */}
+                      <Animated.View style={[styles.insCardPage, cardDepth(group.stories.length)]}>
+                        <TouchableOpacity
+                          style={[styles.insCard, styles.insAddCard]}
+                          activeOpacity={0.8}
+                          onPress={addStoryFromInsights}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('storyCamera.addToStory')}
+                        >
+                          <Ionicons name="add" size={40} color="rgba(255,255,255,0.85)" />
+                        </TouchableOpacity>
+                      </Animated.View>
+                    </Animated.View>
+                  </View>
+                  {group.stories.length > 1 && (
+                    <View style={styles.insSegments}>
+                      {group.stories.map((s, i) => (
+                        <View key={s.id} style={[styles.insSegment, i === insightsIdx && styles.insSegmentOn]} />
+                      ))}
+                    </View>
+                  )}
+                </>
+              )}
             </View>
-            {viewersLoading ? (
-              <ActivityIndicator color="#fff" style={{ marginVertical: SPACING.xl }} />
-            ) : viewers.length === 0 ? (
-              <View style={styles.viewersEmptyWrap}>
-                <Ionicons name="eye-outline" size={34} color="rgba(255,255,255,0.35)" />
-                <Text style={styles.viewersEmpty}>{t('story.noViewsYet')}</Text>
-                <Text style={styles.viewersEmptySub}>{t('story.checkBackSoon')}</Text>
+            {/* Separator between the mini story strip and the insights controls. */}
+            <View style={styles.viewersDivider} />
+            {onAddStory ? (
+              /* The "+" card has no viewers — a breathing "Add Story" prompt that taps
+                 through to the camera. Wrapped in the nav pan so a horizontal SWIPE goes
+                 back to the previous story (and a pull-down dismisses) instead of firing
+                 the press by accident. */
+              <View style={{ flex: 1 }} {...panePan.panHandlers}>
+                <Pressable style={styles.addMsgWrap} onPress={addStoryFromInsights}>
+                  <Animated.View style={{ alignItems: 'center', transform: [{ scale: addPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) }] }}>
+                    <Ionicons name="add-circle" size={54} color="#fff" />
+                    <Text style={styles.addMsgText}>{t('story.addStory')}</Text>
+                  </Animated.View>
+                </Pressable>
               </View>
             ) : (
-              <FlatList
-                data={viewers}
-                keyExtractor={(v) => v.id}
-                showsVerticalScrollIndicator={false}
-                renderItem={({ item: v }) => (
+              <View style={{ flex: 1 }} {...panePan.panHandlers}>
+                {/* Analytics is a left-corner icon; Viewers the centered title. TAP to
+                    switch panels — a horizontal swipe moves between stories instead. */}
+                <View style={styles.insightsHeaderRow}>
                   <TouchableOpacity
-                    style={styles.viewerRow}
-                    activeOpacity={0.7}
-                    onPress={() => { closeViewers(true); router.push(`/profile/${v.id}`); }}
+                    style={styles.insightsIconBtn}
+                    activeOpacity={0.8}
+                    onPress={() => goInsightsTab(0)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('story.analytics')}
                   >
-                    <View style={styles.viewerAvatarWrap}>
-                      {v.avatar_url ? (
-                        <ExpoImage source={{ uri: v.avatar_url }} style={styles.viewerAvatar} contentFit="cover" />
-                      ) : (
-                        <LinearGradient colors={GRADIENTS.avatar} style={styles.viewerAvatar}>
-                          <Text style={styles.viewerAvatarText}>
-                            {(v.display_name || v.username || '?').charAt(0).toUpperCase()}
-                          </Text>
-                        </LinearGradient>
-                      )}
-                      {/* Liked this story — red heart emblem on the avatar */}
-                      {v.liked && (
-                        <View style={styles.viewerLikeBadge}>
-                          <Ionicons name="heart" size={10} color="#fff" />
-                        </View>
-                      )}
-                    </View>
-                    <View style={styles.viewerInfo}>
-                      <View style={styles.viewerNameRow}>
-                        <Text style={styles.viewerName} numberOfLines={1}>{v.display_name || v.username}</Text>
-                        <BadgeEmblem profile={v} size={13} />
-                      </View>
-                      <Text style={styles.viewerHandle} numberOfLines={1}>@{v.username}</Text>
-                    </View>
+                    <Ionicons name="stats-chart" size={22} color={insightsTab === 'analytics' ? '#fff' : 'rgba(255,255,255,0.45)'} />
                   </TouchableOpacity>
+                  <Text
+                    style={[styles.insightsCenterTitle, insightsTab !== 'viewers' && styles.insightsCenterTitleDim]}
+                    onPress={() => goInsightsTab(1)}
+                    suppressHighlighting
+                  >
+                    {t('story.viewers')}{(viewerCount ?? viewers.length) ? `  ${viewerCount ?? viewers.length}` : ''}
+                  </Text>
+                  {/* Right spacer mirrors the icon so the title stays centred. */}
+                  <View style={styles.insightsIconBtn} />
+                </View>
+                {/* Line under the buttons — matching top gap so they sit centred between
+                    this line and the one above the header. */}
+                <View style={[styles.viewersDivider, { marginTop: SPACING.xs }]} />
+                {insightsTab === 'analytics' ? (
+                  <View style={{ flex: 1 }}>
+                {analytics === null ? (
+                  <ActivityIndicator color="#fff" style={{ marginVertical: SPACING.xl }} />
+                ) : analytics.viewers === 0 ? (
+                  <View style={styles.viewersEmptyWrap}>
+                    <Ionicons name="stats-chart-outline" size={34} color="rgba(255,255,255,0.35)" />
+                    <Text style={styles.viewersEmpty}>{t('story.noViewsYet')}</Text>
+                    <Text style={styles.viewersEmptySub}>{t('story.checkBackSoon')}</Text>
+                  </View>
+                ) : (
+                  <View style={styles.analyticsWrap}>
+                    <Text style={styles.analyticsSection}>{t('story.overview')}</Text>
+                    <View style={styles.statRow}>
+                      <View style={styles.statCard}>
+                        <Text style={styles.statNum}>{analytics.viewers}</Text>
+                        <Text style={styles.statLabel}>{t('story.viewers')}</Text>
+                      </View>
+                      <View style={styles.statCard}>
+                        <Text style={styles.statNum}>{analytics.likes}</Text>
+                        <Text style={styles.statLabel}>{t('story.likes')}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.analyticsSection}>{t('story.audience')}</Text>
+                    {/* Split bar: pink = followers, purple = non-followers (IG palette). */}
+                    <View style={styles.splitBar}>
+                      <View style={{ flex: Math.max(analytics.followers, 0.0001), backgroundColor: '#EC4899' }} />
+                      <View style={{ flex: Math.max(analytics.nonFollowers, 0.0001), backgroundColor: '#8B5CF6' }} />
+                    </View>
+                    <View style={styles.audienceRow}>
+                      <View style={styles.audienceDotRow}><View style={[styles.audienceDot, { backgroundColor: '#EC4899' }]} /><Text style={styles.audienceLabel}>{t('story.followers')}</Text></View>
+                      <Text style={styles.audiencePct}>{analytics.viewers ? Math.round((analytics.followers / analytics.viewers) * 100) : 0}%</Text>
+                    </View>
+                    <View style={styles.audienceRow}>
+                      <View style={styles.audienceDotRow}><View style={[styles.audienceDot, { backgroundColor: '#8B5CF6' }]} /><Text style={styles.audienceLabel}>{t('story.nonFollowers')}</Text></View>
+                      <Text style={styles.audiencePct}>{analytics.viewers ? Math.round((analytics.nonFollowers / analytics.viewers) * 100) : 0}%</Text>
+                    </View>
+                    <Text style={styles.analyticsFootnote}>{t('story.repliesInDms')}</Text>
+                  </View>
                 )}
-              />
+                  </View>
+                ) : (
+                  <View style={{ flex: 1 }}>
+                {viewersLoading ? (
+                  <ActivityIndicator color="#fff" style={{ marginVertical: SPACING.xl }} />
+                ) : viewers.length === 0 ? (
+                  <View style={styles.viewersEmptyWrap}>
+                    <Ionicons name="eye-outline" size={34} color="rgba(255,255,255,0.35)" />
+                    <Text style={styles.viewersEmpty}>{t('story.noViewsYet')}</Text>
+                    <Text style={styles.viewersEmptySub}>{t('story.checkBackSoon')}</Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    data={viewers}
+                    style={{ flex: 1 }}
+                    keyExtractor={(v) => v.id}
+                    showsVerticalScrollIndicator={false}
+                    scrollEventThrottle={16}
+                    onScroll={(e) => { listAtTopRef.current = e.nativeEvent.contentOffset.y <= 0; }}
+                    contentContainerStyle={{ paddingTop: SPACING.sm }}
+                    renderItem={({ item: v }) => (
+                      <TouchableOpacity
+                        style={styles.viewerRow}
+                        activeOpacity={0.7}
+                        onPress={() => { closeViewers(true); router.push(`/profile/${v.id}`); }}
+                      >
+                        <View style={styles.viewerAvatarWrap}>
+                          {v.avatar_url ? (
+                            <ExpoImage source={{ uri: v.avatar_url }} style={styles.viewerAvatar} contentFit="cover" />
+                          ) : (
+                            <LinearGradient colors={GRADIENTS.avatar} style={styles.viewerAvatar}>
+                              <Text style={styles.viewerAvatarText}>
+                                {(v.display_name || v.username || '?').charAt(0).toUpperCase()}
+                              </Text>
+                            </LinearGradient>
+                          )}
+                          {/* Liked this story — red heart emblem on the avatar */}
+                          {v.liked && (
+                            <View style={styles.viewerLikeBadge}>
+                              <Ionicons name="heart" size={11} color="#fff" />
+                            </View>
+                          )}
+                        </View>
+                        <View style={styles.viewerInfo}>
+                          <View style={styles.viewerNameRow}>
+                            <Text style={styles.viewerName} numberOfLines={1}>{v.display_name || v.username}</Text>
+                            <BadgeEmblem profile={v} size={14} />
+                          </View>
+                          <Text style={styles.viewerHandle} numberOfLines={1}>@{v.username}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    )}
+                  />
+                )}
+                  </View>
+                )}
+              </View>
             )}
           </Animated.View>
         </View>
@@ -1311,11 +1872,16 @@ export default function StoryViewerScreen() {
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   root: { flex: 1 },
   container: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000' },
+  // Rounded "card" look while the story recedes behind the viewers sheet (iOS-sheet style).
+  containerReceded: { borderRadius: 18, overflow: 'hidden' },
   // Solid mid-grey shown until a story is fully ready — matches the loading
   // skeleton's tone so fetch → decode → reveal reads as one clean sequence.
   // Centers the loading circle. zIndex 5 covers the media + content overlays but
   // sits BELOW the always-on progress bar + close X (zIndex 10) so a loading
   // story still looks like a story.
+  // Loading placeholder for a story whose frame hasn't painted yet: a plain dark grey
+  // (the app's loading tone). It only appears if the story is slow — a loaded story
+  // shows instantly — so there's no flash on a normal swipe.
   greyCover: { backgroundColor: '#1C1C1E', alignItems: 'center', justifyContent: 'center', zIndex: 5 },
   center: { alignItems: 'center', justifyContent: 'center', gap: SPACING.md },
   empty: { color: colors.textSecondary, fontSize: 15 },
@@ -1359,8 +1925,31 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 8, textShadowOffset: { width: 0, height: 1 },
   },
 
-  seenRow: { position: 'absolute', left: SPACING.md, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  seenText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  // Own-story viewers indicator: just the count, big/bold, bottom-left (no chip, no icon).
+  // A soft shadow keeps it legible over bright media now that there's no backing fill.
+  viewersCountWrap: { position: 'absolute', left: SPACING.md },
+  viewersCountNum: {
+    color: '#fff', fontSize: 34, fontWeight: '900', letterSpacing: -0.6,
+    textShadowColor: 'rgba(0,0,0,0.55)', textShadowRadius: 8, textShadowOffset: { width: 0, height: 1 },
+  },
+  // Own story's "⋯" menu button, bottom-right (mirrors the viewer count on the left).
+  // zIndex keeps it tappable above the grey loading cover.
+  moreBtn: { position: 'absolute', right: SPACING.md, alignItems: 'center', justifyContent: 'center', zIndex: 10 },
+  // Laybell-styled "⋯" options menu (slide-up, dark — matches the immersive story context).
+  storyMenuBackdrop: { backgroundColor: 'rgba(0,0,0,0.6)' },
+  storyMenuSheet: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    backgroundColor: '#161618',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    borderTopWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.12)',
+    paddingTop: SPACING.sm, paddingHorizontal: SPACING.lg,
+  },
+  storyMenuHandle: { width: 40, height: 5, borderRadius: 3, alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.25)', marginBottom: SPACING.xs },
+  storyMenuRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, paddingVertical: SPACING.md + 2 },
+  storyMenuLabel: { color: '#fff', fontSize: 16.5, fontWeight: '600' },
+  storyMenuDestructive: { color: '#FF4D4F' },
+  storyMenuCancel: { alignItems: 'center', paddingVertical: SPACING.md, marginTop: SPACING.xs },
+  storyMenuCancelText: { color: 'rgba(255,255,255,0.6)', fontSize: 15.5, fontWeight: '700' },
 
   // Reply pill + heart row on someone else's story.
   replyRow: {
@@ -1398,12 +1987,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   replySend: {
     width: 44, height: 44, borderRadius: 22,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#F26522',
+    backgroundColor: '#fff',
   },
 
   // Viewers sheet (own stories): tall IG-style sheet — fixed height (set in
   // JSX) so it rises well up the screen even with only a couple of viewers.
-  viewersBackdrop: { backgroundColor: 'rgba(0,0,0,0.55)' },
+  // Moderate (not opaque) so the story's slide-up + fade READS during the open transition;
+  // by the time the sheet is settled the story has faded to nothing, so none of it lingers.
+  viewersBackdrop: { backgroundColor: 'rgba(0,0,0,0.6)' },
   viewersSheet: {
     position: 'absolute', left: 0, right: 0, bottom: 0,
     backgroundColor: '#0E0E0E',
@@ -1430,23 +2021,67 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   viewersEmptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingBottom: SPACING.xxl },
   viewersEmpty: { color: 'rgba(255,255,255,0.75)', fontSize: 15, fontWeight: '700' },
   viewersEmptySub: { color: 'rgba(255,255,255,0.45)', fontSize: 13 },
-  viewerRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm + 2, paddingVertical: SPACING.sm },
-  viewerAvatarWrap: { width: 44, height: 44 },
+  viewerRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm + 4, paddingVertical: SPACING.sm + 3 },
+  viewerAvatarWrap: { width: 52, height: 52 },
   viewerAvatar: {
-    width: 44, height: 44, borderRadius: 22,
+    width: 52, height: 52, borderRadius: 26,
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
-  viewerAvatarText: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  viewerAvatarText: { color: '#fff', fontSize: 20, fontWeight: '700' },
   // Red heart emblem on likers' avatars (likers sort to the top of the list).
   viewerLikeBadge: {
-    position: 'absolute', bottom: -2, right: -4,
-    width: 19, height: 19, borderRadius: 9.5,
+    position: 'absolute', bottom: -2, right: -3,
+    width: 22, height: 22, borderRadius: 11,
     backgroundColor: '#F43F5E',
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: '#0E0E0E',
   },
   viewerInfo: { flex: 1 },
   viewerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  viewerName: { color: '#fff', fontSize: 15, fontWeight: '700', flexShrink: 1 },
-  viewerHandle: { color: 'rgba(255,255,255,0.55)', fontSize: 12.5, marginTop: 1 },
+  viewerName: { color: '#fff', fontSize: 16.5, fontWeight: '700', flexShrink: 1 },
+  viewerHandle: { color: 'rgba(255,255,255,0.55)', fontSize: 13.5, marginTop: 2 },
+  // Insights header: Analytics as a left-corner icon, Viewers as the centered title.
+  insightsHeaderRow: { flexDirection: 'row', alignItems: 'center', height: 38 },
+  insightsIconBtn: { width: 44, alignItems: 'flex-start', justifyContent: 'center' },
+  insightsCenterTitle: { flex: 1, textAlign: 'center', color: '#fff', fontSize: 16.5, fontWeight: '800', letterSpacing: -0.2 },
+  insightsCenterTitleDim: { color: 'rgba(255,255,255,0.5)' },
+  // Swipeable strip of the author's own stories at the top of the insights sheet.
+  // Pure-black stage above the separator — extends edge-to-edge over the sheet's
+  // padding and shares its rounded top, so the cards sit on solid black.
+  insTopStage: {
+    backgroundColor: '#000',
+    marginHorizontal: -SPACING.md, marginTop: -SPACING.sm,
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, paddingBottom: 2,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+  },
+  insStrip: { flexGrow: 0, height: INS_CARD_H, marginBottom: SPACING.sm },
+  insCardPage: { width: INS_SNAP, height: INS_CARD_H, alignItems: 'center', justifyContent: 'center' },
+  insCard: {
+    width: INS_CARD_W, height: INS_CARD_H, borderRadius: RADIUS.lg, overflow: 'hidden',
+    backgroundColor: '#1C1C1E', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.14)',
+  },
+  insAddCard: { alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.25)', borderWidth: 1.5 },
+  insCardFallback: { alignItems: 'center', justifyContent: 'center' },
+  insSegments: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 5, marginBottom: SPACING.sm },
+  insSegment: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.3)' },
+  insSegmentOn: { width: 18, backgroundColor: '#fff' },
+  // "Add Story" prompt shown (instead of viewers/analytics) on the "+" card.
+  addMsgWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: SPACING.xxl },
+  addMsgText: { color: '#fff', fontSize: 26, fontWeight: '900', letterSpacing: -0.4, marginTop: SPACING.sm },
+  // "Who viewed this story" label above the viewers list.
+  viewersSectionLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 11.5, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: SPACING.sm, marginTop: 2 },
+  // Analytics panel.
+  analyticsWrap: { paddingTop: SPACING.xs },
+  analyticsSection: { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '800', letterSpacing: 0.6, textTransform: 'uppercase', marginTop: SPACING.lg, marginBottom: SPACING.md },
+  statRow: { flexDirection: 'row', gap: SPACING.md },
+  statCard: { flex: 1, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: RADIUS.lg, paddingVertical: SPACING.lg, paddingHorizontal: SPACING.md, gap: 5 },
+  statNum: { color: '#fff', fontSize: 30, fontWeight: '900', letterSpacing: -0.6 },
+  statLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 13.5, fontWeight: '600' },
+  splitBar: { flexDirection: 'row', height: 12, borderRadius: 6, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: SPACING.sm },
+  audienceRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 11 },
+  audienceDotRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  audienceDot: { width: 10, height: 10, borderRadius: 5 },
+  audienceLabel: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  audiencePct: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  analyticsFootnote: { color: 'rgba(255,255,255,0.4)', fontSize: 12.5, marginTop: SPACING.lg },
 });

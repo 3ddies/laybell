@@ -1,5 +1,6 @@
-import { memo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { memo, useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
@@ -70,16 +71,41 @@ function ProfileCompletion({ facts, dismissed, onTask, onDismiss, onGuardStart, 
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
 
+  // Looping shimmer that sweeps the filled portion of the progress bar — a white
+  // glint fading in and out as it crosses, brighter the more you've done.
+  const shimmer = useRef(new Animated.Value(0)).current;
+  const [fillW, setFillW] = useState(0);
+  useEffect(() => {
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(shimmer, { toValue: 1, duration: 1300, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.delay(650),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [shimmer]);
+
   const { done, total, complete } = profileProgress(facts);
   const open = profileTasks(facts).filter((task) => !task.done);
   if (dismissed || complete || open.length === 0) return null;
 
+  // Progress visuals scale with completion: a brighter bronze→gold fill and a stronger
+  // shimmer the closer you get to the Bronze Profile badge.
+  const pct = total ? done / total : 0;
+  const BAND = 30;
+  const shimmerPeak = 0.35 + 0.45 * pct;
+  const fillColors: readonly [string, string] = pct >= 0.75
+    ? ['#C77A2E', '#FFE07A']
+    : pct >= 0.5 ? ['#B8702E', '#FFD15E'] : ['#A9682E', '#F2BE4E'];
+  const shimmerX = shimmer.interpolate({ inputRange: [0, 1], outputRange: [-BAND, Math.max(fillW, BAND)] });
+
   return (
     <View style={styles.wrap}>
       <View style={styles.titleRow}>
-        <Text style={styles.title}>{t('profileDone.title')}</Text>
+        <View style={styles.titleLeft}>
+          <Text style={styles.title}>{t('profileDone.title')}</Text>
+          <Text style={styles.reward} numberOfLines={1}>{t('profileDone.reward')}</Text>
+        </View>
         <View style={styles.titleRight}>
-          <Text style={styles.count}>{t('profileDone.progress', { done, total })}</Text>
           <TouchableOpacity
             onPress={onDismiss}
             style={styles.dismissBtn}
@@ -88,7 +114,7 @@ function ProfileCompletion({ facts, dismissed, onTask, onDismiss, onGuardStart, 
             accessibilityRole="button"
             accessibilityLabel={t('a11y.close')}
           >
-            <Ionicons name="close" size={16} color={colors.textSecondary} />
+            <Ionicons name="close" size={18} color={colors.background + '80'} />
           </TouchableOpacity>
         </View>
       </View>
@@ -96,7 +122,30 @@ function ProfileCompletion({ facts, dismissed, onTask, onDismiss, onGuardStart, 
       {/* How far along, as one bar: four ticks in a row read as a list to audit,
           a bar reads as progress to finish. */}
       <View style={styles.track}>
-        <View style={[styles.fill, { width: `${Math.round((done / total) * 100)}%` }]} />
+        <LinearGradient
+          colors={fillColors}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+          style={[styles.fill, { width: `${Math.round(pct * 100)}%` }]}
+          onLayout={(e) => setFillW(e.nativeEvent.layout.width)}
+        >
+          {fillW > 0 && (
+            <Animated.View
+              style={[styles.shimmerBand, { width: BAND, opacity: shimmerPeak, transform: [{ translateX: shimmerX }] }]}
+              pointerEvents="none"
+            >
+              <LinearGradient
+                colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.95)', 'rgba(255,255,255,0)']}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={StyleSheet.absoluteFill}
+              />
+            </Animated.View>
+          )}
+        </LinearGradient>
+      </View>
+
+      {/* Progress count — right under the bar, right-aligned. */}
+      <View style={styles.countRow}>
+        <Text style={styles.count}>{t('profileDone.progress', { done, total })}</Text>
       </View>
 
       {/* The same guarded rail the album shelf and the sub-tab strip use: while a
@@ -118,7 +167,7 @@ function ProfileCompletion({ facts, dismissed, onTask, onDismiss, onGuardStart, 
             accessibilityRole="button"
             accessibilityLabel={t(`profileDone.${task.key}`)}
           >
-            <Ionicons name={ICONS[task.key] as any} size={30} color={colors.text} />
+            <Ionicons name={ICONS[task.key] as any} size={30} color={colors.background} />
             <Text style={styles.name} numberOfLines={1}>{t(`profileDone.name.${task.key}`)}</Text>
             <Text style={styles.reason} numberOfLines={2}>{t(`profileDone.${task.key}`)}</Text>
           </TouchableOpacity>
@@ -131,29 +180,50 @@ function ProfileCompletion({ facts, dismissed, onTask, onDismiss, onGuardStart, 
 export default memo(ProfileCompletion);
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
-  wrap: { paddingTop: SPACING.sm, paddingBottom: SPACING.md, gap: SPACING.sm },
+  // One big outlined card wrapping the whole section (title + progress + task
+  // cards). The outline is colors.text — white in dark mode, black in light — per
+  // the owner's ask. overflow:hidden so the horizontal task rail clips cleanly at
+  // the rounded corners. The children keep their own paddingHorizontal, which
+  // becomes this card's inner gutter.
+  wrap: {
+    marginHorizontal: SPACING.md, marginTop: SPACING.sm, marginBottom: SPACING.md,
+    paddingTop: SPACING.md, paddingBottom: SPACING.sm,
+    // Filled solid: white in dark mode, black in light (colors.text). The title +
+    // count flip to colors.background to stay readable; the task cards already use
+    // an elevated surface that contrasts against this fill, so they're left as-is.
+    backgroundColor: colors.text,
+    borderWidth: 1.5, borderColor: colors.text, borderRadius: RADIUS.lg,
+    overflow: 'hidden',
+  },
   titleRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
     paddingHorizontal: SPACING.md,
   },
-  titleRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  title: { color: colors.text, fontSize: 15, fontWeight: '800' },
-  count: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
-  dismissBtn: {
-    width: 24, height: 24, borderRadius: RADIUS.full,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceLight,
-  },
+  titleLeft: { flex: 1, paddingRight: SPACING.sm },
+  // Motivating payoff under the title: what finishing the four tasks earns.
+  reward: { color: colors.background + '80', fontSize: 11.5, fontWeight: '500', letterSpacing: -0.1, marginTop: 1 },
+  titleRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: 1 },
+  // On the filled card, text flips to the background colour (dark-on-white / light-on-black).
+  title: { color: colors.background, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  count: { color: colors.background + '99', fontSize: 13, fontWeight: '700' },
+  // The progress count, right under the bar and right-aligned.
+  countRow: { paddingHorizontal: SPACING.md, alignItems: 'flex-end', marginTop: 5 },
+  // Bare muted ✕ (no heavy disc) — the disc read as a dark blob on the filled card.
+  dismissBtn: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center' },
 
   track: {
-    height: 4, borderRadius: 2, marginHorizontal: SPACING.md,
-    backgroundColor: colors.border, overflow: 'hidden',
+    height: 5, borderRadius: 3, marginHorizontal: SPACING.md, marginTop: SPACING.sm,
+    // Soft groove tinted from the foreground, not the harsh `border` line.
+    backgroundColor: colors.background + '1A', overflow: 'hidden',
   },
-  fill: { height: '100%', borderRadius: 2, backgroundColor: colors.success },
+  fill: { height: '100%', borderRadius: 3, overflow: 'hidden' },
+  // The sweeping white glint inside the fill.
+  shimmerBand: { position: 'absolute', top: 0, bottom: 0, left: 0 },
 
   // alignItems stretch: every card takes the height of the TALLEST one, so a
   // one-line ask and a two-line ask still line up — without a fixed height, which
   // is what left a band of dead space under the short ones.
-  row: { gap: SPACING.sm, paddingHorizontal: SPACING.md, paddingTop: 2, alignItems: 'stretch' },
+  row: { gap: SPACING.sm, paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, alignItems: 'stretch' },
   // UPRIGHT cards, the "Suggested for you" shape — taller than they are wide.
   //
   // The formatting inside them is the part that was off: a fixed height so all
@@ -161,17 +231,20 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // rather than crowding them, and the name and the ask as one block at the
   // bottom instead of three evenly-spaced things floating in a box.
   card: {
-    width: 152,
+    width: 150,
     paddingHorizontal: SPACING.sm + 2, paddingVertical: SPACING.md,
     // Centred in whatever height the row settles on, so the leftover space is
     // split above and below instead of pooling at the bottom.
     alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
-    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border,
+    // Soft tonal tile — a faint wash of the card's foreground + a hairline — so each
+    // task reads as a refined grouped tile on the solid fill, not a stark inverted block.
+    backgroundColor: colors.background + '14', borderRadius: RADIUS.md,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.background + '26',
   },
   // The line that has to be readable at a glance — it names the thing, so it is
   // the one that gets the size. Tight tracking keeps two words on one line.
-  name: { color: colors.text, fontSize: 15, fontWeight: '800', textAlign: 'center', letterSpacing: -0.2 },
+  name: { color: colors.background, fontSize: 15, fontWeight: '800', textAlign: 'center', letterSpacing: -0.2 },
   // Quieter and a size down: it is the sentence you read only if the name did
   // not already tell you. Sits right under it — the gap above belongs to the glyph.
-  reason: { color: colors.textSecondary, fontSize: 11.5, lineHeight: 15, textAlign: 'center', marginTop: -4 },
+  reason: { color: colors.background + '8C', fontSize: 11.5, lineHeight: 15, textAlign: 'center', marginTop: -4 },
 });
