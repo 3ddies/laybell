@@ -245,6 +245,20 @@ create or replace function public.shop_order_rate_limit()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare recent int;
 begin
+  -- Throttle only CLIENT buy-requests: the insert where the signed-in buyer is
+  -- recording their OWN order (a direct free claim, or a credit buy through
+  -- shop_buy_with_credits, where auth.uid() stays the buyer). The IAP webhook
+  -- completes an ALREADY-PAID purchase as the SERVICE ROLE (auth.uid() is null),
+  -- and a null-uid insert is reachable ONLY by the service role — the
+  -- "Buyers can request" policy requires auth.uid() = buyer_id, so anon can't
+  -- insert at all. Throttling that paid delivery would 500 the webhook and strand
+  -- the buyer's money, so it's exempt. This narrows the limit to its real target
+  -- (harassment / inventory-lockup via client requests); it opens no
+  -- unauthenticated path, which does not exist.
+  if auth.uid() is distinct from new.buyer_id then
+    return new;
+  end if;
+
   select count(*) into recent from public.shop_orders
     where buyer_id = new.buyer_id and created_at > now() - interval '24 hours';
   if recent >= 20 then

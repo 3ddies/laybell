@@ -85,6 +85,20 @@ serve(async (req) => {
     if (!appUserId || appUserId.startsWith('$RCAnonymousID')) {
       return json({ status: 'ignored', reason: 'no app_user_id' });
     }
+    // app_user_id is configured as the Supabase uid (lib/purchases.ts), so it must
+    // be a uuid. A non-uuid is a misconfigured/aliased id we can't resolve to a
+    // user, and every path needs a real uuid: ledger_account casts it, shop_deliver
+    // takes p_buyer uuid, the premium update filters profiles.id on it. Without this
+    // the cast throws a 500 and RevenueCat retries forever; ignore with a trace so a
+    // paid purchase in this state is caught for manual follow-up instead of looping.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(appUserId)) {
+      logFailure('bad_app_user_id', {
+        app_user_id: appUserId,
+        type: String(event.type ?? ''),
+        product: String(event.product_id ?? ''),
+      });
+      return json({ status: 'ignored', reason: 'app_user_id not a uuid' });
+    }
 
     const admin = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -152,6 +166,15 @@ serve(async (req) => {
         }
         // result.ok === false is a HANDLED outcome (sold out → buyer credited), so
         // acknowledge with 2xx: a non-2xx would make RevenueCat retry a settled case.
+        // The one outcome that is neither delivered NOR credited is reason='no_tag'
+        // (the purchase arrived without its intent tag, so the listing/buyer can't
+        // be resolved and p_buyer isn't trusted for identity). The buyer has paid
+        // and has nothing — it's only recorded in shop_iap_payments for manual
+        // follow-up, so surface it here or that follow-up never happens.
+        const r = (result ?? {}) as { ok?: boolean; delivered?: boolean; credited?: number; reason?: string };
+        if (r.ok === false && r.delivered !== true && r.credited == null) {
+          logFailure('beat_undelivered', { user: appUserId, product: productId, intentId, reason: r.reason ?? null });
+        }
         return json({ status: 'ok', type, delivery: result });
       }
 

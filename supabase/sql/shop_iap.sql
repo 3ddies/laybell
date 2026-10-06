@@ -304,7 +304,11 @@ begin
   end if;
 
   -- (4) The product actually bought must be the tier we issued for this intent.
-  if p_paid_cents <> v_intent.price_cents then
+  -- `is distinct from` (not `<>`) so a null paid amount fails CLOSED — it counts as
+  -- a mismatch and is made whole, rather than `null <> X` evaluating to null and
+  -- silently delivering an unvalidated charge. (The webhook always passes a tier
+  -- from ITEM_PRODUCTS, so null is a can't-happen guard; match line (5)'s style.)
+  if p_paid_cents is distinct from v_intent.price_cents then
     perform public.shop_iap_make_whole(v_pay_id, v_buyer, p_paid_cents, p_source, p_external_id,
                                        'Beat purchase price mismatch — credited');
     update public.shop_iap_intents set status = 'failed' where id = v_intent.id;
@@ -436,7 +440,11 @@ as $$
 declare v_intent public.shop_iap_intents%rowtype;
 begin
   select * into v_intent from public.shop_iap_intents where id = p_intent_id;
-  if v_intent.id is null or v_intent.buyer_id <> auth.uid() then
+  -- `is distinct from` so the ownership check fails CLOSED: a null auth.uid()
+  -- (no/invalid JWT) makes `buyer_id <> auth.uid()` evaluate to null and NOT raise,
+  -- which would leak the intent's status to an unauthenticated caller. anon is
+  -- already revoked below, but this keeps the access check correct on its own.
+  if v_intent.id is null or v_intent.buyer_id is distinct from auth.uid() then
     raise exception 'not_found';
   end if;
   return jsonb_build_object(
