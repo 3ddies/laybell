@@ -630,7 +630,7 @@ export default function ListingScreen() {
     const price = formatPrice(priceCents, listing.currency);
     // Direct IAP is the primary path when the price is on the tier ladder and
     // billing is configured; otherwise the green button spends credits as before.
-    const iap = canBuyWithIap(priceCents) && purchasesConfigured();
+    const iap = canBuyWithIap(priceCents, Platform.OS === 'android') && purchasesConfigured();
     const open = expanded === kind;
     return (
       <View key={kind} style={styles.ctaBlock}>

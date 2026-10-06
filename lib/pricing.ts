@@ -35,9 +35,19 @@ export function itemProductId(cents: number): string {
 /** Every item product id, cheapest first. */
 export const ITEM_PRODUCT_IDS: readonly string[] = PRICE_TIERS_CENTS.map(itemProductId);
 
-/** Whether a listing price can be bought via direct IAP (is on the ladder). */
-export function canBuyWithIap(cents: number | null | undefined): boolean {
-  return typeof cents === 'number' && isPriceTier(cents);
+// Google Play's default max in-app price is $400, so the tiers above it have no
+// Play product and are credits-only on Android. The App Store supports the full
+// ladder (price points to $999.99). MUST match which laybell_item_<cents> products
+// actually exist on Google Play — see docs/BEATS_IAP_PLAN.md.
+export const PLAY_MAX_IAP_CENTS = 39999; // $399.99 — highest tier that exists on Google Play
+
+/** Whether a listing price can be bought via direct IAP on this platform. On
+ *  Android the tiers above Google Play's ~$400 cap have no product, so they fall
+ *  back to credits-only; iOS supports the full ladder. Pass Platform.OS==='android'. */
+export function canBuyWithIap(cents: number | null | undefined, isAndroid: boolean): boolean {
+  if (typeof cents !== 'number' || !isPriceTier(cents)) return false;
+  if (isAndroid && cents > PLAY_MAX_IAP_CENTS) return false;
+  return true;
 }
 
 /** Nearest tier to an arbitrary price; null for a non-positive price. Ties resolve
