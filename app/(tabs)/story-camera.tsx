@@ -18,6 +18,8 @@ import StickerLayer, {
   resolveSticker, STICKER_COLORS, STICKER_FONTS,
   type Sticker, type CaptionStyle, type StickerBg, type StickerFont,
 } from '../../components/StickerLayer';
+import { StoryDrawCanvas, StoryDrawRenderer, type DrawStroke } from '../../components/StoryDrawLayer';
+import { StoryBackground, StoryBackgroundPicker, DEFAULT_BG, type StoryBg } from '../../components/StoryBackgroundLayer';
 import { getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import { useStories } from '../../contexts/StoriesContext';
 import { useStoryUpload } from '../../contexts/StoryUploadContext';
@@ -28,6 +30,7 @@ import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { showPermissionDenied } from '../../lib/permissions';
+import { selection } from '../../lib/haptics';
 
 const VIDEO_MAX_SEC = 60;
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -109,6 +112,12 @@ export default function StoryCameraScreen() {
   }, [captured?.uri]);
   const [caption, setCaption] = useState('');                       // plain bottom caption
   const [stickers, setStickers] = useState<Sticker[]>([]);           // draggable text/emoji stickers
+  const [strokes, setStrokes] = useState<DrawStroke[]>([]);          // pen doodle (draw tool)
+  const [drawing, setDrawing] = useState(false);                     // draw-mode overlay open
+  // Background behind the media — only shows where a shrunk/dragged photo leaves room
+  // (default = the photo's own blur). Picked from the bg rail; saved as a 'bg' layer.
+  const [bg, setBg] = useState<StoryBg>(DEFAULT_BG);
+  const [bgPicking, setBgPicking] = useState(false);                 // bg picker rail open
   const [editingId, setEditingId] = useState<string | null>(null);  // sticker whose text is being edited
   const [editingText, setEditingText] = useState('');               // the editor's working text
   const [editingFont, setEditingFont] = useState<StickerFont>('classic');
@@ -144,12 +153,19 @@ export default function StoryCameraScreen() {
   // RN Animated (NOT reanimated), to match StickerLayer's own stickers — they drive
   // smoothly off this exact JS gesture path, so the photo will too. `cropAnim` is the
   // live transform; `cropSaved` is the committed baseline the next gesture adds to.
-  const cropAnim = useRef({ pan: new Animated.ValueXY({ x: 0, y: 0 }), scale: new Animated.Value(1) }).current;
-  const cropSaved = useRef({ tx: 0, ty: 0, scale: 1 });
+  const cropAnim = useRef({ pan: new Animated.ValueXY({ x: 0, y: 0 }), scale: new Animated.Value(1), rot: new Animated.Value(0) }).current;
+  const cropSaved = useRef({ tx: 0, ty: 0, scale: 1, rotation: 0 });
+  // Center-alignment guides for the PHOTO drag (same aid as StickerLayer's). When the
+  // photo's centre nears the frame's it snaps there, a faint line shows, and a subtle
+  // tick fires once on entry. `photoSnapPrev` latches so the tick fires per entry;
+  // `.flat` latches the rotate-to-flat (nearest 90°) snap tick.
+  const [photoGuide, setPhotoGuide] = useState({ v: false, h: false });
+  const photoSnapPrev = useRef({ x: false, y: false, flat: false });
   const resetCrop = useCallback(() => {
     cropAnim.pan.setValue({ x: 0, y: 0 });
     cropAnim.scale.setValue(1);
-    cropSaved.current = { tx: 0, ty: 0, scale: 1 };
+    cropAnim.rot.setValue(0);
+    cropSaved.current = { tx: 0, ty: 0, scale: 1, rotation: 0 };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -164,20 +180,46 @@ export default function StoryCameraScreen() {
   const baseH = imgH * coverScale;
 
   // StickerLayer forwards non-sticker drag/pinch here. Deltas are from the gesture
-  // start → add to the saved baseline + clamp. `Math.abs` makes one clamp serve both
-  // cases: above cover it prevents an empty edge; below cover it keeps the smaller
-  // photo within the frame. MIN is low so the photo can shrink well onto the backdrop.
+  // start → add to the saved baseline + clamp. MIN is low so the photo can shrink
+  // well onto the backdrop; MAX is generous so it can be blown up well past the frame.
   const MIN_IMG_SCALE = 0.2;
-  const MAX_IMG_SCALE = 6;
-  const onPhotoGesture = useCallback((e: { phase: 'move' | 'end'; dx: number; dy: number; scale: number }) => {
+  const MAX_IMG_SCALE = 8;
+  const PHOTO_SNAP_PX = 9; // within this of the frame centre the photo snaps + shows a guide
+  const PHOTO_ROT_SNAP = 7; // within this of a 90° multiple, the photo snaps FLAT
+  const onPhotoGesture = useCallback((e: { phase: 'move' | 'end'; dx: number; dy: number; scale: number; rotation: number }) => {
     const s = Math.min(Math.max(cropSaved.current.scale * e.scale, MIN_IMG_SCALE), MAX_IMG_SCALE);
-    const mx = Math.abs(baseW * s - SCREEN_W) / 2;
-    const my = Math.abs(baseH * s - SCREEN_H) / 2;
-    const tx = Math.min(Math.max(cropSaved.current.tx + e.dx, -mx), mx);
-    const ty = Math.min(Math.max(cropSaved.current.ty + e.dy, -my), my);
+    // Let the photo be dragged ALL THE WAY off-screen (its centre can travel until its
+    // trailing edge reaches the far frame edge → nothing of it on screen but the
+    // blurred backdrop). The gesture lives on the whole frame, so an off-screen photo
+    // is still grabbable to drag back.
+    const mx = (baseW * s) / 2 + SCREEN_W / 2;
+    const my = (baseH * s) / 2 + SCREEN_H / 2;
+    let tx = Math.min(Math.max(cropSaved.current.tx + e.dx, -mx), mx);
+    let ty = Math.min(Math.max(cropSaved.current.ty + e.dy, -my), my);
+    // Rotate the photo (two-finger), with a FLAT snap to the nearest 90° — same aid
+    // as text stickers so a slightly-off photo clicks straight.
+    let rot = cropSaved.current.rotation + e.rotation;
+    const rotTarget = Math.round(rot / 90) * 90;
+    const nearFlat = Math.abs(rot - rotTarget) <= PHOTO_ROT_SNAP;
+    if (nearFlat) rot = rotTarget;
+    // Magnetic centre (same aid as stickers): pin to the frame centre when near,
+    // show the guide line, tick once on entry (one tick even if several lock at once).
+    const nearX = Math.abs(tx) <= PHOTO_SNAP_PX;
+    const nearY = Math.abs(ty) <= PHOTO_SNAP_PX;
+    if (nearX) tx = 0;
+    if (nearY) ty = 0;
+    const entered = (nearX && !photoSnapPrev.current.x) || (nearY && !photoSnapPrev.current.y) || (nearFlat && !photoSnapPrev.current.flat);
+    if (entered) selection();
+    if (photoSnapPrev.current.x !== nearX || photoSnapPrev.current.y !== nearY) setPhotoGuide({ v: nearX, h: nearY });
+    photoSnapPrev.current = { x: nearX, y: nearY, flat: nearFlat };
     cropAnim.pan.setValue({ x: tx, y: ty });
     cropAnim.scale.setValue(s);
-    if (e.phase === 'end') cropSaved.current = { tx, ty, scale: s };
+    cropAnim.rot.setValue(rot);
+    if (e.phase === 'end') {
+      cropSaved.current = { tx, ty, scale: s, rotation: rot };
+      photoSnapPrev.current = { x: false, y: false, flat: false };
+      setPhotoGuide({ v: false, h: false });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseW, baseH]);
 
@@ -248,6 +290,7 @@ export default function StoryCameraScreen() {
         setStage('capture');
         setCaptured(null);
         setCaption(''); setStickers([]); setEditingId(null); setEditingText('');
+        setStrokes([]); setDrawing(false); setBg(DEFAULT_BG); setBgPicking(false);
         stopSong('story-editor');
         setSong(null); setShowCaption(false); setSaved(false);
       };
@@ -302,6 +345,7 @@ export default function StoryCameraScreen() {
     discardPrewarm();
     setCaptured(null);
     setCaption(''); setStickers([]); setEditingId(null); setEditingText('');
+    setStrokes([]); setDrawing(false); setBg(DEFAULT_BG); setBgPicking(false);
     setSong(null); setShowCaption(false); setSaved(false);
     resetCrop();
     setStage('capture');
@@ -330,13 +374,22 @@ export default function StoryCameraScreen() {
     // by the viewer over a blurred backdrop — so a zoomed-OUT photo keeps its backdrop.
     // x/y are fractions of the frame; scale is relative to a cover fit; w/h are the
     // source pixels (the viewer needs the aspect to recompute cover for its screen).
-    const framed = canAdjust && (cropSaved.current.scale !== 1 || cropSaved.current.tx !== 0 || cropSaved.current.ty !== 0);
+    const framed = canAdjust && (cropSaved.current.scale !== 1 || cropSaved.current.tx !== 0 || cropSaved.current.ty !== 0 || cropSaved.current.rotation !== 0);
     const frameLayer: any = framed
-      ? { kind: 'frame', scale: cropSaved.current.scale, x: cropSaved.current.tx / SCREEN_W, y: cropSaved.current.ty / SCREEN_H, w: imgW, h: imgH }
+      ? { kind: 'frame', scale: cropSaved.current.scale, x: cropSaved.current.tx / SCREEN_W, y: cropSaved.current.ty / SCREEN_H, rotation: cropSaved.current.rotation, w: imgW, h: imgH }
       : null;
+    // Pen doodle + chosen background, stored the SAME way reshared posts do (so the
+    // viewer composes them identically). bg is omitted when it's the plain blur default.
+    const drawLayer: any = strokes.length ? { kind: 'draw', strokes } : null;
+    const bgLayer: any = bg.type !== 'blur' ? { kind: 'bg', background: bg } : null;
     const textStickers = stickers.map(({ text, x, y, scale, rotation, font, color, bg, size, emoji }) =>
       ({ text, x, y, scale, rotation, font, color, bg, size, emoji }));
-    const allStickers: any[] = frameLayer ? [...textStickers, frameLayer] : textStickers;
+    const allStickers: any[] = [
+      ...textStickers,
+      ...(frameLayer ? [frameLayer] : []),
+      ...(drawLayer ? [drawLayer] : []),
+      ...(bgLayer ? [bgLayer] : []),
+    ];
     // Optimistic post: hand the (already-prewarming) upload + a snapshot of the edits
     // to the background provider, then return to Home immediately.
     enqueueStory({
@@ -361,7 +414,11 @@ export default function StoryCameraScreen() {
             // Drag/pinch to reframe the photo directly. A soft blurred copy fills the
             // screen behind it, so zooming OUT reveals a backdrop that resembles the photo.
             <View style={StyleSheet.absoluteFill}>
-              <ExpoImage source={{ uri: captured.uri }} style={StyleSheet.absoluteFill} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
+              {bg.type === 'blur' ? (
+                <ExpoImage source={{ uri: captured.uri }} style={StyleSheet.absoluteFill} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
+              ) : (
+                <StoryBackground bg={bg} backdropUri={captured.uri} />
+              )}
               <Animated.Image
                 source={{ uri: captured.uri }}
                 resizeMode="cover"
@@ -372,6 +429,7 @@ export default function StoryCameraScreen() {
                     { translateX: cropAnim.pan.x },
                     { translateY: cropAnim.pan.y },
                     { scale: cropAnim.scale },
+                    { rotate: cropAnim.rot.interpolate({ inputRange: [-360, 360], outputRange: ['-360deg', '360deg'] }) },
                   ],
                 }}
               />
@@ -391,6 +449,14 @@ export default function StoryCameraScreen() {
             ownsAudio
             muted={false}
           />
+        )}
+
+        {/* Photo center guides — faint lines while the photo is dragged near centre. */}
+        {(photoGuide.v || photoGuide.h) && (
+          <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            {photoGuide.v && <View style={[styles.guideLineV, { left: SCREEN_W / 2 - 0.5 }]} />}
+            {photoGuide.h && <View style={[styles.guideLineH, { top: SCREEN_H / 2 - 0.5 }]} />}
+          </View>
         )}
 
         {/* Text/emoji stickers + the photo gesture. StickerLayer routes to the
@@ -419,6 +485,15 @@ export default function StoryCameraScreen() {
           onPhotoGesture={canAdjust ? onPhotoGesture : undefined}
         />
 
+        {/* Committed doodle — over the media AND the text (matches the viewer's order).
+            pointerEvents:none, so text stickers under it stay tappable. Hidden while
+            the draw canvas is open, which renders its own live copy. */}
+        {!drawing && strokes.length > 0 && (
+          <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            <StoryDrawRenderer strokes={strokes} frameW={SCREEN_W} frameH={SCREEN_H} />
+          </View>
+        )}
+
         {/* Drop-to-delete target (only while a sticker is being dragged) */}
         {dragActive && (
           <View style={[styles.trashZone, { bottom: insets.bottom + 56 }]} pointerEvents="none">
@@ -428,16 +503,26 @@ export default function StoryCameraScreen() {
           </View>
         )}
 
-        <TouchableOpacity style={[styles.roundBtn, { position: 'absolute', top: insets.top + 8, left: SPACING.md }]} onPress={retake} accessibilityRole="button" accessibilityLabel={t('a11y.back')}>
-          <Ionicons name="arrow-back" size={26} color="#fff" />
-        </TouchableOpacity>
+        {!drawing && (
+          <TouchableOpacity style={[styles.roundBtn, { position: 'absolute', top: insets.top + 8, left: SPACING.md }]} onPress={retake} accessibilityRole="button" accessibilityLabel={t('a11y.back')}>
+            <Ionicons name="arrow-back" size={26} color="#fff" />
+          </TouchableOpacity>
+        )}
 
-        {/* Edit tool rail — text, emoji, caption, music, save */}
-        {!dragActive && (
+        {/* Edit tool rail — text, draw, background, caption, music, save */}
+        {!dragActive && !drawing && (
           <View style={[styles.toolRail, { top: insets.top + 8 }]}>
             <TouchableOpacity style={styles.roundBtn} onPress={() => addStickerAt(0.5, 0.4)}>
               <Text style={styles.aaBtnText}>Aa</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.roundBtn} onPress={() => setDrawing(true)}>
+              <Ionicons name={strokes.length ? 'brush' : 'brush-outline'} size={22} color={strokes.length ? colors.primaryLight : '#fff'} />
+            </TouchableOpacity>
+            {canAdjust && (
+              <TouchableOpacity style={styles.roundBtn} onPress={() => setBgPicking((p) => !p)}>
+                <Ionicons name={bg.type !== 'blur' ? 'color-palette' : 'color-palette-outline'} size={22} color={bg.type !== 'blur' ? colors.primaryLight : '#fff'} />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.roundBtn} onPress={() => setShowCaption(true)}>
               <Ionicons
                 name={caption.trim() ? 'chatbox-ellipses' : 'chatbox-ellipses-outline'}
@@ -461,7 +546,7 @@ export default function StoryCameraScreen() {
         {/* Hidden while the text-sticker editor is open: this bar is pinned to the
             keyboard (bottom: kbHeight), so otherwise it rides up and collides with
             that editor's color/font toolbar — and "Add to story" has no use mid-edit. */}
-        {!dragActive && !editingId && (
+        {!dragActive && !editingId && !drawing && !bgPicking && (
         <View style={[styles.previewBottom, { bottom: kbHeight, paddingBottom: kbHeight > 0 ? SPACING.md : insets.bottom + SPACING.md }]}>
           {/* Chosen song / written caption show as compact pills; the actual
               "add" actions live on the right tool rail. */}
@@ -554,6 +639,33 @@ export default function StoryCameraScreen() {
           onClose={() => setShowSongPicker(false)}
           onSelect={(s) => { stopSong('story-editor'); setSong(s); }}
         />
+
+        {/* Background picker rail — solid / gradient / blurred backdrop behind the
+            media (shows where a shrunk photo leaves room); live preview as you tap. */}
+        {bgPicking && (
+          <View style={[styles.bgPickerWrap, { paddingBottom: insets.bottom + SPACING.sm }]} pointerEvents="box-none">
+            <View style={styles.bgPickerHeader}>
+              <Text style={styles.bgPickerTitle}>{t('storyCamera.background')}</Text>
+              <TouchableOpacity style={styles.bgDoneBtn} onPress={() => setBgPicking(false)} hitSlop={8}>
+                <Text style={styles.bgDoneText}>{t('storyCamera.done')}</Text>
+              </TouchableOpacity>
+            </View>
+            <StoryBackgroundPicker value={bg} onChange={setBg} backdropUri={captured.uri} />
+          </View>
+        )}
+
+        {/* Draw mode — full-screen pen canvas with its own undo / colour / width / done. */}
+        {drawing && (
+          <StoryDrawCanvas
+            strokes={strokes}
+            onChange={setStrokes}
+            onClose={() => setDrawing(false)}
+            frameW={SCREEN_W}
+            frameH={SCREEN_H}
+            insetsTop={insets.top}
+            insetsBottom={insets.bottom}
+          />
+        )}
       </View>
     );
   }
@@ -781,6 +893,25 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.7)',
   },
   trashCircleHot: { backgroundColor: colors.error, borderColor: '#fff', transform: [{ scale: 1.15 }] },
+
+  // Background picker rail (bottom overlay) + its header.
+  bgPickerWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.35)' },
+  bgPickerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SPACING.md, paddingTop: SPACING.sm },
+  bgPickerTitle: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  bgDoneBtn: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 999, paddingHorizontal: SPACING.md, paddingVertical: 6 },
+  bgDoneText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+
+  // Faint photo center-alignment guides (match StickerLayer's subtle lines).
+  guideLineV: {
+    position: 'absolute', top: 0, bottom: 0, width: 1,
+    backgroundColor: 'rgba(255,255,255,0.45)',
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 1.5, shadowOffset: { width: 0, height: 0 },
+  },
+  guideLineH: {
+    position: 'absolute', left: 0, right: 0, height: 1,
+    backgroundColor: 'rgba(255,255,255,0.45)',
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 1.5, shadowOffset: { width: 0, height: 0 },
+  },
 
   previewBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: SPACING.md, gap: SPACING.sm },
   captionInput: {

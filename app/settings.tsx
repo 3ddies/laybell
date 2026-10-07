@@ -6,7 +6,7 @@ import {
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { passwordResetRedirectUrl } from '../lib/authLink';
 import { useProfile } from '../contexts/ProfileContext';
@@ -28,7 +28,6 @@ import { displayedTier } from '../lib/badges';
 import {
   loadNotifPrefs, saveNotifPrefs, type NotifPrefs,
 } from '../lib/notificationPrefs';
-import { isAdPersonalizationEnabled, setAdPersonalization } from '../lib/adPrefs';
 import { SPACING, RADIUS, GRADIENTS, PLUS_RED, type ThemeMode, type ThemePalette } from '../constants/theme';
 
 // The three display modes shown in the Settings → Display section.
@@ -143,6 +142,44 @@ function Section({ title, items }: { title: string; items: SectionItem[] }) {
   );
 }
 
+// One collapsible row that lives INSIDE a shared card — the header row IS the
+// button (icon + title + current-value subtitle + chevron), and tapping it lays
+// its rows out below on a faintly recessed panel. It owns no card of its own, so
+// a run of these reads as one iOS-style grouped list instead of a column of
+// floating cards. `divider` draws the hairline down to the next row in the card.
+function CollapsibleRow({ title, icon, subtitle, items, children, divider }: {
+  title: string; icon: any; subtitle?: string; items?: SectionItem[]; children?: ReactNode; divider?: boolean;
+}) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={() => setOpen((o) => !o)}>
+        <View style={styles.rowIcon}>
+          <Ionicons name={icon} size={23} color={colors.text} />
+        </View>
+        <View style={styles.rowContent}>
+          <Text style={styles.rowLabel}>{title}</Text>
+          {!!subtitle && <Text style={styles.rowSubtitle} numberOfLines={1}>{subtitle}</Text>}
+        </View>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textTertiary} />
+      </TouchableOpacity>
+      {open && (
+        <View style={styles.subPanel}>
+          {children ?? (items ?? []).map((item, i) => (
+            <View key={item.label}>
+              {i > 0 && <View style={styles.separator} />}
+              <SettingsRow item={item} />
+            </View>
+          ))}
+        </View>
+      )}
+      {divider && <View style={styles.separator} />}
+    </>
+  );
+}
+
 export default function SettingsScreen() {
   const router = useRouter();
   const { profile, update } = useProfile();
@@ -178,11 +215,6 @@ export default function SettingsScreen() {
   });
   useEffect(() => { loadNotifPrefs().then(setNotifPrefs); }, []);
 
-  // Ad personalization opt-out ("Limit ad targeting"). The switch shows the
-  // INVERSE of the stored pref (on = limit = personalization off).
-  const [limitAds, setLimitAds] = useState(false);
-  useEffect(() => { isAdPersonalizationEnabled().then((on) => setLimitAds(!on)); }, []);
-  function toggleLimitAds(v: boolean) { setLimitAds(v); setAdPersonalization(!v); }
 
   const allNotifsOn = notifPrefs.likes && notifPrefs.comments && notifPrefs.follows && notifPrefs.messages;
 
@@ -378,7 +410,9 @@ export default function SettingsScreen() {
     action();
   }
 
-  const accountItems: SectionItem[] = [
+  // The Account controls, split into groups — each renders as a collapsible
+  // button below so the screen isn't one long wall of rows.
+  const profileItems: SectionItem[] = [
     {
       icon: 'person-outline',
       label: t('account.editProfile'),
@@ -397,21 +431,31 @@ export default function SettingsScreen() {
       subtitle: t('account.friendsSub'),
       onPress: () => router.push('/friends'),
     },
+  ];
+
+  // Wallet + Credits are the two halves of the same idea — money IN (earnings)
+  // and money OUT (tips/Shop) — so they share a group.
+  const moneyItems: SectionItem[] = [
     {
       icon: 'wallet-outline',
       label: t('account.wallet'),
       subtitle: t('account.walletSub'),
       onPress: () => router.push('/wallet'),
     },
-    // Credits sit next to the Wallet deliberately: they're the two halves of the
-    // same idea. The Wallet is money coming IN (earnings); Credits is money going
-    // OUT (what you spend on tips and the Shop). Putting them apart makes people
-    // look for one in the other.
     {
       icon: 'diamond-outline',
       label: t('account.credits'),
       subtitle: t('account.creditsSub'),
       onPress: () => router.push('/credits'),
+    },
+  ];
+
+  const creatorItems: SectionItem[] = [
+    {
+      icon: 'stats-chart-outline',
+      label: t('account.analytics'),
+      subtitle: t('account.analyticsSub'),
+      onPress: () => router.push('/analytics'),
     },
     {
       icon: 'person-remove-outline',
@@ -420,25 +464,22 @@ export default function SettingsScreen() {
       onPress: () => router.push('/follower-insights'),
     },
     {
-      icon: 'stats-chart-outline',
-      label: t('account.analytics'),
-      subtitle: t('account.analyticsSub'),
-      onPress: () => router.push('/analytics'),
-    },
-    {
       icon: 'ribbon-outline',
       label: t('account.badges'),
       subtitle: t('account.badgesSub'),
       onPress: () => router.push('/badges'),
     },
-    // Sits with Badges rather than the paid Promotion Tools: inviting people is
-    // how the Advocate badge is earned, and it costs nothing.
+    // Invite sits with Badges (not the paid Promotion Tools): inviting earns the
+    // Advocate badge and costs nothing.
     {
       icon: 'person-add-outline',
       label: t('account.invite'),
       subtitle: t('account.inviteSub'),
       onPress: () => router.push('/invite'),
     },
+  ];
+
+  const contentItems: SectionItem[] = [
     {
       icon: 'albums-outline',
       label: t('account.playlists'),
@@ -482,17 +523,20 @@ export default function SettingsScreen() {
       onPress: () => router.push('/scheduled'),
     },
     {
+      icon: 'archive-outline',
+      label: t('account.archive'),
+      subtitle: t('account.archiveSub'),
+      onPress: () => router.push('/archive'),
+    },
+  ];
+
+  const privacyItems: SectionItem[] = [
+    {
       icon: 'eye-off-outline',
       label: t('account.hideProfile'),
       subtitle: t('account.hideProfileSub'),
       value: hiddenOn,
       onValueChange: toggleHidden,
-    },
-    {
-      icon: 'archive-outline',
-      label: t('account.archive'),
-      subtitle: t('account.archiveSub'),
-      onPress: () => router.push('/archive'),
     },
     {
       icon: 'ban-outline',
@@ -587,16 +631,6 @@ export default function SettingsScreen() {
     },
   ];
 
-  const adItems: SectionItem[] = [
-    {
-      icon: 'shield-checkmark-outline',
-      label: t('ads.limit'),
-      subtitle: t('ads.limitSub'),
-      value: limitAds,
-      onValueChange: toggleLimitAds,
-      chevron: false,
-    },
-  ];
 
   const offlineItems: SectionItem[] = [
     {
@@ -809,12 +843,13 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Display — choose the app's color scheme (applies live). */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings.section.display')}</Text>
-          <View style={styles.sectionCard}>
+        {/* Preferences — Display (current theme in the subtitle, swatches inside)
+            and Offline share one card so they read as a pair, not two floats. */}
+        <View style={styles.sectionCard}>
+          <CollapsibleRow title={t('settings.section.display')} icon="color-palette-outline" subtitle={t(`display.${mode}`)} divider>
             {DISPLAY_MODES.map((m, i) => (
               <View key={m.key}>
+                {i > 0 && <View style={styles.separator} />}
                 <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={() => setMode(m.key)}>
                   <View style={[styles.swatch, { backgroundColor: m.swatch, borderColor: m.ring }]} />
                   <View style={styles.rowContent}>
@@ -825,16 +860,28 @@ export default function SettingsScreen() {
                     ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
                     : <View style={styles.radioOff} />}
                 </TouchableOpacity>
-                {i < DISPLAY_MODES.length - 1 && <View style={styles.separator} />}
               </View>
             ))}
-          </View>
+          </CollapsibleRow>
+          <CollapsibleRow title={t('offline.sectionTitle')} icon="cloud-download-outline" subtitle={t('settings.group.offlineSub')} items={offlineItems} />
         </View>
-        <Section title={t('offline.sectionTitle')} items={offlineItems} />
-        <Section title={t('settings.section.account')} items={accountItems} />
-        <Section title={t('settings.section.notifications')} items={notifItems} />
-        <Section title={t('settings.section.ads')} items={adItems} />
-        <Section title={t('settings.section.about')} items={aboutItems} />
+
+        {/* Account — every account control grouped into collapsible buttons that
+            share one card, so the long list tucks away without a stack of floats. */}
+        <View style={styles.sectionCard}>
+          <CollapsibleRow title={t('settings.group.profile')} icon="person-outline" subtitle={t('settings.group.profileSub')} items={profileItems} divider />
+          <CollapsibleRow title={t('settings.group.money')} icon="wallet-outline" subtitle={t('settings.group.moneySub')} items={moneyItems} divider />
+          <CollapsibleRow title={t('settings.group.content')} icon="grid-outline" subtitle={t('settings.group.contentSub')} items={contentItems} divider />
+          <CollapsibleRow title={t('settings.group.creator')} icon="stats-chart-outline" subtitle={t('settings.group.creatorSub')} items={creatorItems} divider />
+          <CollapsibleRow title={t('settings.group.privacy')} icon="shield-checkmark-outline" subtitle={t('settings.group.privacySub')} items={privacyItems} />
+        </View>
+
+        {/* Notifications + About — the two informational buttons share a card. */}
+        <View style={styles.sectionCard}>
+          <CollapsibleRow title={t('settings.section.notifications')} icon="notifications-outline" subtitle={t('settings.group.notificationsSub')} items={notifItems} divider />
+          <CollapsibleRow title={t('settings.section.about')} icon="information-circle-outline" subtitle={t('settings.group.aboutSub')} items={aboutItems} />
+        </View>
+
         <Section title="" items={dangerItems} />
 
         <Text style={styles.madeWith}>{t('settings.madeWith')}</Text>
@@ -950,15 +997,18 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
 
   row: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: SPACING.sm + 4, paddingHorizontal: SPACING.md, gap: SPACING.md,
+    paddingVertical: SPACING.sm + 6, paddingHorizontal: SPACING.md, gap: SPACING.md,
   },
   rowIcon: {
     width: 28, alignItems: 'center', justifyContent: 'center',
   },
   rowContent: { flex: 1 },
-  rowLabel: { color: c.text, fontSize: 15, fontWeight: '600' },
+  rowLabel: { color: c.text, fontSize: 16, fontWeight: '600' },
   rowLabelDestructive: { color: c.error },
   rowSubtitle: { color: c.textSecondary, fontSize: 12, marginTop: 1 },
+  // A collapsible row's expanded body sits on a faintly recessed panel (one step
+  // off the card colour) so the nested rows read as contents of the button above.
+  subPanel: { backgroundColor: c.surface },
 
   // Promotion tools — three STANDALONE cards (each owns its rounding; the
   // stack only spaces them), by visual weight: Premium is the flagship —

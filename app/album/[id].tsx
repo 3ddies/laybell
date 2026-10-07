@@ -23,7 +23,7 @@ import ReorderableList from '../../components/ReorderableList';
 import {
   type Album, type AlbumTrack, albumCover, trackTitle,
   fetchAlbum, fetchAddableTracks, addTrack, removeTrack, renameTrack,
-  renameAlbum, reorderTracks, deleteAlbum,
+  renameAlbum, reorderTracks, deleteAlbum, setAlbumFeatured, fetchIsLaybellAdmin,
 } from '../../lib/albums';
 
 // Album runtime in whole minutes. Deliberately coarse: "38 min" is what anyone
@@ -57,6 +57,8 @@ const DRAG_ROW_H = 64;
 // FlatList. Drag is initiated from a dedicated ≡ handle, so a hold anywhere else
 // never hijacks a scroll.
 
+const GOLD = '#FFC53D'; // the feature-pin gold (matches the story pinned-comment pin)
+
 export default function AlbumScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -75,6 +77,7 @@ export default function AlbumScreen() {
   const [tracks, setTracks] = useState<AlbumTrack[]>([]);
   const [loading, setLoading] = useState(true);
   const [uid, setUid] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false); // Laybell admin → can pin to Hottest
   const [editing, setEditing] = useState(false);
   const [picker, setPicker] = useState<any[] | null>(null);   // non-null = the add sheet is open
   const [renaming, setRenaming] = useState<{ postId: string | null; value: string } | null>(null);
@@ -82,6 +85,7 @@ export default function AlbumScreen() {
   const load = useCallback(async () => {
     const [{ data: { user } }, a] = await Promise.all([supabase.auth.getUser(), fetchAlbum(String(id))]);
     setUid(user?.id ?? null);
+    if (user?.id) fetchIsLaybellAdmin(user.id).then(setIsAdmin).catch(() => {});
     setAlbum(a);
     setTracks(a?.tracks ?? []);
     if (a) {
@@ -97,6 +101,16 @@ export default function AlbumScreen() {
 
   const isOwn = !!album && album.user_id === uid;
   const cover = album ? albumCover({ ...album, tracks }) : null;
+
+  // Admin pin: feature / unfeature this album in the Music tab's Hottest-Album slot
+  // (exclusive — the RPC clears any other). Optimistic; reverts if the write fails.
+  async function togglePin() {
+    if (!album) return;
+    const next = !album.featured;
+    setAlbum((a) => (a ? { ...a, featured: next } : a));
+    try { await setAlbumFeatured(String(id), next); }
+    catch { setAlbum((a) => (a ? { ...a, featured: !next } : a)); }
+  }
   const runtime = tracks.reduce((n, t) => n + (t.post?.duration_seconds ?? 0), 0);
 
   const queue = () => tracks
@@ -234,11 +248,22 @@ export default function AlbumScreen() {
             <Ionicons name="chevron-back" size={22} color={colors.primaryLight} />
             <Text style={styles.backText}>{t('common.back')}</Text>
           </TouchableOpacity>
-          {isOwn && !loading && !!album && (
-            <TouchableOpacity onPress={() => setEditing((e) => !e)} hitSlop={8}>
-              <Text style={styles.editBtn}>{editing ? t('common.done') : t('common.edit')}</Text>
-            </TouchableOpacity>
-          )}
+          <View style={styles.topBarRight}>
+            {/* Laybell-admin feature pin — puts this album in the Hottest-Album slot. */}
+            {isAdmin && !loading && !!album && (
+              <TouchableOpacity style={styles.featureBtn} onPress={togglePin} hitSlop={8} activeOpacity={0.8}>
+                <Ionicons name={album.featured ? 'pin' : 'pin-outline'} size={15} color={album.featured ? GOLD : colors.textSecondary} />
+                <Text style={[styles.featureBtnText, album.featured && { color: GOLD }]}>
+                  {album.featured ? t('album.featured') : t('album.feature')}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {isOwn && !loading && !!album && (
+              <TouchableOpacity onPress={() => setEditing((e) => !e)} hitSlop={8}>
+                <Text style={styles.editBtn}>{editing ? t('common.done') : t('common.edit')}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
         <View style={styles.divider} />
 
@@ -486,6 +511,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   backBtn: { flexDirection: 'row', alignItems: 'center' },
   backText: { color: colors.primaryLight, fontSize: 16, marginLeft: 2 },
   editBtn: { color: colors.primaryLight, fontSize: 16, fontWeight: '700' },
+  topBarRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
+  featureBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  featureBtnText: { color: colors.textSecondary, fontSize: 14, fontWeight: '700' },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
   skeletonBody: { flex: 1 },
   center: { alignItems: 'center', justifyContent: 'center', padding: SPACING.xl, gap: SPACING.sm },

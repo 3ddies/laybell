@@ -45,23 +45,24 @@ const DARK = {
   ...BRAND,
 };
 
-// A near-black graphite (but not the pure black of Dark), now with a faint WARM
-// bias instead of a cold pure-neutral so the surfaces read matte rather than
-// glossy. Same darkness as before — crisp whites + lighter borders keep surfaces
-// and text separating sharply. Still sits clearly above Dark's #090909.
+// A lighter, neutral graphite — a mid-dark grey that sits WELL above Dark's
+// obsidian. It used to read near-black (#161514) despite the "Lighter graphite"
+// label, so this raises the whole ramp to match; the background now lines up with
+// the Settings swatch (#2B2B2F). Crisp white text, with surfaces and borders
+// stepping up in clear, even increments so cards and dividers separate sharply.
 const GREY = {
-  background: '#161514',
-  surface: '#1F1E1C',
-  surfaceLight: '#292826',
-  surfaceElevated: '#322F2D',
-  border: '#413F3B',
-  borderStrong: '#5C5952',
+  background: '#2B2B2F',
+  surface: '#34343A',
+  surfaceLight: '#3E3E45',
+  surfaceElevated: '#48484F',
+  border: '#56565E',
+  borderStrong: '#6F6F79',
   communityTint: '#8B7CF6',
-  borderSubtle: '#2C2A28',
+  borderSubtle: '#3A3A41',
   text: '#FFFFFF',
-  textSecondary: '#CECECE',
-  textMeta: '#999999',
-  textTertiary: '#6A6A6A',
+  textSecondary: '#D5D5DA',
+  textMeta: '#A3A3AA',
+  textTertiary: '#75757C',
   ...BRAND,
 };
 

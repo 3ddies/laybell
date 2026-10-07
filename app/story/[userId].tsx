@@ -17,8 +17,8 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { timeAgo } from '../../lib/timeAgo';
 import {
   fetchStoriesForUsers, recordStoryView, deleteStory, fetchStoryViewerCount, fetchStoryViewers,
-  fetchStoryLiked, setStoryLike, fetchStoryAnalytics, REPOST_MAX_SEC,
-  type Story, type StoryProfile, type StoryGroup, type SourceRect, type StoryViewer, type StoryAnalytics,
+  setStoryLike, fetchStoryLikeEffect, fetchMyStoryLike, setStoryLikeComment, setStoryPinnedComment, fetchStoryAnalytics, REPOST_MAX_SEC,
+  type Story, type StoryProfile, type StoryGroup, type SourceRect, type StoryViewer, type StoryAnalytics, type StoryLikeEffect,
 } from '../../lib/stories';
 import { saveRemoteToLibrary } from '../../lib/saveToLibrary';
 import { reportUser } from '../../lib/postActions';
@@ -41,6 +41,7 @@ import { useAudioControls } from '../../contexts/AudioContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { StorySkeleton, Skeleton } from '../../components/Skeleton';
 import Spinner from '../../components/Spinner';
+import StoryLikeBurst from '../../components/StoryLikeBurst';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 // Insights sheet: the swipeable Viewers/Analytics pager. One page spans the sheet's
@@ -66,6 +67,16 @@ const SWIPE_DIST = SCREEN_W * 0.25;
 // Insights story strip/panel: a short, low threshold — one card is small, so a brief
 // swipe or flick should move exactly one story.
 const INS_SWIPE = 38;
+
+// Where a thread should OPEN: the first story the viewer has not seen (skipping
+// any already watched this session too), or 0 when they're all seen. So tapping a
+// ring resumes at the first NEW story instead of replaying ones already watched;
+// a fully-seen ring (a deliberate re-watch) still starts at the top.
+function firstUnseenIndex(g: StoryGroup | null | undefined, watched?: Set<string>): number {
+  if (!g) return 0;
+  const i = g.stories.findIndex((s) => !s.seen && !watched?.has(s.id));
+  return i >= 0 ? i : 0;
+}
 
 export default function StoryViewerScreen() {
   const { colors } = useTheme();
@@ -136,11 +147,29 @@ export default function StoryViewerScreen() {
     const i = groups.findIndex((g) => g.user.id === userId);
     return i >= 0 ? i : 0;
   });
-  const [storyIndex, setStoryIndex] = useState(0);
+  const [storyIndex, setStoryIndex] = useState(() => {
+    // Open on the first UNSEEN story of the tapped user (from the seeded tray),
+    // not story 0 — so you resume at new content instead of re-watching old ones.
+    const i = groups.findIndex((g) => g.user.id === userId);
+    return firstUnseenIndex(groups[i >= 0 ? i : 0]);
+  });
   // Did we open from seeded tray data? If so the background fetch must not re-position us.
   const didSeedRef = useRef(groups.length > 0);
   const [paused, setPaused] = useState(false);
   const [viewerCount, setViewerCount] = useState<number | null>(null);
+  // The CURRENT story's like effect — total count (scales the hearts) + a few likers
+  // (avatar + optional public comment, the pics/bubbles that flash by). Drives the fun
+  // effect EVERY viewer sees. Privacy-safe (no names/ids): who liked stays owner-only.
+  const [likeEffect, setLikeEffect] = useState<StoryLikeEffect>({ count: 0, likers: [] });
+  // The current (non-owner) viewer's OWN public like comment on this story, if any —
+  // drives the "Add a comment" vs "Edit comment" chip + prefills the composer.
+  const [myComment, setMyComment] = useState<string | null>(null);
+  // Optional public "like comment" composer (shown after you like; saves to your like).
+  const [commenting, setCommenting] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [sendingComment, setSendingComment] = useState(false);
+  const [commentFlash, setCommentFlash] = useState(false);
+  const commentAnim = useRef(new Animated.Value(0)).current;
   // Own-story viewers sheet (who watched this story; likers ride on top).
   const [showViewers, setShowViewers] = useState(false);
   // Bottom-right "⋯" options menu — a Laybell-styled slide-up (not a system sheet).
@@ -240,6 +269,18 @@ export default function StoryViewerScreen() {
   useEffect(() => {
     Animated.timing(pillIn, { toValue: 1, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
   }, [pillIn]);
+  // Gentle "throb" for like-comments in the viewers/analytics sheet — they grow and
+  // shrink a touch for a fun feel. One shared value drives every comment row in sync.
+  const commentThrob = useRef(new Animated.Value(0)).current;
+  const commentThrobScale = useRef(commentThrob.interpolate({ inputRange: [0, 1], outputRange: [1, 1.05] })).current;
+  useEffect(() => {
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(commentThrob, { toValue: 1, duration: 650, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(commentThrob, { toValue: 0, duration: 650, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [commentThrob]);
   // Grey loading cover's opacity: 1 = opaque (still loading), fades to 0 when this
   // story's first frame is ready. Raised only AFTER a short beat (coverTimerRef) so a
   // loaded/cached story shows instantly instead of flashing the placeholder.
@@ -277,6 +318,18 @@ export default function StoryViewerScreen() {
       cardW, cardH,
     };
   }, [story?.id, story?.stickers, story?.shared_post_id, story?.aspect_ratio, insets.top, insets.bottom]);
+
+  // A PLAIN story (not a reshared post) can now carry its own background + pen doodle
+  // too (authored in the regular story editor). Reshares handle these inside `composed`
+  // above, so this only resolves them for non-reshares.
+  const plainExtras = useMemo(() => {
+    if (story?.shared_post_id) return { bg: null as StoryBg | null, strokes: null as DrawStroke[] | null };
+    const layers = (story?.stickers ?? []) as any[];
+    return {
+      bg: (layers.find((l) => l?.kind === 'bg')?.background ?? null) as StoryBg | null,
+      strokes: (layers.find((l) => l?.kind === 'draw')?.strokes ?? null) as DrawStroke[] | null,
+    };
+  }, [story?.id, story?.stickers, story?.shared_post_id]);
 
   // Render-derived so a story flip re-raises the grey cover in the SAME commit:
   // "ready" once THIS story's media has painted — OR once it painted earlier this session
@@ -332,8 +385,8 @@ export default function StoryViewerScreen() {
       // story, and resetting here would yank the viewer back if they'd started swiping.
       if (!didSeedRef.current) {
         const startIdx = Math.max(0, fetched.findIndex((g) => g.user.id === userId));
-        setUserIndex(startIdx === -1 ? 0 : startIdx);
-        setStoryIndex(0);
+        setUserIndex(startIdx);
+        setStoryIndex(firstUnseenIndex(fetched[startIdx], viewedRef.current));
       }
       setLoading(false);
     })();
@@ -396,22 +449,26 @@ export default function StoryViewerScreen() {
     setPaused(false);
     stopProgressAnim();
     progressAnim.setValue(0);
-    if (currentUserId && !archived) recordStoryView(story.id, currentUserId).catch(() => {});
-
-    // Once every story from this author has been watched (this session or earlier),
-    // turn their ring back to normal immediately — no wait on the close-time refetch.
-    viewedRef.current.add(story.id);
-    const g = groupsRef.current[posRef.current.userIndex];
-    if (g && !isOwn && g.stories.every((s) => s.seen || viewedRef.current.has(s.id))) {
-      markSeen(g.user.id, g.stories.map((s) => s.id));
-    }
+    // The view-record + "whole thread seen → flip the ring to seen" live in a
+    // dedicated effect below that ALSO keys on currentUserId — recording here,
+    // where the auth id is still null on a fresh open, skipped the FIRST story's
+    // view every time, so a story you'd already watched kept ringing as unseen
+    // ("brand new") on the grid.
 
     setViewerCount(null);
     setShowViewers(false);
     sheetY.setValue(INSIGHTS_SHEET_H);
     setLiked(false);
-    if (isOwn) fetchStoryViewerCount(story.id).then(setViewerCount).catch(() => {});
-    else if (currentUserId) fetchStoryLiked(story.id, currentUserId).then(setLiked).catch(() => {});
+    setLikeEffect({ count: 0, likers: [] });
+    setMyComment(null);
+    setCommenting(false);
+    setCommentText('');
+    // The viewer count, your like state, and the likers are fetched in the
+    // dedicated effect below — which ALSO keys on currentUserId, so a reopened
+    // (already-liked) story gets its heart/likes back even though the auth id
+    // resolves a beat AFTER this story-change effect first runs. (Fetching here,
+    // where currentUserId can still be null on a fresh open, was why the heart
+    // vanished on leave-and-return.)
 
     // Warm the neighbor images (next story of this user + first story of the next
     // user) so a flip usually lands on an already-decoded frame. The grey cover
@@ -437,6 +494,51 @@ export default function StoryViewerScreen() {
     return () => { stopProgressAnim(); clearTimeout(revealTimer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [story?.id]);
+
+  // Record that the viewer watched THIS story, and flip the author's ring to seen
+  // once their whole thread is watched. Keyed on currentUserId on purpose: on a
+  // fresh open the auth id resolves AFTER the first story shows, so recording this
+  // in the id-only drive effect above skipped the FIRST story's view every time —
+  // which is why a story you'd already watched still rang as unseen ("brand new")
+  // on the grid. Re-running when the id lands records it; the write is idempotent
+  // (composite PK) so a re-run never double-counts. Skipped for an archived replay.
+  useEffect(() => {
+    if (!story || !currentUserId || archived) return;
+    recordStoryView(story.id, currentUserId).catch(() => {});
+    viewedRef.current.add(story.id);
+    const g = groupsRef.current[posRef.current.userIndex];
+    const own = g?.user.id === currentUserId;
+    if (g && !own && g.stories.every((s) => s.seen || viewedRef.current.has(s.id))) {
+      markSeen(g.user.id, g.stories.map((s) => s.id));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [story?.id, currentUserId]);
+
+  // Per-viewer state for THIS story. Split out of the drive effect above and keyed
+  // on currentUserId on purpose: on a fresh open (deep link / reopen) the auth id
+  // resolves AFTER the first story is shown, so fetching in the id-only effect left
+  // an already-liked story reading as unliked (its heart "vanished" on return). Own
+  // story → viewer count; otherwise → your own like state (the heart button). The
+  // fun hearts effect is shown to EVERYONE, so the like effect is fetched for all
+  // viewers (privacy-safe RPC — count + avatar URLs only, never names/ids/a list).
+  useEffect(() => {
+    if (!story || !currentUserId) return;
+    let alive = true;
+    const sid = story.id;
+    const own = group?.user.id === currentUserId;
+    if (own) {
+      fetchStoryViewerCount(sid).then((c) => { if (alive) setViewerCount(c); }).catch(() => {});
+    } else {
+      fetchMyStoryLike(sid, currentUserId).then((r) => {
+        if (!alive) return;
+        setLiked(r.liked);
+        setMyComment(r.comment);
+      }).catch(() => {});
+    }
+    fetchStoryLikeEffect(sid).then((e) => { if (alive) setLikeEffect(e); }).catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [story?.id, currentUserId, group?.user.id, archived]);
 
   // Start the image countdown the moment the image is actually shown (ready), so
   // the visible duration is the full IMAGE_DURATION regardless of load time.
@@ -536,7 +638,7 @@ export default function StoryViewerScreen() {
     const g = groupsRef.current[ui];
     if (!g) return;
     if (si < g.stories.length - 1) { resetProgress(); setStoryIndex(si + 1); return; }
-    if (ui < groupsRef.current.length - 1) { resetProgress(); setUserIndex(ui + 1); setStoryIndex(0); return; }
+    if (ui < groupsRef.current.length - 1) { resetProgress(); setUserIndex(ui + 1); setStoryIndex(firstUnseenIndex(groupsRef.current[ui + 1], viewedRef.current)); return; }
     dismiss();
   }
 
@@ -560,7 +662,7 @@ export default function StoryViewerScreen() {
   // ─── horizontal swipe = jump to the next / previous PERSON ───────────────────
   function goNextUser() {
     const { userIndex: ui } = posRef.current;
-    if (ui < groupsRef.current.length - 1) { resetProgress(); setUserIndex(ui + 1); setStoryIndex(0); }
+    if (ui < groupsRef.current.length - 1) { resetProgress(); setUserIndex(ui + 1); setStoryIndex(firstUnseenIndex(groupsRef.current[ui + 1], viewedRef.current)); }
     else dismiss();
   }
   function goPrevUser() {
@@ -894,7 +996,80 @@ export default function StoryViewerScreen() {
     if (!story || !currentUserId || isOwn) return;
     const next = !liked;
     setLiked(next);
+    const myAvatar = (myProfile as any)?.avatar_url ?? null;
+    const myUsername = (myProfile as any)?.username ?? null;
+    if (next) {
+      // Optimistic: your like strengthens the effect + drops your pic (with your
+      // username and existing comment, if any) into the mix right away.
+      setLikeEffect((prev) => ({
+        count: prev.count + 1,
+        likers: [{ id: currentUserId, avatar: myAvatar, username: myUsername, comment: myComment }, ...prev.likers].slice(0, 6),
+      }));
+    } else {
+      setMyComment(null); // unliking removes your like row entirely (comment included)
+    }
     setStoryLike(story.id, currentUserId, next);
+    // Reconcile with the server (true count + ordering, others' likes, your removal).
+    fetchStoryLikeEffect(story.id).then(setLikeEffect).catch(() => {});
+  }
+
+  // Open a liker's profile from the effect (tapping their frozen pic). Mirrors the
+  // header-author tap: stop the fill + push. The viewer's blur/focus effect freezes
+  // the story while you're away and resumes it when you come back.
+  function openLikerProfile(id: string) {
+    if (!id) return;
+    stopProgressAnim();
+    router.push(`/profile/${id}`);
+  }
+
+  // Owner pins / unpins ONE liker's comment on the story whose viewers are shown (the
+  // insights strip's current story). The pinned comment then leads the effect with a
+  // gold pin. Optimistic in the sheet + the per-story cache; if it's the story playing
+  // behind, refresh its live effect so the pin shows immediately.
+  function togglePinComment(v: StoryViewer) {
+    const s = group?.stories[insightsIdx];
+    if (!s || !v.id) return;
+    const nextPinnedId = v.pinned ? null : v.id;
+    setStoryPinnedComment(s.id, nextPinnedId);
+    const mark = (list: StoryViewer[]) => list.map((x) => ({ ...x, pinned: nextPinnedId != null && x.id === nextPinnedId }));
+    setViewers(mark);
+    const cached = insightsCache.current.get(s.id);
+    if (cached) insightsCache.current.set(s.id, { ...cached, viewers: mark(cached.viewers) });
+    if (s.id === story?.id) fetchStoryLikeEffect(s.id).then(setLikeEffect).catch(() => {});
+  }
+
+  // ─── Optional public "like comment" (offered after you like a story) ─────────
+  function openComment() {
+    if (!story || isOwn) return;
+    pause();
+    setCommentText(myComment ?? '');
+    setCommenting(true);
+    commentAnim.setValue(0);
+    Animated.timing(commentAnim, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }
+  function closeComment() {
+    Keyboard.dismiss();
+    Animated.timing(commentAnim, { toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true })
+      .start(() => { setCommenting(false); resume(); });
+  }
+  async function sendComment() {
+    if (!story || !currentUserId || isOwn || sendingComment) return;
+    const text = commentText.trim();
+    setSendingComment(true);
+    try {
+      await setStoryLikeComment(story.id, currentUserId, text);
+      setMyComment(text || null);
+      Keyboard.dismiss();
+      Animated.timing(commentAnim, { toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true })
+        .start(() => { setCommenting(false); resume(); });
+      if (text) { setCommentFlash(true); setTimeout(() => setCommentFlash(false), 1500); }
+      // Reflect it in the public effect right away (its bubble will cycle in).
+      fetchStoryLikeEffect(story.id).then(setLikeEffect).catch(() => {});
+    } catch (e: any) {
+      Alert.alert(t('story.sendFailedTitle'), e?.message ?? t('story.tryAgain'));
+    } finally {
+      setSendingComment(false);
+    }
   }
 
   // ─── Story replies (DM with the story's stillshot attached) ────────────────
@@ -1115,7 +1290,11 @@ export default function StoryViewerScreen() {
                   const bw = fr.w * cs, bh = fr.h * cs;
                   return (
                     <View style={StyleSheet.absoluteFill}>
-                      <ExpoImage source={{ uri: story.media_url }} style={StyleSheet.absoluteFill} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
+                      {plainExtras.bg && plainExtras.bg.type !== 'blur' ? (
+                        <StoryBackground bg={plainExtras.bg} />
+                      ) : (
+                        <ExpoImage source={{ uri: story.media_url }} style={StyleSheet.absoluteFill} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
+                      )}
                       <ExpoImage
                         key={`${story.id}:${reloadTick}`}
                         source={{ uri: story.media_url }}
@@ -1128,6 +1307,7 @@ export default function StoryViewerScreen() {
                             { translateX: (fr.x ?? 0) * SCREEN_W },
                             { translateY: (fr.y ?? 0) * SCREEN_H },
                             { scale: fr.scale ?? 1 },
+                            { rotate: `${fr.rotation ?? 0}deg` },
                           ],
                         }}
                         onLoad={onImgLoad}
@@ -1397,6 +1577,13 @@ export default function StoryViewerScreen() {
               </Animated.View>
             )}
 
+            {/* Pen doodle on a PLAIN story (authored in the regular story editor). */}
+            {plainExtras.strokes && plainExtras.strokes.length > 0 && (
+              <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="none">
+                <StoryDrawRenderer strokes={plainExtras.strokes} frameW={SCREEN_W} frameH={SCREEN_H} />
+              </Animated.View>
+            )}
+
             {/* Own-story footer: viewer count. Live → tap to see WHO watched.
                 Archived replay → count only, read-only (no per-viewer list). */}
             {isOwn && (
@@ -1414,6 +1601,25 @@ export default function StoryViewerScreen() {
                     <Text style={styles.viewersCountNum}>{viewerCount ?? 0}</Text>
                   </TouchableOpacity>
                 )}
+              </Animated.View>
+            )}
+
+            {/* A liked story gets a fun floating-hearts effect in the corner that
+                EVERYONE sees — it grows with the like count and flashes likers'
+                pics by, but carries no names/list and isn't tappable. WHO liked
+                stays private to the owner (via the view-count pill → viewers sheet). */}
+            {likeEffect.count > 0 && (
+              <Animated.View
+                style={[styles.likeBurstWrap, { bottom: insets.bottom + 58, opacity: pillIn }]}
+                pointerEvents="box-none"
+              >
+                <StoryLikeBurst
+                  count={likeEffect.count}
+                  likers={likeEffect.likers}
+                  paused={paused || !isFocused}
+                  storyDurationMs={story.media_type === 'image' ? IMAGE_DURATION_MS : Math.max(5000, (story.duration_seconds ?? 15) * 1000)}
+                  onOpenProfile={openLikerProfile}
+                />
               </Animated.View>
             )}
 
@@ -1454,6 +1660,21 @@ export default function StoryViewerScreen() {
               </View>
             )}
 
+            {/* After you like, offer an optional PUBLIC like comment (edit if you
+                already left one). Centred above the controls, clear of the hearts. */}
+            {!isOwn && !!currentUserId && liked && !commenting && !replying && (
+              <TouchableOpacity
+                style={[styles.commentChip, { bottom: insets.bottom + 54 }]}
+                onPress={openComment}
+                activeOpacity={0.85}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+              >
+                <Ionicons name="chatbubble-ellipses-outline" size={14} color="#141416" />
+                <Text style={styles.commentChipText}>{myComment ? t('story.editLikeComment') : t('story.addLikeComment')}</Text>
+              </TouchableOpacity>
+            )}
+
             {/* Brief confirmation after a reply sends */}
             {sentFlash && (
               <View style={[styles.sentFlash, { bottom: insets.bottom + 60 }]} pointerEvents="none">
@@ -1467,6 +1688,14 @@ export default function StoryViewerScreen() {
               <View style={[styles.sentFlash, { bottom: insets.bottom + 60 }]} pointerEvents="none">
                 <Ionicons name="checkmark-circle" size={16} color="#fff" />
                 <Text style={styles.sentFlashText}>{t('story.savedToPhotos')}</Text>
+              </View>
+            )}
+
+            {/* ...and after a public like comment is saved. */}
+            {commentFlash && (
+              <View style={[styles.sentFlash, { bottom: insets.bottom + 60 }]} pointerEvents="none">
+                <Ionicons name="chatbubble-ellipses" size={15} color="#fff" />
+                <Text style={styles.sentFlashText}>{t('story.likeCommentAdded')}</Text>
               </View>
             )}
 
@@ -1554,6 +1783,52 @@ export default function StoryViewerScreen() {
                 disabled={!replyText.trim() || sendingReply}
               >
                 {sendingReply
+                  ? <ActivityIndicator color="#0a0a0c" size="small" />
+                  : <Ionicons name="arrow-up" size={20} color="#0a0a0c" />}
+              </TouchableOpacity>
+            </Animated.View>
+          </KeyboardAvoidingView>
+        </View>
+      )}
+
+      {/* Public like-comment composer — keyboard-attached, mirrors the reply one; the
+          story stays paused behind the dim until it's sent or dismissed. */}
+      {commenting && (
+        <View style={StyleSheet.absoluteFill}>
+          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.replyOverlay, { opacity: commentAnim }]} />
+          <KeyboardAvoidingView
+            style={StyleSheet.absoluteFill}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <Pressable style={{ flex: 1 }} onPress={closeComment} />
+            <Animated.View
+              style={[
+                styles.replyComposer,
+                {
+                  paddingBottom: SPACING.sm,
+                  opacity: commentAnim,
+                  transform: [{ translateY: commentAnim.interpolate({ inputRange: [0, 1], outputRange: [26, 0] }) }],
+                },
+              ]}
+            >
+              <TextInput
+                style={styles.replyInput}
+                value={commentText}
+                onChangeText={setCommentText}
+                placeholder={t('story.likeCommentPlaceholder')}
+                placeholderTextColor="rgba(255,255,255,0.55)"
+                selectionColor="#FAB525"
+                cursorColor="#FAB525"
+                autoFocus
+                multiline
+                maxLength={140}
+              />
+              <TouchableOpacity
+                style={[styles.replySend, sendingComment && { opacity: 0.4 }]}
+                onPress={sendComment}
+                disabled={sendingComment}
+              >
+                {sendingComment
                   ? <ActivityIndicator color="#0a0a0c" size="small" />
                   : <Ionicons name="arrow-up" size={20} color="#0a0a0c" />}
               </TouchableOpacity>
@@ -1847,13 +2122,34 @@ export default function StoryViewerScreen() {
                             </View>
                           )}
                         </View>
-                        <View style={styles.viewerInfo}>
+                        <View style={styles.viewerNameCol}>
                           <View style={styles.viewerNameRow}>
                             <Text style={styles.viewerName} numberOfLines={1}>{v.display_name || v.username}</Text>
                             <BadgeEmblem profile={v} size={14} />
                           </View>
                           <Text style={styles.viewerHandle} numberOfLines={1}>@{v.username}</Text>
                         </View>
+                        {/* Their public like comment — in the open space to the RIGHT of
+                            the name/username, as a fun throbbing "bubble" line. */}
+                        {!!v.comment && (
+                          <Animated.View style={[styles.viewerComment, { transform: [{ scale: commentThrobScale }] }]}>
+                            <Ionicons name="heart" size={12} color="#F43F5E" />
+                            <Text style={styles.viewerCommentText} numberOfLines={3}>{v.comment}</Text>
+                          </Animated.View>
+                        )}
+                        {/* Pin control — only for commenters; pins this one comment to
+                            lead the story's like effect (gold when pinned). */}
+                        {!!v.comment && (
+                          <TouchableOpacity
+                            style={[styles.pinBtn, v.pinned && styles.pinBtnOn]}
+                            onPress={() => togglePinComment(v)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            accessibilityRole="button"
+                            accessibilityLabel={v.pinned ? t('story.unpinComment') : t('story.pinComment')}
+                          >
+                            <Ionicons name={v.pinned ? 'pin' : 'pin-outline'} size={18} color={v.pinned ? '#1A1206' : 'rgba(255,255,255,0.6)'} />
+                          </TouchableOpacity>
+                        )}
                       </TouchableOpacity>
                     )}
                   />
@@ -1928,6 +2224,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Own-story viewers indicator: just the count, big/bold, bottom-left (no chip, no icon).
   // A soft shadow keeps it legible over bright media now that there's no backing fill.
   viewersCountWrap: { position: 'absolute', left: SPACING.md },
+  // Fun floating-hearts effect (any liked story, every viewer). Right-aligned above
+  // the bottom controls; non-interactive, so it never intercepts a tap/swipe. No
+  // zIndex — like the viewer count it sits under the grey cover during load and
+  // reveals with the story.
+  likeBurstWrap: { position: 'absolute', right: SPACING.md },
   viewersCountNum: {
     color: '#fff', fontSize: 34, fontWeight: '900', letterSpacing: -0.6,
     textShadowColor: 'rgba(0,0,0,0.55)', textShadowRadius: 8, textShadowOffset: { width: 0, height: 1 },
@@ -1963,6 +2264,17 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.25)',
   },
   replyPillText: { color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: '600' },
+  // "Add a comment" chip offered after you like — centred above the controls. White
+  // with black text/icon in every theme (it floats on the story, not on the app bg);
+  // a soft shadow keeps it readable over bright media.
+  commentChip: {
+    position: 'absolute', alignSelf: 'center',
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#fff', borderRadius: 999,
+    paddingHorizontal: 13, paddingVertical: 7,
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+  },
+  commentChipText: { color: '#141416', fontSize: 13, fontWeight: '700' },
   sentFlash: {
     position: 'absolute', alignSelf: 'center',
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -2036,10 +2348,23 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: '#0E0E0E',
   },
-  viewerInfo: { flex: 1 },
+  // Name + @handle column. Shrinks (name ellipsises) so the comment keeps its room.
+  viewerNameCol: { flexShrink: 1 },
   viewerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   viewerName: { color: '#fff', fontSize: 16.5, fontWeight: '700', flexShrink: 1 },
   viewerHandle: { color: 'rgba(255,255,255,0.55)', fontSize: 13.5, marginTop: 2 },
+  // Their public like comment — fills the open space to the RIGHT of the name, a fun
+  // chunky "bubble" line in white (the viewers sheet is a fixed dark panel). Throbs
+  // via commentThrobScale on the Animated.View. minWidth keeps it readable.
+  viewerComment: { flex: 1, minWidth: 90, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  viewerCommentText: { flex: 1, color: '#fff', fontSize: 15, fontWeight: '900', lineHeight: 19, letterSpacing: 0.2 },
+  // Pin control at the right of a commenter's row; gold disc when it's the pinned one.
+  pinBtn: {
+    width: 38, height: 38, borderRadius: 19, marginLeft: SPACING.sm,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  pinBtnOn: { backgroundColor: '#FFC53D' },
   // Insights header: Analytics as a left-corner icon, Viewers as the centered title.
   insightsHeaderRow: { flexDirection: 'row', alignItems: 'center', height: 38 },
   insightsIconBtn: { width: 44, alignItems: 'flex-start', justifyContent: 'center' },

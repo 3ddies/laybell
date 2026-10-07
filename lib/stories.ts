@@ -53,11 +53,11 @@ export type Story = {
 //   • kind:'bg'    — the chosen background behind the post (blurred still / solid /
 //     gradient). Absent = the blurred default.
 //   • kind:'draw'  — pen strokes, normalised to the frame.
-//   • kind:'frame' — how a plain library PHOTO is framed (drag/pinch): x/y are the
-//     translate as a FRACTION of the frame, scale is relative to a cover fit, and
-//     w/h are the source image's pixels. The viewer redraws the photo with this
-//     transform over a blurred backdrop, so a zoomed-OUT photo shows the backdrop
-//     around it. Absent → the photo is shown plain cover (unchanged).
+//   • kind:'frame' — how a plain library PHOTO is framed (drag/pinch/ROTATE): x/y are
+//     the translate as a FRACTION of the frame, scale is relative to a cover fit,
+//     rotation is in degrees (optional, 0 when absent), and w/h are the source image's
+//     pixels. The viewer redraws the photo with this transform over a blurred backdrop,
+//     so a zoomed-OUT photo shows the backdrop around it. Absent → plain cover (unchanged).
 // Every field is optional so a plain text sticker (the only kind before this) still
 // validates and renders exactly as before.
 export type StorySticker = {
@@ -648,17 +648,25 @@ export async function fetchStoryViewerCount(storyId: string): Promise<number> {
 }
 
 // Who watched a story (owner-facing list), likers sorted to the top with a
-// `liked` flag. Manual two-step join — viewer_id references auth.users, so
-// profiles are fetched separately. Degrades gracefully if story_likes.sql
-// hasn't been applied (likes just read as empty).
-export type StoryViewer = StoryProfile & { liked?: boolean };
+// `liked` flag and their optional public `comment`. Manual two-step join —
+// viewer_id references auth.users, so profiles are fetched separately. Degrades
+// gracefully if story_likes.sql hasn't been applied (likes just read as empty).
+export type StoryViewer = StoryProfile & { liked?: boolean; comment?: string | null; pinned?: boolean };
 
 export async function fetchStoryViewers(storyId: string): Promise<StoryViewer[]> {
-  const [viewsRes, likesRes] = await Promise.all([
+  const [viewsRes, likesRes, storyRes] = await Promise.all([
     supabase.from('story_views').select('viewer_id').eq('story_id', storyId),
-    supabase.from('story_likes').select('user_id').eq('story_id', storyId),
+    supabase.from('story_likes').select('user_id, comment').eq('story_id', storyId),
+    supabase.from('stories').select('pinned_like_by').eq('id', storyId).maybeSingle(),
   ]);
   const likedIds = new Set((likesRes.data ?? []).map((l: any) => l.user_id));
+  // user_id -> their public like comment (trimmed; empty → none).
+  const commentById = new Map<string, string>();
+  (likesRes.data ?? []).forEach((l: any) => {
+    const c = (l.comment ?? '').trim();
+    if (c) commentById.set(l.user_id, c);
+  });
+  const pinnedId = (storyRes.data as any)?.pinned_like_by ?? null;
   const ids = Array.from(new Set([
     ...(viewsRes.data ?? []).map((v: any) => v.viewer_id),
     ...likedIds, // a liker should appear even if their view write is lagging
@@ -670,7 +678,7 @@ export async function fetchStoryViewers(storyId: string): Promise<StoryViewer[]>
     .in('id', ids);
   // Viewers who have since hidden their account read as "Hidden account".
   return ((profiles ?? []) as StoryProfile[])
-    .map((p) => ({ ...maskHiddenProfile(p as any), liked: likedIds.has(p.id) }))
+    .map((p) => ({ ...maskHiddenProfile(p as any), liked: likedIds.has(p.id), comment: commentById.get(p.id) ?? null, pinned: !!pinnedId && p.id === pinnedId }))
     .sort((a, b) => Number(!!b.liked) - Number(!!a.liked));
 }
 
@@ -736,5 +744,78 @@ export async function setStoryLike(storyId: string, userId: string, liked: boole
     } else {
       await supabase.from('story_likes').delete().eq('story_id', storyId).eq('user_id', userId);
     }
+  } catch {}
+}
+
+// The fun like effect every viewer sees on a liked story: the full like `count`
+// (so the floating-hearts effect can grow stronger with it) + a few newest likers'
+// avatar URLs (profile pics that flash by in the mix). Backed by a privacy-safe
+// SECURITY DEFINER RPC (story_like_effect, supabase/sql/story_like_effect.sql) that
+// returns NO user ids and NO usernames — so a non-owner sees faces drift past but
+// can't read a name or tap through, and there's no list. The owner's full who-liked
+// roster stays the RLS-gated path (fetchStoryViewers, likers sorted on top). Returns
+// an empty effect if the RPC errors / isn't applied, so it just doesn't show.
+// One liker in the effect: their id (to open their profile on tap), avatar URL (may
+// be null → default), username, optional PUBLIC comment, and whether the owner
+// PINNED their comment (shows first, with a gold pin).
+export type StoryLiker = { id: string | null; avatar: string | null; username: string | null; comment: string | null; pinned?: boolean };
+export type StoryLikeEffect = { count: number; likers: StoryLiker[] };
+
+export async function fetchStoryLikeEffect(storyId: string): Promise<StoryLikeEffect> {
+  try {
+    const { data, error } = await supabase.rpc('story_like_effect', { p_story_id: storyId });
+    if (error || !data) return { count: 0, likers: [] };
+    const d = data as any;
+    const likers: StoryLiker[] = Array.isArray(d.likers)
+      ? d.likers.map((l: any) => ({
+          id: typeof l?.id === 'string' ? l.id : null,
+          avatar: typeof l?.avatar === 'string' ? l.avatar : null,
+          username: typeof l?.username === 'string' ? l.username : null,
+          comment: typeof l?.comment === 'string' ? l.comment : null,
+          pinned: l?.pinned === true,
+        }))
+      : [];
+    return { count: Number(d.count) || 0, likers };
+  } catch {
+    return { count: 0, likers: [] };
+  }
+}
+
+// Pin (or unpin, with null) ONE liker's comment on a story. Owner-only in practice —
+// the stories UPDATE policy is auth.uid() = user_id, so a non-owner's write is a
+// no-op. One pinned per story (this just overwrites the single column).
+export async function setStoryPinnedComment(storyId: string, likerUserId: string | null): Promise<void> {
+  try {
+    await supabase.from('stories').update({ pinned_like_by: likerUserId }).eq('id', storyId);
+  } catch {}
+}
+
+// The current user's own like on a story: whether they liked it + their optional
+// public comment (so the composer can prefill and the chip can say "Edit"). RLS lets
+// a liker read their own row.
+export async function fetchMyStoryLike(storyId: string, userId: string): Promise<{ liked: boolean; comment: string | null }> {
+  try {
+    const { data } = await supabase
+      .from('story_likes')
+      .select('comment')
+      .eq('story_id', storyId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    return { liked: !!data, comment: ((data as any)?.comment ?? null) || null };
+  } catch {
+    return { liked: false, comment: null };
+  }
+}
+
+// Set / edit / clear the current user's PUBLIC like comment. Upsert so it still works
+// if the like row isn't there yet (needs the insert + update policies in
+// story_like_effect.sql). An empty string clears it back to a plain like.
+export async function setStoryLikeComment(storyId: string, userId: string, comment: string): Promise<void> {
+  try {
+    const trimmed = comment.trim();
+    await supabase.from('story_likes').upsert(
+      { story_id: storyId, user_id: userId, comment: trimmed || null },
+      { onConflict: 'story_id,user_id' },
+    );
   } catch {}
 }

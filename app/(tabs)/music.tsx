@@ -826,7 +826,7 @@ export default function MusicScreen() {
     try {
       const { data: albumsData } = await supabase
         .from('albums')
-        .select('id, user_id, title, cover_url, updated_at, album_tracks(position, posts(cover_url, stream_count, archived_at))')
+        .select('id, user_id, title, cover_url, featured, updated_at, album_tracks(position, posts(cover_url, stream_count, archived_at))')
         .limit(200);
       if (!albumsData || albumsData.length === 0) { setHotAlbums([]); return; }
 
@@ -839,7 +839,7 @@ export default function MusicScreen() {
             .sort((x, y) => x.position - y.position);
           const streams = tracks.reduce((s, at) => s + (at.posts?.stream_count ?? 0), 0);
           const cover = a.cover_url ?? tracks.find((at) => at.posts?.cover_url)?.posts?.cover_url ?? null;
-          return { id: a.id, user_id: a.user_id, title: a.title, cover, streams, trackCount: tracks.length, updated_at: a.updated_at };
+          return { id: a.id, user_id: a.user_id, title: a.title, cover, streams, trackCount: tracks.length, updated_at: a.updated_at, featured: !!a.featured };
         })
         .filter((a) => a.trackCount > 0 && !blockedIdsRef.current.has(a.user_id));
       if (ranked.length === 0) { setHotAlbums([]); return; }
@@ -855,7 +855,10 @@ export default function MusicScreen() {
       const hot = ranked
         .filter((a) => profMap[a.user_id] && !profMap[a.user_id].hidden)
         .map((a) => ({ ...a, artist: profMap[a.user_id] }))
-        .sort((x, y) => (y.streams - x.streams)
+        // An admin-FEATURED album leads (the manual Hottest-Album pin), then by streams,
+        // then recency.
+        .sort((x, y) => (Number(!!y.featured) - Number(!!x.featured))
+          || (y.streams - x.streams)
           || (new Date(y.updated_at).getTime() - new Date(x.updated_at).getTime()))
         .slice(0, 12);
       setHotAlbums(hot);
@@ -1339,10 +1342,10 @@ export default function MusicScreen() {
                    when none qualify. — */}
             {hotAlbums.length > 0 && (
               <>
-                {/* Singular superlative when only the one big album is showcased
-                    (<5 qualifying); the plural rail keeps "Hot Albums". */}
-                <Text style={styles.discoverSectionTitleLg}>{t(hotAlbums.length < 5 ? 'music.hottestAlbum' : 'music.hotAlbums')}</Text>
-                {hotAlbums.length < 5 ? (
+                {/* Big "Hottest Album" showcase when <5 qualify OR an album is pinned
+                    (admin feature) — the pin always takes the hero; else the plural rail. */}
+                <Text style={styles.discoverSectionTitleLg}>{t((hotAlbums.length < 5 || hotAlbums[0]?.featured) ? 'music.hottestAlbum' : 'music.hotAlbums')}</Text>
+                {(hotAlbums.length < 5 || hotAlbums[0]?.featured) ? (
                   <TouchableOpacity
                     activeOpacity={0.92}
                     style={styles.hotAlbumBig}

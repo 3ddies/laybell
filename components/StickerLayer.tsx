@@ -1,8 +1,9 @@
-import { useRef, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import {
   Animated, PanResponder, Platform, StyleSheet, Text, View,
   type GestureResponderEvent, type TextStyle, type ViewStyle,
 } from 'react-native';
+import { selection } from '../lib/haptics';
 
 // Multiple draggable/pinch-resizable text + emoji stickers over story media,
 // managed by a SINGLE full-screen gesture layer:
@@ -238,6 +239,8 @@ export const captionStickerTextStyle = {
 };
 
 const NEAR_PX = 140; // a touch within this of a sticker's center "grabs" it
+const SNAP_PX = 8;   // within this of the frame's center, a sticker snaps there (guide + tick)
+const ROT_SNAP_DEG = 7; // within this of a 90° multiple while rotating, it snaps flat (tick)
 
 type Anim = { pan: Animated.ValueXY; scale: Animated.Value; rot: Animated.Value };
 type Cur = { x: number; y: number; scale: number; rotation: number }; // pan offset (px) from frame center
@@ -288,13 +291,18 @@ export default function StickerLayer({
   // so the host can pan/zoom the media under the stickers. Deltas are from the gesture
   // start (dx/dy in px, scale as a ratio). Absent → old behaviour (a drag anywhere
   // moves the nearest sticker). A tap on empty still adds a sticker.
-  onPhotoGesture?: (e: { phase: 'move' | 'end'; dx: number; dy: number; scale: number }) => void;
+  onPhotoGesture?: (e: { phase: 'move' | 'end'; dx: number; dy: number; scale: number; rotation: number }) => void;
 }) {
   const animRef = useRef<Record<string, Anim>>({});
   const curRef = useRef<Record<string, Cur>>({});
   // Each sticker's laid-out size before scale and rotation, for `constrain`.
   const sizeRef = useRef<Record<string, { w: number; h: number }>>({});
   const constrainRef = useRef(constrain); constrainRef.current = constrain;
+  // Center-alignment guides (Instagram-style): while a sticker is dragged, when its
+  // centre nears the frame's it snaps exactly there, a thin guide line shows, and a
+  // subtle selection tick fires once on entry. `snapPrev` debounces the tick/guide.
+  const [guide, setGuide] = useState({ v: false, h: false });
+  const snapPrev = useRef({ x: false, y: false, flat: false });
 
   function getAnim(s: Sticker): Anim {
     let a = animRef.current[s.id];
@@ -324,9 +332,9 @@ export default function StickerLayer({
   // delta committed before the last finger-count change; `photoRef` is this
   // segment's baseline; `photoLast` is the latest reported (reused on release).
   const bg = useRef(false);
-  const photoAcc = useRef({ dx: 0, dy: 0, scale: 1 });
-  const photoRef = useRef({ cx: 0, cy: 0, dist: 0 });
-  const photoLast = useRef({ dx: 0, dy: 0, scale: 1 });
+  const photoAcc = useRef({ dx: 0, dy: 0, scale: 1, rot: 0 });
+  const photoRef = useRef({ cx: 0, cy: 0, dist: 0, angle: 0 });
+  const photoLast = useRef({ dx: 0, dy: 0, scale: 1, rotation: 0 });
 
   // The host's limits on a live placement (px offsets from the frame's centre).
   function fit(id: string, cur: Cur) {
@@ -370,6 +378,9 @@ export default function StickerLayer({
   // End of a gesture (last finger up, or the system terminated it). A tap edits
   // the nearest sticker / creates one in open area; a drag commits the new placement.
   function endGesture() {
+    // Drop any center guide + reset the snap latches on release/terminate.
+    snapPrev.current = { x: false, y: false, flat: false };
+    setGuide((g) => (g.v || g.h ? { v: false, h: false } : g));
     if (bg.current) {
       bg.current = false;
       // A tap on open media still adds a sticker; a drag/pinch finishes the photo move.
@@ -418,10 +429,10 @@ export default function StickerLayer({
         bg.current = !!cbRef.current.onPhotoGesture && !nearTap.current;
         if (bg.current) {
           active.current = null;
-          photoAcc.current = { dx: 0, dy: 0, scale: 1 };
-          photoLast.current = { dx: 0, dy: 0, scale: 1 };
+          photoAcc.current = { dx: 0, dy: 0, scale: 1, rot: 0 };
+          photoLast.current = { dx: 0, dy: 0, scale: 1, rotation: 0 };
           const p0 = touches.length >= 2 ? pinch(touches) : { dist: 0, angle: 0 };
-          photoRef.current = { cx: c.x, cy: c.y, dist: p0.dist };
+          photoRef.current = { cx: c.x, cy: c.y, dist: p0.dist, angle: p0.angle };
           prevCount.current = touches.length;
         } else {
           active.current = nearest;
@@ -440,24 +451,30 @@ export default function StickerLayer({
           // fall through to "add text". (A pinch barely moves the centroid, so the
           // 5px check above won't catch it.)
           if (touches.length >= 2) moved.current = true;
-          // Reposition/zoom the photo. Accumulate across finger-count changes so that
-          // adding or lifting a finger never jumps the image.
+          // Reposition / zoom / ROTATE the photo. Accumulate across finger-count
+          // changes so adding or lifting a finger never jumps the image.
+          const two = touches.length >= 2;
+          const pg = two ? pinch(touches) : { dist: 0, angle: 0 };
           if (touches.length !== prevCount.current) {
             photoAcc.current.dx += c.x - photoRef.current.cx;
             photoAcc.current.dy += c.y - photoRef.current.cy;
-            if (photoRef.current.dist > 0 && touches.length >= 2) {
-              photoAcc.current.scale *= pinch(touches).dist / photoRef.current.dist;
+            if (photoRef.current.dist > 0 && two) {
+              photoAcc.current.scale *= pg.dist / photoRef.current.dist;
+              photoAcc.current.rot += pg.angle - photoRef.current.angle;
             }
-            const pr = touches.length >= 2 ? pinch(touches) : { dist: 0, angle: 0 };
-            photoRef.current = { cx: c.x, cy: c.y, dist: pr.dist };
+            photoRef.current = { cx: c.x, cy: c.y, dist: pg.dist, angle: pg.angle };
             prevCount.current = touches.length;
           }
           const dx = photoAcc.current.dx + (c.x - photoRef.current.cx);
           const dy = photoAcc.current.dy + (c.y - photoRef.current.cy);
           let sc = photoAcc.current.scale;
-          if (photoRef.current.dist > 0 && touches.length >= 2) sc *= pinch(touches).dist / photoRef.current.dist;
-          photoLast.current = { dx, dy, scale: sc };
-          cbRef.current.onPhotoGesture?.({ phase: 'move', dx, dy, scale: sc });
+          let rot = photoAcc.current.rot;
+          if (photoRef.current.dist > 0 && two) {
+            sc *= pg.dist / photoRef.current.dist;
+            rot += pg.angle - photoRef.current.angle;
+          }
+          photoLast.current = { dx, dy, scale: sc, rotation: rot };
+          cbRef.current.onPhotoGesture?.({ phase: 'move', dx, dy, scale: sc, rotation: rot });
           return;
         }
 
@@ -480,7 +497,22 @@ export default function StickerLayer({
           nr = base.current.rotation + (p.angle - base.current.angle);
           moved.current = true;
         }
-        cur.x = nx; cur.y = ny; cur.scale = ns; cur.rotation = nr;
+        // Snap aids (Instagram-style spacing help): centre on X, centre on Y, and
+        // FLAT (nearest 90° while rotating). Each pins the element + surfaces its
+        // guide / straightens it; ONE tick fires even if several lock in a frame.
+        let fr = nr;
+        let nearFlat = false;
+        if (touches.length >= 2 && base.current.dist > 0) {
+          const target = Math.round(nr / 90) * 90;
+          if (Math.abs(nr - target) <= ROT_SNAP_DEG) { fr = target; nearFlat = true; }
+        }
+        const nearX = Math.abs(nx) <= SNAP_PX;
+        const nearY = Math.abs(ny) <= SNAP_PX;
+        const entered = (nearX && !snapPrev.current.x) || (nearY && !snapPrev.current.y) || (nearFlat && !snapPrev.current.flat);
+        if (entered) selection();
+        if (snapPrev.current.x !== nearX || snapPrev.current.y !== nearY) setGuide({ v: nearX, h: nearY });
+        snapPrev.current = { x: nearX, y: nearY, flat: nearFlat };
+        cur.x = nearX ? 0 : nx; cur.y = nearY ? 0 : ny; cur.scale = ns; cur.rotation = fr;
         fit(id, cur);
         a.pan.setValue({ x: cur.x, y: cur.y }); a.scale.setValue(cur.scale); a.rot.setValue(cur.rotation);
       },
@@ -491,6 +523,10 @@ export default function StickerLayer({
 
   return (
     <View style={StyleSheet.absoluteFill} {...responder.panHandlers}>
+      {/* Center-alignment guides — a thin line through the frame's centre on the
+          axis the active sticker has snapped to. Behind the stickers, non-interactive. */}
+      {guide.v && <View pointerEvents="none" style={[styles.guideV, { left: frameW / 2 - 0.75 }]} />}
+      {guide.h && <View pointerEvents="none" style={[styles.guideH, { top: frameH / 2 - 0.75 }]} />}
       {stickers.map((s) => {
         if (s.id === editingId) return null;
         // A non-text layer (the reshared post) draws through the host; a text/emoji
@@ -526,4 +562,16 @@ export default function StickerLayer({
 
 const styles = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
+  // Thin, SUBTLE center guides — faint translucent white with a whisper of shadow so
+  // they read on bright AND dark media without drawing the eye off the content.
+  guideV: {
+    position: 'absolute', top: 0, bottom: 0, width: 1,
+    backgroundColor: 'rgba(255,255,255,0.45)',
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 1.5, shadowOffset: { width: 0, height: 0 },
+  },
+  guideH: {
+    position: 'absolute', left: 0, right: 0, height: 1,
+    backgroundColor: 'rgba(255,255,255,0.45)',
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 1.5, shadowOffset: { width: 0, height: 0 },
+  },
 });

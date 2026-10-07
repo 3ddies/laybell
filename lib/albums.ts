@@ -40,6 +40,8 @@ export type Album = {
   tracks?: AlbumTrack[];
   /** Present on list queries; the album screen counts its own rows. */
   track_count?: number;
+  /** Admin-pinned to the Music tab's Hottest-Album slot (album_featured.sql). */
+  featured?: boolean;
 };
 
 /** What a track is called HERE: the album's name for it, else the post's. */
@@ -164,6 +166,28 @@ export async function addTrack(albumId: string, postId: string, title?: string |
       { onConflict: 'album_id,post_id', ignoreDuplicates: true },
     );
   if (error) throw error;
+}
+
+/**
+ * Pin / unpin an album to the Music tab's "Hottest Album" slot. LAYBELL-ADMIN ONLY —
+ * the gate lives in the SECURITY DEFINER RPC (set_album_featured in album_featured.sql),
+ * which also crosses account boundaries (an admin can pin anyone's album) and keeps the
+ * pin exclusive (one featured at a time). A non-admin call throws.
+ */
+export async function setAlbumFeatured(albumId: string, on: boolean): Promise<void> {
+  const { error } = await supabase.rpc('set_album_featured', { p_album_id: albumId, p_on: on });
+  if (error) throw error;
+}
+
+/** Whether `userId` is a Laybell admin — used to show the feature-pin control. Reads
+ *  their OWN laybell_admins row (allowed by that table's RLS); false if absent/offline. */
+export async function fetchIsLaybellAdmin(userId: string): Promise<boolean> {
+  try {
+    const { data } = await supabase.from('laybell_admins').select('user_id').eq('user_id', userId).maybeSingle();
+    return !!data;
+  } catch {
+    return false;
+  }
 }
 
 export async function removeTrack(albumId: string, postId: string): Promise<void> {

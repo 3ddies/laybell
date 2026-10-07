@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, ActivityIndicator, Alert, Image, Dimensions, Animated, Modal, Switch, Pressable, Easing,
-  Keyboard, Platform, LayoutAnimation,
+  Keyboard, Platform, LayoutAnimation, KeyboardAvoidingView,
 } from 'react-native';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -399,6 +399,10 @@ export default function PostScreen() {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [showAlbumPicker, setShowAlbumPicker] = useState(false);
   const [newAlbumName, setNewAlbumName] = useState('');
+  // Extra tracks queued from Files to publish into the same album alongside THIS one
+  // (only offered once an album is chosen — see the album field). Each becomes its own
+  // audio post on publish, titled from its filename, and is added to the album in order.
+  const [extraTracks, setExtraTracks] = useState<{ uri: string; name: string; mime: string; durationSec: number | null }[]>([]);
   const [showTagModal, setShowTagModal] = useState(false);
   // Communities this post is attributed to (a post can belong to several). Only
   // communities the user is an active, non-muted member of are postable.
@@ -771,7 +775,7 @@ export default function PostScreen() {
     // features was MISSING here, which meant collaborators credited on one song
     // silently rode onto the next one posted in the same sitting — and every
     // one of them would have been notified they were on a track they are not.
-    setFeatures([]); setAlbumId(null); setNewAlbumName('');
+    setFeatures([]); setAlbumId(null); setNewAlbumName(''); setExtraTracks([]);
     setAllowDownloads(true); setAllowGifs(true); setMature(false); setSaveToCameraRoll(true);
     // Abandoning the compose drops any parked spotlight handoff so it can't
     // silently attach to an unrelated later post — the paid campaign itself
@@ -1393,6 +1397,52 @@ export default function PostScreen() {
     setAudioDuration(dur);
   }
 
+  // Queue MORE audio files to publish into the SAME album as this track (offered once
+  // an album is chosen). Multi-select; each is validated like the main pick. They
+  // publish as their own audio posts on Post — see publishExtraAlbumTrack.
+  async function pickMoreAlbumTracks() {
+    const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*', multiple: true, copyToCacheDirectory: true });
+    if (result.canceled || !result.assets?.length) return;
+    const added: typeof extraTracks = [];
+    for (const asset of result.assets) {
+      if (asset.size != null && asset.size > AUDIO_MAX_BYTES) continue;      // skip oversize
+      const probed = await probeAudioDurationSec(asset.uri);
+      const dur = probed != null ? Math.floor(probed) : null;
+      if (dur != null && dur > SPOKEN_MAX_SEC) continue;                     // skip too long
+      added.push({ uri: asset.uri, name: asset.name ?? 'Track', mime: asset.mimeType || 'audio/mpeg', durationSec: dur });
+    }
+    if (added.length) setExtraTracks((prev) => [...prev, ...added]);
+  }
+
+  // Publish ONE queued extra track as its own audio post, then add it to the album.
+  // Minimal metadata: title from the filename, same visibility / genre / controls as
+  // the main track. Reused per track in the publish loop.
+  async function publishExtraAlbumTrack(
+    userId: string, album: string, audioKind: string,
+    track: { uri: string; name: string; mime: string; durationSec: number | null },
+  ) {
+    const ext = track.name.includes('.') ? (track.name.split('.').pop() || 'mp3') : (track.uri.split('.').pop() || 'mp3');
+    const url = await uploadToStorageWithProgress('posts', userId, track.uri, ext, track.mime, setUploadPct);
+    setUploadPct(null);
+    const title = track.name.replace(/\.[^.]+$/, '').trim().slice(0, 120) || 'Track';
+    const { data: np, error } = await supabase.from('posts').insert({
+      user_id: userId,
+      type: audioKind,
+      media_url: url,
+      caption: title,
+      is_public: isPublic,
+      ...(track.durationSec != null ? { duration_seconds: track.durationSec } : {}),
+      ...(genre && showGenre ? { genre } : {}),
+      downloadable: allowDownloads,
+      sound_opt_in: allowSound, sound_opt_in_at: new Date().toISOString(),
+    }).select('id').single();
+    if (error) throw error;
+    if (np?.id) {
+      await addAlbumTrack(album, np.id);
+      if (isPublic) bumpBadge('posts_created');
+    }
+  }
+
   async function pickCover() {
     if (coverBusy) return; // a second tap while the sheet is coming up opens two
     setCoverBusy(true);
@@ -1973,7 +2023,18 @@ export default function PostScreen() {
         // album row that fails to write is a track missing from a shelf the
         // owner can fix in two taps — not a reason to tell them the post failed.
         if (postType === 'audio' && albumId) {
-          addAlbumTrack(albumId, newPost.id).catch(() => {});
+          if (extraTracks.length === 0) {
+            addAlbumTrack(albumId, newPost.id).catch(() => {});
+          } else {
+            // Album batch: add the main track first (awaited so positions stay
+            // sequential), then publish each queued extra as its own post, in order.
+            // A failed extra is skipped — the post is already live and the owner can
+            // add it from the album in two taps — it never fails the publish.
+            await addAlbumTrack(albumId, newPost.id).catch(() => {});
+            for (const tk of extraTracks) {
+              try { await publishExtraAlbumTrack(user.id, albumId, audioKind, tk); } catch { /* skip this track */ }
+            }
+          }
         }
       }
 
@@ -2466,6 +2527,32 @@ export default function PostScreen() {
                 </Text>
                 <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
               </TouchableOpacity>
+
+              {/* Once an album is chosen, attach MORE tracks from Files so the whole
+                  album goes up in one post — each queued file publishes as its own
+                  track into the album. */}
+              {!!albumId && (
+                <View style={styles.albumTracks}>
+                  {extraTracks.map((tk, i) => (
+                    <View key={`${tk.uri}:${i}`} style={styles.albumTrackRow}>
+                      <Ionicons name="musical-note" size={15} color={colors.textSecondary} />
+                      <Text style={styles.albumTrackName} numberOfLines={1}>{tk.name.replace(/\.[^.]+$/, '')}</Text>
+                      <TouchableOpacity onPress={() => setExtraTracks((prev) => prev.filter((_, j) => j !== i))} hitSlop={8}>
+                        <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  <TouchableOpacity style={styles.albumAddTracks} onPress={pickMoreAlbumTracks} activeOpacity={0.85}>
+                    <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
+                    <Text style={styles.albumAddTracksText}>
+                      {extraTracks.length ? t('album.addMoreTracks') : t('album.addFromFiles')}
+                    </Text>
+                  </TouchableOpacity>
+                  {extraTracks.length > 0 && (
+                    <Text style={styles.albumTracksHint}>{t('album.tracksHint', { count: String(extraTracks.length + 1) })}</Text>
+                  )}
+                </View>
+              )}
             </View>
           )}
 
@@ -2819,6 +2906,9 @@ export default function PostScreen() {
             moment someone wants an album is while posting the first track of
             one, and sending them elsewhere to make it loses the post. */}
         <Modal visible={showAlbumPicker} transparent animationType="fade" onRequestClose={() => setShowAlbumPicker(false)}>
+          {/* KeyboardAvoidingView lifts the bottom sheet above the keyboard so the
+              new-album-name field stays visible while you type it. */}
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setShowAlbumPicker(false)}>
             <View style={styles.sheet}>
               <View style={styles.sheetHandle} />
@@ -2876,6 +2966,7 @@ export default function PostScreen() {
               </ScrollView>
             </View>
           </TouchableOpacity>
+          </KeyboardAvoidingView>
         </Modal>
 
         {/* The film heads-up MUST live here as well as in the pick step: this
@@ -3987,6 +4078,23 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   albumNewBtnOff: { opacity: 0.4 },
   albumNewBtnText: { color: colors.background, fontSize: 14, fontWeight: '700' },
   albumSheetHint: { color: colors.textTertiary, fontSize: 12.5, lineHeight: 17, marginTop: SPACING.xs },
+
+  // "Attach more tracks" area under the album field (shown once an album is chosen).
+  albumTracks: { marginTop: SPACING.sm, gap: SPACING.xs },
+  albumTrackRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md, paddingVertical: 9,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  albumTrackName: { flex: 1, color: colors.text, fontSize: 14 },
+  albumAddTracks: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderWidth: 1, borderColor: colors.primary, borderRadius: RADIUS.md,
+    paddingVertical: 10, marginTop: 2,
+  },
+  albumAddTracksText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
+  albumTracksHint: { color: colors.textTertiary, fontSize: 12.5, lineHeight: 17, marginTop: 2 },
 
   // Genre chips — reused inside the genre picker bottom sheet.
   genreChip: {
