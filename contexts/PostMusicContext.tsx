@@ -57,6 +57,9 @@ type PostMusicActions = {
   // Pre-create the ambient players at a safe idle moment (the feed gate) so no
   // song ever pays a native player construction mid-scroll.
   warmSongPlayer: () => void;
+  // Snap the active host's song back to its start (its mix part, or the top) — for a
+  // replay that keeps the same host id, e.g. a left-tap restart of a story.
+  restartSong: (hostId: string) => void;
 };
 type PostMusicType = PostMusicActions & {
   activeId: string | null;          // host post/story id whose song is playing
@@ -333,7 +336,17 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
       if (mixSeekDueRef.current) lineUpWithVideo(true);
       // A mixed song does not loop natively (that would restart it from its first
       // second): at its end it goes back to its part and plays on.
-      if (st.didJustFinish && mixRef.current?.startSec != null) restartMixedSong();
+      const m = mixRef.current;
+      if (st.didJustFinish && m?.startSec != null) restartMixedSong();
+      // A CLIP-bounded mix (story music: a chosen window of a song) loops at the
+      // END of that window — start + clip — not the end of the track, so a preview
+      // plays exactly the part AND the length the poster chose. Posts never set
+      // clipSec, so this is inert for them. Guarded by seekRef so the loop's own
+      // re-seek doesn't re-trigger it on the next tick.
+      else if (m?.startSec != null && m.clipSec != null && m.clipSec > 0 && !seekRef.current
+               && (st.currentTime ?? 0) >= m.startSec + m.clipSec) {
+        restartMixedSong();
+      }
     });
     return { player: p, sub };
   }
@@ -644,6 +657,18 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     if (!seekRef.current && !mixSeekDueRef.current) startIfWaiting();
   }
 
+  // Restart the active song from its chosen start (its mix part, or the top for a
+  // plain song) WITHOUT a reload. A story replayed by a left-tap keeps the SAME
+  // host id, so playSong's same-song path leaves the song playing on from where it
+  // was — this snaps it back to the start instead. No-op unless `hostId` is active.
+  function restartSong(hostId: string) {
+    if (activeIdRef.current !== hostId || !soundRef.current) return;
+    if (mixRef.current?.startSec != null) { restartMixedSong(); return; }
+    const p = soundRef.current;
+    let loaded = false; try { loaded = p.isLoaded; } catch {}
+    if (loaded) { try { p.seekTo(0).catch(() => {}); } catch {} }
+  }
+
   async function playSong(hostId: string, songId: string, mediaUrl?: string | null, mix?: AmbientMix | null) {
     const nextMix = mix ?? null;
     // Don't fight the user's chosen track in the mini-player — but REMEMBER
@@ -825,7 +850,7 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => () => { saveAmbient(); watchVideoClock(null); destroyPlayer(); }, []);
 
   // Stable forever: the functions close over refs + stable setters only.
-  const actions = useMemo(() => ({ toggleMuted, playSong, stop, prefetchSong, warmSongPlayer }), []);
+  const actions = useMemo(() => ({ toggleMuted, playSong, stop, prefetchSong, warmSongPlayer, restartSong }), []);
 
   return (
     <ActionsCtx.Provider value={actions}>

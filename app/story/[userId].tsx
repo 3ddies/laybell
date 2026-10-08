@@ -17,7 +17,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { timeAgo } from '../../lib/timeAgo';
 import {
   fetchStoriesForUsers, recordStoryView, deleteStory, fetchStoryViewerCount, fetchStoryViewers,
-  setStoryLike, fetchStoryLikeEffect, fetchMyStoryLike, setStoryLikeComment, setStoryPinnedComment, fetchStoryAnalytics, REPOST_MAX_SEC,
+  setStoryLike, fetchStoryLikeEffect, fetchMyStoryLike, setStoryLikeComment, setStoryPinnedComment, fetchStoryAnalytics, REPOST_MAX_SEC, STORY_MUSIC_MAX_SEC,
   type Story, type StoryProfile, type StoryGroup, type SourceRect, type StoryViewer, type StoryAnalytics, type StoryLikeEffect,
 } from '../../lib/stories';
 import { saveRemoteToLibrary } from '../../lib/saveToLibrary';
@@ -27,6 +27,7 @@ import { storyReplyBody } from '../../lib/postLinks';
 import { createNotification } from '../../lib/createNotification';
 import SongAttribution from '../../components/SongAttribution';
 import BadgeEmblem from '../../components/BadgeEmblem';
+import StoryThumb from '../../components/StoryThumb';
 import RepostStoryFrame from '../../components/RepostStoryFrame';
 import RepostPostMedia, { repostCardSize } from '../../components/RepostPostMedia';
 import RepostAuthorChip from '../../components/RepostAuthorChip';
@@ -87,8 +88,12 @@ export default function StoryViewerScreen() {
   const isFocused = useIsFocused();
   const { refresh: refreshStories, markSeen, openCamera, groups: trayGroups } = useStories();
   const { profile: myProfile } = useProfile();
-  const { playSong, stop: stopSong, toggleMuted: toggleSongMuted } = usePostMusicActions();
+  const { playSong, stop: stopSong, toggleMuted: toggleSongMuted, prefetchSong, warmSongPlayer, restartSong } = usePostMusicActions();
   const songMuted = usePostMusicMuted();
+  // Pre-create the ambient players the moment the viewer opens, so the first
+  // story's song never waits on native player construction. The feed usually
+  // warmed them already; this also covers a deep link straight into a story.
+  useEffect(() => { try { warmSongPlayer(); } catch {} }, [warmSongPlayer]);
   // Watching stories pauses the user's music: a story is sound and motion for
   // fifteen seconds at a time, and it either owns the channel or it is
   // pointless. (A story with an attached song then plays it through the ambient
@@ -249,6 +254,11 @@ export default function StoryViewerScreen() {
   // Drives the CURRENT segment's fill (0→1, scaleX from the left).
   const progressAnim = useRef(new Animated.Value(0)).current;
   const panY = useRef(new Animated.Value(0)).current;
+  // A brief black veil for the "Add Story" hand-off to the camera. The camera is a
+  // tab with animationEnabled:false (an instant cut) and the feed behind it is light,
+  // so without this the exit flashes white between two black screens. Fading the
+  // whole viewer to black first — camera bg is #000 too — bridges it smoothly.
+  const exitFade = useRef(new Animated.Value(0)).current;
   // Open/close progress: 0 = at the source rect (or fully off-screen right when
   // there's no rect), 1 = fullscreen. Starts at 0 in BOTH modes — without a
   // rect the entrance is a quick Instagram-style slide-in from the right
@@ -481,6 +491,11 @@ export default function StoryViewerScreen() {
         groupsRef.current[ui + 1]?.stories[0]?.media_type === 'image' ? groupsRef.current[ui + 1]?.stories[0]?.media_url : undefined,
       ];
       warm.forEach((u) => { if (u) ExpoImage.prefetch(u).catch(() => {}); });
+      // Stage the NEXT songs' bytes too (at their chosen start offset), so flipping
+      // onto a story with music plays it immediately instead of after a cold fetch.
+      [g2?.stories[si + 1], groupsRef.current[ui + 1]?.stories[0]].forEach((ns) => {
+        if (ns?.song_id) { try { prefetchSong(ns.song_id, null, storySongMix(ns)); } catch {} }
+      });
     }
 
     // Safety: never sit on the grey cover forever. If the media hasn't painted
@@ -577,11 +592,41 @@ export default function StoryViewerScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFocused]);
 
+  // An image story shows for IMAGE_DURATION_MS, UNLESS its poster chose a music
+  // clip length — then it stays up exactly that long (5–25s) so the chosen part of
+  // the song plays out before the story advances. A video keeps its own timing.
+  const imageDurationMs = useMemo(() => {
+    const clip = Number(story?.song_clip_sec);
+    if (story?.song_id && Number.isFinite(clip) && clip > 0) {
+      return Math.round(Math.min(STORY_MUSIC_MAX_SEC, Math.max(5, clip)) * 1000);
+    }
+    return IMAGE_DURATION_MS;
+  }, [story?.song_id, story?.song_clip_sec]);
+  const imageDurationMsRef = useRef(imageDurationMs);
+  imageDurationMsRef.current = imageDurationMs;
+
+  // The song starts at the poster's chosen offset every time the story plays or
+  // replays (reusing the ambient-mix path: a story has no video clock, so the player
+  // lines the song up to exactly startSec via getPlaybackPosition → 0). Each story
+  // change stops the old song and plays the new one with startOver, so a replay
+  // always restarts at the chosen start.
+  //
+  // NOTE: no `clipSec` here on purpose. In the viewer the chosen length is enforced
+  // by the IMAGE duration (the story advances at clipSec), not by looping the audio.
+  // That means a HELD story — pause() freezes the progress bar but keeps the song
+  // playing — lets the song run naturally PAST start+clip while the viewer listens,
+  // instead of snapping back to the start mid-listen. The window-loop still runs in
+  // the editor preview, which DOES pass clipSec.
+  function storySongMix(s: Story | null | undefined) {
+    const start = Math.max(0, Number(s?.song_start_sec) || 0);
+    return start > 0 ? { startSec: start, volume: 1, videoStartSec: 0 } : null;
+  }
+
   // Auto-play the song attached to the current story; stop on change/blur/close.
   useEffect(() => {
     const sid = story?.song_id;
     const hostId = story?.id;
-    if (isFocused && hostId && sid) playSong(hostId, sid);
+    if (isFocused && hostId && sid) playSong(hostId, sid, null, storySongMix(story));
     else if (hostId) stopSong(hostId);
     return () => { if (hostId) stopSong(hostId); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -597,7 +642,7 @@ export default function StoryViewerScreen() {
     progressAnim.setValue(from);
     const anim = Animated.timing(progressAnim, {
       toValue: 1,
-      duration: Math.max(0, IMAGE_DURATION_MS * (1 - from)),
+      duration: Math.max(0, imageDurationMsRef.current * (1 - from)),
       easing: Easing.linear,
       // progressAnim drives a scaleX transform — native-driven, so the bar
       // keeps gliding even while the story media is decoding on the JS thread.
@@ -657,6 +702,9 @@ export default function StoryViewerScreen() {
     setPaused(false);
     resetProgress();
     if (story?.media_type === 'image' && readyRef.current) startImageProgress(0);
+    // Same story id, so the autoplay effect won't re-fire — snap its song back to
+    // the chosen start explicitly (a left-tap replay, not a pause).
+    if (story?.song_id) restartSong(story.id);
   }
 
   // ─── horizontal swipe = jump to the next / previous PERSON ───────────────────
@@ -876,9 +924,18 @@ export default function StoryViewerScreen() {
   // the camera doesn't pile on top of it (that was the "two extra layers"), then open the
   // story camera — same idiom the notifications/saved deep-links use.
   function addStoryFromInsights() {
-    setShowViewers(false);
-    try { router.dismissAll?.(); } catch {}
-    openCamera();
+    if (closingRef.current) return;
+    closingRef.current = true;
+    stopProgressAnim();
+    // Fade the whole viewer to black, THEN drop back to the tabs and open the camera.
+    // The hand-off (modal dismiss → instant camera-tab cut) happens under full black,
+    // so the light feed never flashes between the two black screens.
+    Animated.timing(exitFade, { toValue: 1, duration: 200, easing: Easing.out(Easing.quad), useNativeDriver: true })
+      .start(() => {
+        setShowViewers(false);
+        try { router.dismissAll?.(); } catch {}
+        openCamera();
+      });
   }
 
   // Tap the header to switch panels (Analytics icon = 0, Viewers title = 1). Swiping
@@ -931,7 +988,7 @@ export default function StoryViewerScreen() {
       .start(() => { setShowViewers(false); sheetY.setValue(INSIGHTS_SHEET_H); });
     if (!navigatingAway) {
       resume();
-      if (story?.song_id && isFocused) playSong(story.id, story.song_id);
+      if (story?.song_id && isFocused) playSong(story.id, story.song_id, null, storySongMix(story));
     }
   }
 
@@ -1617,7 +1674,7 @@ export default function StoryViewerScreen() {
                   count={likeEffect.count}
                   likers={likeEffect.likers}
                   paused={paused || !isFocused}
-                  storyDurationMs={story.media_type === 'image' ? IMAGE_DURATION_MS : Math.max(5000, (story.duration_seconds ?? 15) * 1000)}
+                  storyDurationMs={story.media_type === 'image' ? imageDurationMs : Math.max(5000, (story.duration_seconds ?? 15) * 1000)}
                   onOpenProfile={openLikerProfile}
                 />
               </Animated.View>
@@ -1922,62 +1979,26 @@ export default function StoryViewerScreen() {
                         transform: [{ translateX: Animated.multiply(insightsStripX, -1) }],
                       }}
                     >
-                      {group.stories.map((s, i) => {
-                        const prev = s.media_type === 'image' ? s.media_url : s.thumbnail_url;
-                        return (
+                      {group.stories.map((s, i) => (
                           <Animated.View key={s.id} style={[styles.insCardPage, cardDepth(i)]}>
-                            <View style={styles.insCard}>
-                              {!prev && (
-                                <View style={[StyleSheet.absoluteFill, styles.insCardFallback]}>
-                                  <Ionicons name="play" size={26} color="rgba(255,255,255,0.7)" />
-                                </View>
-                              )}
-                              {/* A uniformly scaled-down copy of the FULL story frame (media +
-                                  stickers), so text sits exactly where it does in the real viewer.
-                                  The frame is screen-sized + centred, then scaled to the card width;
-                                  the card's overflow:hidden clips the extra height — the same centre
-                                  band the viewer's cover-fit shows, instead of squashing the layout
-                                  into the card's shorter 9:16 aspect. */}
-                              <View
-                                pointerEvents="none"
-                                style={{
-                                  position: 'absolute',
-                                  width: SCREEN_W, height: SCREEN_H,
-                                  left: (INS_CARD_W - SCREEN_W) / 2,
-                                  top: (INS_CARD_H - SCREEN_H) / 2,
-                                  transform: [{ scale: INS_CARD_W / SCREEN_W }],
-                                }}
-                              >
-                                {!!prev && <ExpoImage source={{ uri: prev }} style={StyleSheet.absoluteFill} contentFit="cover" />}
-                                {(s.stickers ?? []).filter((st: any) => (!st.kind || st.kind === 'text') && st.text).map((st: any, k: number) => (
-                                  <View key={k} style={StyleSheet.absoluteFill}>
-                                    <View style={styles.captionStickerCenter}>
-                                      <View
-                                        style={{
-                                          transform: [
-                                            { translateX: (st.x - 0.5) * SCREEN_W },
-                                            { translateY: (st.y - 0.5) * SCREEN_H },
-                                            { scale: st.scale ?? 1 },
-                                            { rotate: `${st.rotation ?? 0}deg` },
-                                          ],
-                                        }}
-                                      >
-                                        <StickerContent sticker={st} />
-                                      </View>
-                                    </View>
-                                  </View>
-                                ))}
-                              </View>
-                            </View>
+                            {/* Same renderer as the archive grid — media (or a repositioned
+                                photo over its backdrop) + text + drawing, scaled into the card.
+                                Tapping a card rotates the strip to it, so tapping a peeking side
+                                card goes to the previous / next story. A swipe still moves one
+                                story: stagePan captures only on move, so a tap falls through here. */}
+                            <TouchableOpacity activeOpacity={0.85} onPress={() => goToInsightsStory(i)} accessibilityRole="button">
+                              <StoryThumb story={s} width={INS_CARD_W} radius={RADIUS.lg} />
+                            </TouchableOpacity>
                           </Animated.View>
-                        );
-                      })}
-                      {/* "+" card at the end of the cycle → add another story. */}
+                      ))}
+                      {/* "+" card at the end of the cycle. Like any card, tapping it when
+                          it is NOT the landed card just rotates the strip to it; only a tap
+                          while it IS the landed (centred) card opens the new-story composer. */}
                       <Animated.View style={[styles.insCardPage, cardDepth(group.stories.length)]}>
                         <TouchableOpacity
                           style={[styles.insCard, styles.insAddCard]}
                           activeOpacity={0.8}
-                          onPress={addStoryFromInsights}
+                          onPress={() => (insightsIdxRef.current === group.stories.length ? addStoryFromInsights() : goToInsightsStory(group.stories.length))}
                           accessibilityRole="button"
                           accessibilityLabel={t('storyCamera.addToStory')}
                         >
@@ -2161,6 +2182,10 @@ export default function StoryViewerScreen() {
           </Animated.View>
         </View>
       )}
+
+      {/* Exit veil for the "Add Story" hand-off (see exitFade). Last child = on top of
+          everything; inert until it fades in. */}
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: exitFade }]} />
     </View>
   );
 }
@@ -2386,7 +2411,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: '#1C1C1E', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.14)',
   },
   insAddCard: { alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.25)', borderWidth: 1.5 },
-  insCardFallback: { alignItems: 'center', justifyContent: 'center' },
   insSegments: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 5, marginBottom: SPACING.sm },
   insSegment: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.3)' },
   insSegmentOn: { width: 18, backgroundColor: '#fff' },

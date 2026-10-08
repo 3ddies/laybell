@@ -30,7 +30,7 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 - **Device-test the 1.0.7 story/UI batch** in the dev build (Metro is the way in), then **commit + push** the uncommitted files.
 - **iOS submit:** build 1.0.7 → `eas submit` → in ASC create the 1.0.7 version, select the build, paste What's New (`docs/RELEASE_NOTES_1.0.7.md`), add the reviewer demo **email** (`docs/APP_REVIEW_NOTES_1.0.5.txt`), and **attach + submit the beat IAP products with this version** — a first IAP review rides with the build; until the products are **Approved** the Buy button has no product and the client falls back to credits (so nothing breaks, it just won't show the IAP path yet).
 - **Android submit:** Play upload key **granted 2026-10-04**; the latest EAS Android build is stale (1.0.5 / vc11) → rebuild 1.0.7 and `eas submit -p android` (draft) or upload the `.aab`.
-- **Small Business Program:** submitted 2026-10-04 → on approval, reverse the three §0.3 fee rates 30% → 15%.
+- **Small Business Program:** submitted 2026-10-04 → on approval the fee rates do **NOT** drop — Laybell keeps the full 15% (owner decision 2026-10-07). The only live change is one cosmetic constant `STORE_COMMISSION_RATE` → 0.15, flipped on the **effective date** (~mid-Nov, ~15 days after the fiscal month-end in which approved), not the approval email. See §0.3.
 - **Deferred beats-IAP money fixes** (MEDIUM / LOW) — owner session, ship in a later build; see memory `beats-iap-plan`.
 - EU DSA "trader" status: **submitted**. Still open below: Cloudflare budget alert, the Play listing copy fix.
 
@@ -133,7 +133,7 @@ root, e.g. `node scripts/tests/test-bandcaptions.mjs`):
 - Create the Play service-account key — it blocks every Android submission.
 - Add a Cloudflare budget alert (e.g. $10/month).
 - Fix the Play listing, which still says Laybell TV works by turning the phone sideways.
-- Waiting on Apple's Small Business Program, then reverse the §0.3 fee rates.
+- Waiting on Apple's Small Business Program; on approval the fee rates STAY (Laybell keeps the full 15%) — only the cosmetic `STORE_COMMISSION_RATE` flips, on the effective date. See §0.3.
 
 **Before ANY build is submitted:** no demo or fabricated money may be live — those are
 withdrawable balances (history below). Server-side changes (`supabase/sql`,
@@ -591,7 +591,7 @@ Everything else is three inbox waits and one test that needs Android hardware.
 | What | When | What to do when it lands |
 |---|---|---|
 | **ASCAP licence** | ✅ **DONE — FULLY EXECUTED 2026-08-14. Account `400012723`.** | Jessica Nolan (`glcs@ascap.com`) sent the executed agreement, Rate Schedule/SOP and account number, seventeen days after the 07-28 enquiry and twelve after paying. The 08-12 phone escalation is what moved it — the 07-28 email alone produced nothing. **Portal:** `ascap.com/mylicense` → "First-time My ASCAP License User?", which needs account **400012723**, billing zip **20640**, the phone on the account, and an email. Laybell now holds **both** PRO licences (BMI 07-28, ASCAP 08-14), which is what item 7 of Apple's questionnaire asserts. **Portal set up 08-14:** logged in, **e-statements enrolled** (paper invoices would be how a 2027 renewal notice gets missed), balance **$0.00** so the $336 cleared, class **Digital 1**, legal entity Laybell LLC. **No reports due as of 08-14** — but the term only began 08-01, so that is expected rather than proof there is no obligation: **check the Rate Schedule/SOP PDF for an annual revenue true-up**, since web/mobile fees are often a minimum against a revenue-based rate. ASCAP correspondence now goes to PO Box 331608, Nashville, TN 37203-7515. |
-| **Apple Small Business Program approval** | submitted 2026-08-09 | Tell Claude → it flips the three fee rates in §0.3 the same hour. Until then Laybell earns **nothing** on shop sales and Premium tips. |
+| **Apple Small Business Program approval** | submitted (re-dated 2026-10-04 in §0.0) | Tell Claude → on the **effective date** it flips ONE cosmetic constant (`STORE_COMMISSION_RATE` → 0.15); the real fee rates STAY (Laybell keeps the full 15% — decision 2026-10-07). Until approval Laybell earns **nothing** on shop sales and Premium tips. See §0.3. |
 | **Stripe live-mode review** | 2–3 days from 2026-08-09 | Only matters at launch (live key + funded balance). |
 
 ### 📋 WHAT THE OWNER STILL HAS TO DO — in this order
@@ -1099,7 +1099,7 @@ screen.
   a spare email address, which the owner has run out of** — if it cannot be run, say so
   rather than launching on the assumption it works: the ToS promises this protection.
 - **Universal links** re-checked on a device against the real store build.
-- **SBP fee flip** (§0.3) if the approval has landed.
+- **SBP display-rate flip** (§0.3) if the reduced rate is in EFFECT — one cosmetic constant only (`STORE_COMMISSION_RATE` → 0.15); the real fee rates stay (Laybell keeps the full 15%).
 
 **Phase 3 — 08-26 → 08-28, light the Play fuse.**
 - **Play → Production → Send app for review.** First reviews run ~3–7 days. It publishes on
@@ -1206,7 +1206,7 @@ screen.
 | **Payments ledger** | Double-entry, append-only, server-authoritative. 24/24 checks pass. |
 | **All six money surfaces wired** | Credits (IAP→webhook→ledger), tips, shop, payouts, Spotlight, Ad Manager. Nothing charges $0 any more, and nothing claims to charge what it doesn't. |
 | **Three live exploits closed** | A crafted insert could mint a live 365-day Spotlight for $0, or a funded ad campaign at `bid_cpm_cents=1`; an advertiser could reset their own spend meter. 17/17 checks pass, and the verification file *attempts each exploit* rather than just looking for the fix. |
-| **Fee arithmetic corrected** | Every rate assumed Apple's 15% Small Business rate. Until that enrolment is approved Apple takes 30%, at which point shop (25%) and Premium tips (20%) **lost money on every transaction**. Both now 30% = break-even. Reverse after approval — see §0.3. |
+| **Fee arithmetic corrected** | Every rate assumed Apple's 15% Small Business rate. Until that enrolment is approved Apple takes 30%, at which point shop (25%) and Premium tips (20%) **lost money on every transaction**. Both now 30% = break-even. On approval the shop fee **STAYS** 30% (Laybell keeps the full 15% — decision 2026-10-07); only the cosmetic store-cut display flips — see §0.3. |
 | **Mississippi geo-blocked** | HB 1126 has no size threshold. Server-enforced, because `profiles` rows are created by three paths that never run app code. |
 | **Legal docs corrected** | Terms, Advertiser Terms and Community Guidelines all said payments were simulated. Effective 2026-07-29 — **existing users should be notified.** |
 | **laybell.app is live** | Real landing page, all legal pages, `/.well-known/` at the domain root, share links moved onto the domain. Old QR codes still resolve (verified, one hop). |
@@ -1611,23 +1611,36 @@ checklist that unlocks one event.
 
 ---
 
-## 0.3 REVERSE THESE AFTER SMALL BUSINESS APPROVAL ⚠️ STILL PENDING — LIVE ACTION
+## 0.3 ON SMALL BUSINESS APPROVAL — ONE DISPLAY RATE MOVES ⚠️ STILL PENDING — LIVE ACTION
 
-**Status 2026-08-09: enrolment SUBMITTED, awaiting Apple's approval email.** This is the
-one §0.x section outside §0.0 that still contains work to do. The moment approval lands,
-make all three changes together (two are SQL, one is a client constant) and redeploy.
+**Status: enrolment SUBMITTED 2026-10-04, awaiting Apple's approval email.** This is the
+one §0.x section outside §0.0 that still contains work to do.
 
-At Apple 15% the break-even rates net 15% each, which is more than either surface needs —
-and the surplus is better spent on creators than banked.
+**⚠️ OWNER DECISION 2026-10-07 — Laybell KEEPS THE FULL 15%.** The old plan here (drop the
+shop fee to 0.25 and hand the surplus to creators) is REVERSED. Do NOT lower the shop fee.
 
-| Where | Now | After |
-|---|---|---|
-| `shop_fee_rate()` + `SHOP_FEE_RATE` | 0.30 | 0.25 (seller keeps 75%) |
-| `tip_fee_rate()` premium + `DONATION_FEE_RATE_PREMIUM` | 0.30 | 0.20 (creator keeps 80%) |
-| `STORE_COMMISSION_RATE` (lib/shop.ts) | 0.30 | 0.15 — the seller-facing split currently overstates Apple's cut |
+Why the shop fee stays put: **Laybell's margin on a beat = `shop_fee_rate` − Apple's cut.**
+Today that's 30% − 30% = **$0** (pure break-even, by design). The day Apple drops to 15%,
+the UNCHANGED 30% fee automatically nets **15%** while the seller still keeps 70% — that 15%
+IS the Small Business benefit, captured for free. Lowering the fee to 0.15 would zero the
+margin again (the trap); 0.25 would hand 5% back. So the real fee rates **do not change**.
 
-At 70% versus a standard 65%, "Earn More" is barely a reason to buy Premium. That is the
-real cost of leaving it.
+**Two timing rules:**
+1. **applied ≠ approved.** Changing any rate before approval loses money — at a 0.25 fee
+   against Apple's still-30% cut Laybell is −5% on every beat. Touch nothing until approved.
+2. The one change below flips on the **EFFECTIVE date** (~15 days after the end of the fiscal
+   month in which Apple approves — their example: approved Feb 10 → effective ~Mar 14), **not**
+   the approval-email date. `STORE_COMMISSION_RATE` must match Apple's *actual* cut that day,
+   or the seller breakdown lies.
+
+| Where | Now | After approval | Change? |
+|---|---|---|---|
+| `shop_fee_rate()` + `SHOP_FEE_RATE` | 0.30 | **0.30 — NO CHANGE** (Laybell nets the full 15%, seller stays 70%) | ❌ leave it |
+| `STORE_COMMISSION_RATE` (lib/shop.ts) | 0.30 | **0.15** — cosmetic only; makes the seller split read Apple 15% / Laybell 15% / seller 70% | ✅ one line, on the EFFECTIVE date |
+| `tip_fee_rate()` premium + `DONATION_FEE_RATE_PREMIUM` | 0.30 | ⏳ **OWNER TO CONFIRM** — same choice as beats: keep 0.30 (Laybell banks 15% on tips too) or 0.20 (creator keeps 80%). Not yet decided. | ⏳ pending |
+
+So on the effective date the whole live action is **one cosmetic constant** (`STORE_COMMISSION_RATE`
+→ 0.15) plus the still-open tip-fee decision. Money code gets reviewed before it runs, as always.
 
 ---
 

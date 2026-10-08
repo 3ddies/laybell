@@ -119,14 +119,17 @@ export const LISTING_CATEGORIES: ListingCategory[] = ['beat', 'song', 'sample_pa
 //   Seller owed (70%)           $7.00                   $7.00
 //   Laybell nets                $0.00                   $1.50
 //
-// 30% is the BREAK-EVEN fee while Apple takes 30%. Anything lower loses money on
-// every sale — at the previous 25% fee the seller was owed $7.50 against $7.00
+// 30% is the BREAK-EVEN fee while Apple takes 30%: the fee exactly cancels Apple's
+// cut, so Laybell nets $0 on a beat until the Small Business Program lands. Anything
+// lower loses money now — at a 25% fee the seller was owed $7.50 against $7.00
 // received, i.e. −$0.50 each time.
 //
-// ⚠️ REVISIT AFTER SMALL BUSINESS PROGRAM APPROVAL. Once Apple drops to 15% this
-// rate nets 15%, which is more margin than Laybell needs. Lowering it back
-// toward 25% (seller keeps 75%) would be a real, visible improvement to hand
-// creators, and it is a one-line change here and in shop_fee_rate().
+// ⚠️ DO NOT LOWER THIS AFTER SMALL BUSINESS APPROVAL. Owner decision 2026-10-07:
+// Laybell KEEPS the full 15%. Laybell's margin = this fee − Apple's cut, so the day
+// Apple drops to 15% this UNCHANGED 30% fee automatically nets 15% while the seller
+// still keeps 70%. Dropping it to 15% would zero the margin again; dropping to 25%
+// would hand 5% back. Leave it at 0.30 — only STORE_COMMISSION_RATE (below, a
+// display-only value) moves to 0.15. See docs/LAUNCH_CHECKLIST.md §0.3.
 export const SHOP_FEE_RATE = 0.30;
 // No longer charged. Credits are bought through Apple and Google, who are
 // merchant of record and already collect and remit sales tax on that purchase;
@@ -134,7 +137,7 @@ export const SHOP_FEE_RATE = 0.30;
 // buyerTaxCents() and its callers keep their shape.
 export const SHOP_TAX_RATE = 0;
 
-/** What the seller keeps after Laybell's 15% fee. */
+/** What the seller keeps after Laybell's 30% fee. */
 export function sellerEarningsCents(priceCents: number): number {
   return Math.max(0, Math.round(priceCents * (1 - SHOP_FEE_RATE)));
 }
@@ -157,9 +160,12 @@ export function buyerTaxCents(priceCents: number): number {
  * Laybell's own cut look larger than it is — and a seller comparing 70% here
  * against BeatStars' 90% deserves to see where the other 30% actually went.
  *
- * Currently the STANDARD 30%. Drop to 0.15 the day App Store Small Business
- * Program enrolment is approved, so the seller-facing breakdown stops
- * overstating Apple's cut.
+ * Currently the STANDARD 30%. Drop to 0.15 on the day Apple's reduced rate takes
+ * EFFECT — ~15 days after the end of the fiscal month in which the Small Business
+ * Program enrolment is approved, NOT the approval-email date — so the seller-facing
+ * breakdown shows Apple's real cut (then: Apple 15% / Laybell 15% / seller 70%).
+ * This is the ONLY shop rate that changes; SHOP_FEE_RATE stays 0.30 (owner keeps
+ * the full 15% — decision 2026-10-07). See docs/LAUNCH_CHECKLIST.md §0.3.
  */
 export const STORE_COMMISSION_RATE = 0.30;
 

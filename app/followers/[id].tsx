@@ -16,6 +16,9 @@ import { maskHiddenProfile } from '../../lib/hiddenProfile';
 import { useStories } from '../../contexts/StoriesContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { ListRowsSkeleton } from '../../components/Skeleton';
+import FollowerInsightsBanner from '../../components/FollowerInsightsBanner';
+import { usePremium } from '../../contexts/PremiumContext';
+import { useProfile } from '../../contexts/ProfileContext';
 
 type User = { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
 
@@ -28,6 +31,11 @@ export default function FollowersScreen() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Own-list upsell: only the signed-in user, looking at their OWN followers, who is
+  // not already Premium, sees the "See unfollowers" (follower-insights) banner.
+  const { profile } = useProfile();
+  const { isPremium } = usePremium();
+  const isOwn = !!profile?.id && profile.id === id;
 
   useEffect(() => { setup(); }, [id]);
 
@@ -72,6 +80,7 @@ export default function FollowersScreen() {
           data={users}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
+          ListHeaderComponent={isOwn && !isPremium ? <FollowerInsightsBanner onPress={() => router.push('/follower-insights')} /> : null}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primaryLight} />
           }

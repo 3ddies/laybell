@@ -138,6 +138,59 @@ export function VolumeSlider({ icon, label, value, onChange }: {
   );
 }
 
+// A whole-seconds slider over [min, max], styled like VolumeSlider (dark, no native
+// module). Used by the story editor to choose how long an attached song plays.
+export function SecondsSlider({ icon, label, value, min, max, onChange }: {
+  icon: 'musical-notes' | 'timer-outline';
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (sec: number) => void;
+}) {
+  const trackRef = useRef<View>(null);
+  const trackX = useRef(0);
+  const trackW = useRef(1);
+  const live = useRef({ onChange, min, max });
+  live.current = { onChange, min, max };
+  const [drag, setDrag] = useState<number | null>(null);
+  const measure = () => {
+    trackRef.current?.measureInWindow((x, _y, w) => {
+      if (Number.isFinite(x)) trackX.current = x;
+      if (w > 0) trackW.current = w;
+    });
+  };
+  const toSec = (pageX: number) => {
+    const L = live.current;
+    const frac = Math.min(1, Math.max(0, (pageX - trackX.current) / trackW.current));
+    return Math.round(L.min + frac * (L.max - L.min));
+  };
+  const pan = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderGrant: (e) => { const v = toSec(e.nativeEvent.pageX); setDrag(v); live.current.onChange(v); },
+    onPanResponderMove: (e) => { const v = toSec(e.nativeEvent.pageX); setDrag(v); live.current.onChange(v); },
+    onPanResponderRelease: () => setDrag(null),
+    onPanResponderTerminate: () => setDrag(null),
+  })).current;
+  const v = drag ?? value;
+  const frac = max > min ? (v - min) / (max - min) : 0;
+  return (
+    <View style={styles.sliderRow}>
+      <Ionicons name={icon} size={16} color="#fff" />
+      <Text style={styles.sliderLabel} numberOfLines={1}>{label}</Text>
+      <View ref={trackRef} onLayout={measure} style={styles.sliderHit} {...pan.panHandlers}>
+        <View style={styles.sliderTrack} pointerEvents="none">
+          <View style={[styles.sliderFill, { width: `${frac * 100}%` }]} />
+        </View>
+        <View pointerEvents="none" style={[styles.sliderThumb, { left: `${frac * 100}%` }]} />
+      </View>
+      <Text style={styles.sliderValue}>{Math.round(v)}s</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   strip: { height: 56, justifyContent: 'center' },
   bars: { ...StyleSheet.absoluteFillObject, flexDirection: 'row', alignItems: 'center' },

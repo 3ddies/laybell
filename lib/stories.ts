@@ -33,6 +33,11 @@ export type Story = {
   song_title?: string | null;
   song_artist?: string | null;
   song_artist_id?: string | null;
+  // Which part of that song plays, and for how long (story_music_clip.sql):
+  // song_start_sec = seconds into the song where it starts (null/0 = top);
+  // song_clip_sec  = chosen clip length (5..25s), also the image on-screen duration.
+  song_start_sec?: number | null;
+  song_clip_sec?: number | null;
   // Deprecated single-caption placement (story_caption_style.sql).
   caption_style?: { x: number; y: number; scale: number; rotation: number } | null;
   // Draggable text/emoji stickers placed anywhere on the media — see
@@ -100,6 +105,12 @@ export async function uploadStoryMedia(
   return supabase.storage.from('stories').getPublicUrl(path).data.publicUrl;
 }
 
+// Story music clip bounds (story_music_clip.sql): the poster chooses a clip
+// length in this range; it drives the song offset AND the image on-screen time.
+export const STORY_MUSIC_MIN_SEC = 5;
+export const STORY_MUSIC_MAX_SEC = 25;
+export const STORY_MUSIC_DEFAULT_SEC = 15;
+
 export async function createStory(input: {
   userId: string;
   mediaUrl: string;
@@ -109,6 +120,9 @@ export async function createStory(input: {
   aspectRatio?: string | null;
   durationSeconds?: number | null;
   song?: { id: string; title: string; artist: string; artistId: string } | null;
+  // Which part of the song plays, and for how long — only meaningful with a song.
+  songStartSec?: number | null;
+  songClipSec?: number | null;
   stickers?: StorySticker[] | null;
   sharedPostId?: string | null;
 }): Promise<void> {
@@ -121,7 +135,11 @@ export async function createStory(input: {
     ...(input.aspectRatio ? { aspect_ratio: input.aspectRatio } : {}),
     ...(input.durationSeconds != null ? { duration_seconds: input.durationSeconds } : {}),
     ...(input.song
-      ? { song_id: input.song.id, song_title: input.song.title, song_artist: input.song.artist, song_artist_id: input.song.artistId }
+      ? {
+          song_id: input.song.id, song_title: input.song.title, song_artist: input.song.artist, song_artist_id: input.song.artistId,
+          ...(input.songStartSec != null ? { song_start_sec: input.songStartSec } : {}),
+          ...(input.songClipSec != null ? { song_clip_sec: input.songClipSec } : {}),
+        }
       : {}),
     ...(input.stickers && input.stickers.length ? { stickers: input.stickers } : {}),
     ...(input.sharedPostId ? { shared_post_id: input.sharedPostId } : {}),

@@ -35,6 +35,8 @@ export type StoryJob = {
   aspectRatio: string;
   durationSeconds: number | null;
   song: { id: string; title: string; artist: string; artistId: string } | null;
+  songStartSec: number | null;
+  songClipSec: number | null;
   stickers: StorySticker[] | null;
 };
 
@@ -154,6 +156,8 @@ export function StoryUploadProvider({ children }: { children: ReactNode }) {
             aspectRatio: job.aspectRatio,
             durationSeconds: job.durationSeconds,
             song: job.song,
+            songStartSec: job.songStartSec,
+            songClipSec: job.songClipSec,
             stickers: job.stickers,
           });
           refreshStories(); // the finished story pops into the tray, already ready

@@ -198,6 +198,7 @@ import SongSquareCard from '../../components/SongSquareCard';
 import { parseFeatures } from '../../lib/features';
 import StoriesTray from '../../components/StoriesTray';
 import PeopleRow from '../../components/PeopleRow';
+import ShopCard from '../../components/ShopCard';
 import PendingUploads from '../../components/PendingUploads';
 import Spinner from '../../components/Spinner';
 import { useUploadQueue } from '../../contexts/UploadQueueContext';
@@ -839,6 +840,12 @@ const PostCard = memo(function PostCard({
 const GATE_POSTS = 3;
 // How many posts you scroll past before the people rail appears.
 const PEOPLE_AFTER = 8;
+// One friendly shop card for every user, parked after this many real posts — an early
+// gap that sits BEFORE the people rail (PEOPLE_AFTER) and the first feed ad (AD_FEED_GAP
+// = 9 in lib/ads.ts), so it never crowds an ad or another established feed element.
+const SHOP_AFTER = 5;
+// Stable sentinel row for the shop card (stable identity across memo recomputes).
+const SHOP_ROW = { id: '__shop__', __shop: true } as unknown as Post;
 // Dwell AFTER the user reaches the bound. Pure pacing — the prefetch passes
 // are fire-and-forget and never awaited, so shortening this only trims how
 // long the warm-up gets to run (trimmed 5s → 3.5s for snappier unlock).
@@ -999,11 +1006,46 @@ export default function HomeScreen() {
     return gatedFeedData;
   }, [gatedFeedData, currentUserId]);
 
+  // One shop card in an early, ad-free gap — for EVERY user. Counts real posts only
+  // (skips every sentinel) and drops it in after SHOP_AFTER, which is before the people
+  // rail and the first ad, so it never lands next to an ad or crowds another element.
+  // Skipped entirely while the feed gate is locked — the gate card must stay the last
+  // row until the user arms it. A short feed still gets one card (after its last post),
+  // so a brand-new user discovers the shop too.
+  const shopFeedData = useMemo(() => {
+    if (peopleFeedData.some((r: any) => r.__gate)) return peopleFeedData;
+    let posts = 0;
+    let lastPostIdx = -1;
+    for (let i = 0; i < peopleFeedData.length; i++) {
+      const row = peopleFeedData[i] as any;
+      if (row.__stories || row.__pending || row.__people || row.__shop) continue;
+      posts++;
+      lastPostIdx = i;
+      if (posts === SHOP_AFTER) {
+        const out = peopleFeedData.slice();
+        out.splice(i + 1, 0, SHOP_ROW);
+        return out;
+      }
+    }
+    if (lastPostIdx >= 0) {
+      const out = peopleFeedData.slice();
+      out.splice(lastPostIdx + 1, 0, SHOP_ROW);
+      return out;
+    }
+    return peopleFeedData;
+  }, [peopleFeedData]);
+
   // Live mirrors for the geometry-based active-video resolver (below). It reads
   // these from refs so it can stay a stable, identity-constant callback while
   // still seeing the current data / header height / bottom inset.
-  const gatedFeedDataRef = useRef<Post[]>([]);
-  gatedFeedDataRef.current = gatedFeedData;
+  //
+  // This MUST be the exact array FlashList renders (gatedFeedData + the people rail +
+  // the shop card), because the resolver indexes it with FlashList's rendered indices
+  // (getLayout(i) / computeVisibleIndices). Pointing it at a pre-sentinel array shifted
+  // every post below an inserted row by one, so the video played one post off from the
+  // one in focus.
+  const renderedFeedDataRef = useRef<Post[]>([]);
+  renderedFeedDataRef.current = shopFeedData;
   const lastVideoTokens = useRef<any[]>([]);       // most recent 40%-visible video tokens (geometry fallback)
   const headerHRef = useRef(140);                  // floating-header height (assigned once headerH is known)
   const bottomClearRef = useRef(68);               // tab bar + safe-area cover at the bottom of the band
@@ -1246,7 +1288,7 @@ export default function HomeScreen() {
       range = list.computeVisibleIndices();
     } catch { return null; }
     if (!range || range.startIndex < 0) return null;
-    const data = gatedFeedDataRef.current;
+    const data = renderedFeedDataRef.current;
     // TWO COORDINATE SPACES, and they are not the same one. getLayout(i).y is
     // LAYOUT space — item 0 starts at 0, the content container's paddingTop
     // excluded — while getAbsoluteLastScrollOffset() is the RAW scroll offset,
@@ -2334,6 +2376,9 @@ export default function HomeScreen() {
   // By id rather than by post: a song's CREDITED collaborator is not the poster,
   // so onProfile (which reads item.user_id) would send you to the wrong person.
   const onProfileId = useCallback((id: string) => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push(`/profile/${id}`); }, []);
+  // The feed's shop card → open the marketplace. Guarded like the other taps so a tab
+  // swipe gliding over the card can't open it.
+  const onShopPress = useCallback(() => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push('/shop'); }, []);
   const onOpenPost = useCallback((item: Post, src?: SourceRect, index?: number) => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push({ pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}), ...(index != null ? { index: String(index) } : {}) } }); }, []);
   const onOpenReel = useCallback((item: Post, src?: SourceRect) => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push({ pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}) } }); }, []);
   // The spotlight tap is NOT recorded here — opening the sheet to read isn't
@@ -2427,6 +2472,7 @@ export default function HomeScreen() {
     (item as any).__pending ? <PendingUploads /> :
     (item as any).__gate ? <FeedGateCard onArm={onGateArm} /> :
     (item as any).__people ? <PeopleRow currentUserId={currentUserId} /> :
+    (item as any).__shop ? <ShopCard onPress={onShopPress} /> :
     <ElasticSwipeView resetKey={(item as any).__spotlight ? `spot:${(item as any).__spotlight.campaignId}` : item.id}>
       {(item as any).__ad ? (
         <SponsoredCard
@@ -2473,7 +2519,7 @@ export default function HomeScreen() {
   // the square positions can move — so it belongs here. Leaving it out would
   // freeze the pattern at whatever the first load happened to be.
   ), [currentUserId, likedPosts, savedPosts, isPlaying, playingTrackId, videoMuted, songMuted, songSquareIds,
-      onProfile, onProfileId, onOptions, onOpenPost, onOpenReel, onComments, onLikesPress, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions, onGateArm]);
+      onProfile, onProfileId, onOptions, onOpenPost, onOpenReel, onComments, onLikesPress, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions, onGateArm, onShopPress]);
 
   if (loading) {
     return (
@@ -2675,15 +2721,15 @@ export default function HomeScreen() {
       <FlashList
         ref={feedListRef}
         scrollEnabled={!zoomLock}
-        data={peopleFeedData}
+        data={shopFeedData}
         // Spotlight instances key off their campaign so a promoted post can
         // never key-collide with itself (organic copies are filtered at merge).
         // In v2 this is also the recycler's stable id — load-bearing.
-        keyExtractor={(item) => ((item as any).__stories ? 'stories' : (item as any).__pending ? 'pending' : (item as any).__people ? 'people' : item.__spotlight ? `spot:${item.__spotlight.campaignId}` : item.id)}
+        keyExtractor={(item) => ((item as any).__stories ? 'stories' : (item as any).__pending ? 'pending' : (item as any).__people ? 'people' : (item as any).__shop ? 'shop' : item.__spotlight ? `spot:${item.__spotlight.campaignId}` : item.id)}
         // Recycle pools are per-type: an ad cell must never be recycled into a
         // post cell (renderPost's root ternary would swap component trees —
         // a full remount AND a polluted pool).
-        getItemType={(item) => ((item as any).__stories ? 'stories' : (item as any).__pending ? 'pending' : (item as any).__people ? 'people' : (item as any).__gate ? 'gate' : (item as any).__ad ? 'ad' : 'post')}
+        getItemType={(item) => ((item as any).__stories ? 'stories' : (item as any).__pending ? 'pending' : (item as any).__people ? 'people' : (item as any).__shop ? 'shop' : (item as any).__gate ? 'gate' : (item as any).__ad ? 'ad' : 'post')}
         renderItem={renderPost}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={feedContentStyle}

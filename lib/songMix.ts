@@ -30,6 +30,12 @@ export type AmbientMix = {
   volume: number;
   /** The video's first second on its own clock (trim_start), for lining the song up with it. */
   videoStartSec: number;
+  /**
+   * Optional clip length in seconds (story music): the song loops at
+   * `startSec + clipSec` instead of at the end of the track, so a preview plays
+   * exactly the part AND the length chosen. Posts never set this.
+   */
+  clipSec?: number | null;
 };
 
 type MixColumns = {

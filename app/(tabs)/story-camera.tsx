@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from '
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Alert, Image, TextInput, Dimensions, Pressable, KeyboardAvoidingView,
-  Platform, Keyboard, PanResponder, ScrollView, Animated, Easing,
+  Platform, Keyboard, PanResponder, ScrollView, Animated, Easing, Modal,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import AppVideo from '../../components/AppVideo';
@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import CaptureCamera, { type CaptureCameraHandle, type CapturedMedia } from '../../components/CaptureCamera';
 import SongPickerModal, { type PickedSong } from '../../components/SongPickerModal';
+import { SongPartStrip, SOUND_H_PAD } from '../../components/SoundControls';
 import MentionSuggestions from '../../components/MentionSuggestions';
 import StickerLayer, {
   resolveSticker, STICKER_COLORS, STICKER_FONTS,
@@ -23,7 +24,7 @@ import { StoryBackground, StoryBackgroundPicker, DEFAULT_BG, type StoryBg } from
 import { getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import { useStories } from '../../contexts/StoriesContext';
 import { useStoryUpload } from '../../contexts/StoryUploadContext';
-import { usePostMusicActions, useSongHostActive } from '../../contexts/PostMusicContext';
+import { usePostMusicActions } from '../../contexts/PostMusicContext';
 import { useAudioControls } from '../../contexts/AudioContext';
 import { usePagerSwiping, useTabSwipeControl } from '../../contexts/PagerContext';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
@@ -31,9 +32,18 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { showPermissionDenied } from '../../lib/permissions';
 import { selection } from '../../lib/haptics';
+import { supabase } from '../../lib/supabase';
+import { clampStart, formatClock } from '../../lib/songMix';
+import { STORY_MUSIC_MIN_SEC, STORY_MUSIC_MAX_SEC, STORY_MUSIC_DEFAULT_SEC } from '../../lib/stories';
 
 const VIDEO_MAX_SEC = 60;
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+
+// Clip-length choices for the story-music duration menu (5s … 25s).
+const DURATION_OPTIONS = Array.from(
+  { length: STORY_MUSIC_MAX_SEC - STORY_MUSIC_MIN_SEC + 1 },
+  (_, i) => STORY_MUSIC_MIN_SEC + i,
+);
 
 // Text-size slider range (editor): top of the track = biggest type.
 // Shorter + screen-relative so the slider's bottom always clears the keyboard-attached
@@ -130,15 +140,53 @@ export default function StoryCameraScreen() {
   const stickerIdRef = useRef(0);
   const [song, setSong] = useState<PickedSong | null>(null);
   const [showSongPicker, setShowSongPicker] = useState(false);
+  // Which part of the chosen song plays, and for how long. startSec is the offset
+  // into the song; clipSec (5..25) is how long it plays AND how long the image
+  // stays up in the viewer. songDragStart follows the finger while scrubbing.
+  const [songStartSec, setSongStartSec] = useState(0);
+  const [songClipSec, setSongClipSec] = useState(STORY_MUSIC_DEFAULT_SEC);
+  const [songDragStart, setSongDragStart] = useState<number | null>(null);
+  // The song's audio URL + length — PickedSong carries neither, so (like the video
+  // studio) resolve them by id. Length scales the trim strip; url pre-feeds preview.
+  const [songInfo, setSongInfo] = useState<{ id: string; url: string | null; durationSec: number } | null>(null);
+  // Done trimming → the editing card collapses and the song name shows as a top
+  // pill; the clip keeps looping as a preview until the story is posted.
+  const [songDone, setSongDone] = useState(false);
+  const [showDurationPicker, setShowDurationPicker] = useState(false);  // scroll menu for clip length
   // In-editor song preview (host id keys this screen's playback in the shared
   // post-music player, which fetches the track by song id on demand).
-  // Narrow subscription: this ALWAYS-MOUNTED camera screen used to consume the
-  // full usePostMusic() (activeId), so EVERY ambient song start/stop anywhere
-  // in the app re-rendered the whole camera — a heavy hidden cost that fired
-  // exactly when song posts scrolled by (even under the reels modal). Now it
-  // re-renders only when ITS OWN preview flips.
   const { playSong, stop: stopSong } = usePostMusicActions();
-  const previewing = useSongHostActive('story-editor');
+  // Resolve the chosen song's audio URL + length by id (PickedSong has neither).
+  useEffect(() => {
+    const sid = song?.id;
+    if (!sid || songInfo?.id === sid) return;
+    let cancelled = false;
+    supabase.from('posts').select('media_url, duration_seconds').eq('id', sid).single()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const d: any = data;
+        setSongInfo({ id: sid, url: d?.media_url ?? null, durationSec: Number(d?.duration_seconds) || 0 });
+      }, () => { if (!cancelled) setSongInfo({ id: sid, url: null, durationSec: 0 }); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [song?.id]);
+  const songSec = song && songInfo?.id === song.id ? (songInfo?.durationSec ?? 0) : 0;
+  const songUrl = song && songInfo?.id === song.id ? (songInfo?.url ?? null) : null;
+  const clipSec = Math.min(STORY_MUSIC_MAX_SEC, Math.max(STORY_MUSIC_MIN_SEC, songClipSec));
+  const songStart = clampStart(songStartSec, songSec, clipSec);
+  // Auto-preview: the moment a song is chosen it plays, looping its chosen part, and
+  // keeps looping (through editing AND after Done) until the story is posted or the
+  // song is removed/changed. Re-applying on start/length changes moves the clip in
+  // place (same host → the player swaps the mix without restarting). Paused while the
+  // song picker is open — its own list plays previews on another host there.
+  useEffect(() => {
+    if (song && stage === 'preview' && !showSongPicker) {
+      playSong('story-editor', song.id, songUrl, { startSec: songStart, volume: 1, videoStartSec: 0, clipSec });
+    } else {
+      stopSong('story-editor');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [song?.id, songStart, clipSec, songUrl, stage, showSongPicker]);
   const [showCaption, setShowCaption] = useState(false);            // caption input (opened from the rail)
   const [dragActive, setDragActive] = useState(false);              // a sticker is mid-drag → show trash
   const [overTrash, setOverTrash] = useState(false);
@@ -292,7 +340,7 @@ export default function StoryCameraScreen() {
         setCaption(''); setStickers([]); setEditingId(null); setEditingText('');
         setStrokes([]); setDrawing(false); setBg(DEFAULT_BG); setBgPicking(false);
         stopSong('story-editor');
-        setSong(null); setShowCaption(false); setSaved(false);
+        setSong(null); resetSongTrim(); setShowCaption(false); setSaved(false);
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
@@ -300,6 +348,16 @@ export default function StoryCameraScreen() {
 
   function close() {
     navigation.navigate('index');
+  }
+
+  // Drop the song-trim choices (start/length/resolved info) back to defaults —
+  // on removing the song, picking a different one, retaking, or leaving.
+  function resetSongTrim() {
+    setSongStartSec(0);
+    setSongClipSec(STORY_MUSIC_DEFAULT_SEC);
+    setSongDragStart(null);
+    setSongInfo(null);
+    setSongDone(false);
   }
 
   function setCapturedMedia(c: Captured) {
@@ -346,7 +404,7 @@ export default function StoryCameraScreen() {
     setCaptured(null);
     setCaption(''); setStickers([]); setEditingId(null); setEditingText('');
     setStrokes([]); setDrawing(false); setBg(DEFAULT_BG); setBgPicking(false);
-    setSong(null); setShowCaption(false); setSaved(false);
+    setSong(null); resetSongTrim(); setShowCaption(false); setSaved(false);
     resetCrop();
     setStage('capture');
   }
@@ -398,6 +456,9 @@ export default function StoryCameraScreen() {
       aspectRatio: '9:16',
       durationSeconds: captured.type === 'video' ? captured.durationSec ?? null : null,
       song: song ? { id: song.id, title: song.title, artist: song.artist, artistId: song.artistId } : null,
+      // Start offset + clip length are photo-story only (a video keeps its own length).
+      songStartSec: song && captured.type === 'image' ? songStart : null,
+      songClipSec: song && captured.type === 'image' ? clipSec : null,
       stickers: allStickers.length ? allStickers : null,
     });
     retake();
@@ -509,7 +570,25 @@ export default function StoryCameraScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Edit tool rail — text, draw, background, caption, music, save */}
+        {/* Top music entry (white pill). "Add music" when none is set; while a song
+            is being trimmed the bottom card takes over and this hides; after Done the
+            card collapses and the song NAME shows here — tap it to edit again. */}
+        {!dragActive && !drawing && !editingId && (song ? songDone : true) && (
+          <View style={[styles.addMusicWrap, { top: insets.top + 8 }]} pointerEvents="box-none">
+            <TouchableOpacity
+              style={styles.addMusicBtn}
+              onPress={() => (song ? setSongDone(false) : setShowSongPicker(true))}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={song ? song.title : t('post.addMusic')}
+            >
+              <Ionicons name="musical-notes" size={16} color="#111" />
+              <Text style={styles.addMusicText} numberOfLines={1}>{song ? song.title : t('post.addMusic')}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Edit tool rail — text, draw, background, caption, save */}
         {!dragActive && !drawing && (
           <View style={[styles.toolRail, { top: insets.top + 8 }]}>
             <TouchableOpacity style={styles.roundBtn} onPress={() => addStickerAt(0.5, 0.4)}>
@@ -530,13 +609,6 @@ export default function StoryCameraScreen() {
                 color={caption.trim() ? colors.primaryLight : '#fff'}
               />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.roundBtn} onPress={() => setShowSongPicker(true)}>
-              <Ionicons
-                name={song ? 'musical-notes' : 'musical-notes-outline'}
-                size={23}
-                color={song ? colors.primaryLight : '#fff'}
-              />
-            </TouchableOpacity>
             <TouchableOpacity style={styles.roundBtn} onPress={saveToDevice}>
               <Ionicons name={saved ? 'checkmark' : 'download-outline'} size={24} color={saved ? colors.success : '#fff'} />
             </TouchableOpacity>
@@ -548,42 +620,72 @@ export default function StoryCameraScreen() {
             that editor's color/font toolbar — and "Add to story" has no use mid-edit. */}
         {!dragActive && !editingId && !drawing && !bgPicking && (
         <View style={[styles.previewBottom, { bottom: kbHeight, paddingBottom: kbHeight > 0 ? SPACING.md : insets.bottom + SPACING.md }]}>
-          {/* Chosen song / written caption show as compact pills; the actual
-              "add" actions live on the right tool rail. */}
-          {song && (
+          {/* The music editing card — only while trimming (before Done). After Done
+              it collapses to the top song pill; the clip keeps looping underneath. */}
+          {song && !songDone && (
             <View style={styles.songCard}>
-              {song.cover ? (
-                <Image source={{ uri: song.cover }} style={styles.songCardCover} />
-              ) : (
-                <View style={[styles.songCardCover, styles.songCardCoverEmpty]}>
-                  <Ionicons name="musical-notes" size={18} color="#fff" />
+              <View style={styles.songCardRow}>
+                {song.cover ? (
+                  <Image source={{ uri: song.cover }} style={styles.songCardCover} />
+                ) : (
+                  <View style={[styles.songCardCover, styles.songCardCoverEmpty]}>
+                    <Ionicons name="musical-notes" size={18} color="#fff" />
+                  </View>
+                )}
+                <View style={styles.songCardInfo}>
+                  <Text style={styles.songCardTitle} numberOfLines={1}>{song.title}</Text>
+                  <Text style={styles.songCardArtist} numberOfLines={1}>{song.artist}</Text>
                 </View>
-              )}
-              <View style={styles.songCardInfo}>
-                <Text style={styles.songCardTitle} numberOfLines={1}>{song.title}</Text>
-                <Text style={styles.songCardArtist} numberOfLines={1}>{song.artist}</Text>
+                {/* Done — collapse to the top pill; the clip keeps looping. */}
+                <TouchableOpacity style={styles.songDoneBtn} onPress={() => setSongDone(true)} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={t('common.done')} hitSlop={6}>
+                  <Ionicons name="checkmark" size={20} color="#111" />
+                </TouchableOpacity>
+                {/* Remove the music entirely. */}
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.close')}
+                  style={styles.songCardBtn}
+                  onPress={() => { stopSong('story-editor'); setSong(null); resetSongTrim(); }}
+                  hitSlop={6}
+                >
+                  <Ionicons name="close" size={20} color="#fff" />
+                </TouchableOpacity>
               </View>
-              {/* Preview the chosen track — the app's signature orange circle */}
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel={previewing ? t('a11y.pause') : t('a11y.play')}
-                onPress={() => (previewing ? stopSong('story-editor') : playSong('story-editor', song.id))}
-                hitSlop={6}
-              >
-                {/* White in BOTH themes. This card floats on the photo, not on
-                    the theme — its swap and close icons are already hardcoded
-                    #fff for that reason — so following colors.text turned the
-                    play button into a black disc on the media in light mode. */}
-                <Ionicons name={previewing ? 'pause-circle' : 'play-circle'} size={44} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.flipCamera')} style={styles.songCardBtn} onPress={() => setShowSongPicker(true)} hitSlop={6}>
-                <Ionicons name="swap-horizontal" size={20} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.close')}
-                style={styles.songCardBtn}
-                onPress={() => { stopSong('story-editor'); setSong(null); }}
-                hitSlop={6}
-              >
-                <Ionicons name="close" size={20} color="#fff" />
-              </TouchableOpacity>
+              {/* Trim (photos only): drag the window for WHERE the song starts. The
+                  length is picked from the scroll menu below and also sets how long
+                  the photo stays up. The clip auto-previews on a loop as you edit. */}
+              {captured?.type === 'image' && (
+                <>
+                  <View style={styles.songDivider} />
+                  <Text style={[styles.songTrimStart, styles.songTrimPad]}>{t('sound.startsAt', { time: formatClock(songDragStart ?? songStart) })}</Text>
+                  {songSec > 0 ? (
+                    <SongPartStrip
+                      seed={song.id}
+                      songSec={songSec}
+                      windowSec={clipSec}
+                      startSec={songStart}
+                      onDrag={setSongDragStart}
+                      onCommit={(sec) => setSongStartSec(clampStart(sec, songSec, clipSec))}
+                    />
+                  ) : (
+                    <Text style={[styles.songTrimHint, styles.songTrimPad]}>{t('storyCamera.musicPreparing')}</Text>
+                  )}
+                </>
+              )}
+              {/* Controls: pick the clip LENGTH (scroll menu) and change the song.
+                  Done (✓) and remove (✕) sit together in the row above. */}
+              <View style={styles.songControlsRow}>
+                {captured?.type === 'image' && (
+                  <TouchableOpacity style={styles.songChip} onPress={() => setShowDurationPicker(true)} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={t('storyCamera.clipLength')}>
+                    <Ionicons name="timer-outline" size={15} color="#fff" />
+                    <Text style={styles.songChipText}>{t('storyCamera.clipSeconds', { n: clipSec })}</Text>
+                    <Ionicons name="chevron-down" size={14} color="rgba(255,255,255,0.8)" />
+                  </TouchableOpacity>
+                )}
+                <View style={{ flex: 1 }} />
+                <TouchableOpacity style={styles.songChip} onPress={() => setShowSongPicker(true)} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={t('storyCamera.changeSong')}>
+                  <Ionicons name="musical-notes" size={15} color="#fff" />
+                  <Text style={styles.songChipText}>{t('storyCamera.changeSong')}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
           {showCaption ? (
@@ -637,8 +739,34 @@ export default function StoryCameraScreen() {
         <SongPickerModal
           visible={showSongPicker}
           onClose={() => setShowSongPicker(false)}
-          onSelect={(s) => { stopSong('story-editor'); setSong(s); }}
+          onSelect={(s) => { stopSong('story-editor'); resetSongTrim(); setSong(s); }}
         />
+
+        {/* Clip-length scroll menu — a bottom sheet of 5–25s; tap to choose. */}
+        <Modal visible={showDurationPicker} transparent animationType="slide" onRequestClose={() => setShowDurationPicker(false)}>
+          <TouchableOpacity style={styles.durationOverlay} activeOpacity={1} onPress={() => setShowDurationPicker(false)}>
+            <TouchableOpacity style={[styles.durationSheet, { paddingBottom: insets.bottom + SPACING.md }]} activeOpacity={1}>
+              <View style={styles.durationHandle} />
+              <Text style={styles.durationTitle}>{t('storyCamera.clipLength')}</Text>
+              <ScrollView style={styles.durationList} contentContainerStyle={{ paddingVertical: SPACING.xs }} showsVerticalScrollIndicator={false}>
+                {DURATION_OPTIONS.map((n) => {
+                  const sel = n === clipSec;
+                  return (
+                    <TouchableOpacity
+                      key={n}
+                      style={[styles.durationRow, sel && styles.durationRowSel]}
+                      onPress={() => { setSongClipSec(n); selection(); setShowDurationPicker(false); }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.durationRowText, sel && styles.durationRowTextSel]}>{t('storyCamera.clipSeconds', { n })}</Text>
+                      {sel && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
 
         {/* Background picker rail — solid / gradient / blurred backdrop behind the
             media (shows where a shrunk photo leaves room); live preview as you tap. */}
@@ -884,6 +1012,18 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
 
   // ── Preview / editor ─────────────────────────────────────────────────────
+  // Top-centred "Add music" pill (clears the back button at left and the tool rail
+  // at right). box-none wrapper so only the pill itself is tappable.
+  addMusicWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  // White pill, black text — the top "Add music" entry, and the song-name pill once
+  // Done. maxWidth so a long title truncates instead of colliding with back/rail.
+  addMusicBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#fff', borderRadius: RADIUS.full,
+    paddingHorizontal: SPACING.md, paddingVertical: 9, maxWidth: SCREEN_W * 0.62,
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 1 },
+  },
+  addMusicText: { color: '#111', fontSize: 14, fontWeight: '800', flexShrink: 1 },
   toolRail: { position: 'absolute', right: SPACING.md, gap: SPACING.sm },
   trashZone: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   trashCircle: {
@@ -1005,14 +1145,27 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     alignSelf: 'flex-start', maxWidth: '100%',
   },
   captionPreviewText: { color: '#fff', fontSize: 14, lineHeight: 19 },
-  // Chosen-song card: tall and prominent, with comfortable touch targets for
-  // preview / swap / remove.
+  // Chosen-song card — ONE integrated panel: the track row on top, then (photos
+  // only) a hairline divider and the trim controls below. previewBottom pads 16 each
+  // side, so this card is SCREEN_W-32 wide — exactly SongPartStrip's own width, which
+  // lets the strip run full-bleed while the row/label/slider stay inset by SOUND_H_PAD.
+  // No horizontal padding on the card itself, for that reason.
   songCard: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm + 2,
     backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.lg,
     borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.25)',
-    padding: SPACING.sm + 4,
+    paddingVertical: SPACING.sm + 2, overflow: 'hidden',
   },
+  songCardRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm + 2,
+    paddingHorizontal: SOUND_H_PAD,
+  },
+  songDivider: {
+    height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.16)',
+    marginHorizontal: SOUND_H_PAD, marginTop: SPACING.sm, marginBottom: SPACING.xs,
+  },
+  songTrimPad: { paddingHorizontal: SOUND_H_PAD },
+  songTrimStart: { color: '#fff', fontSize: 12.5, fontWeight: '700', textAlign: 'center', marginBottom: 2 },
+  songTrimHint: { color: 'rgba(255,255,255,0.7)', fontSize: 12.5, textAlign: 'center', paddingVertical: SPACING.md },
   songCardCover: { width: 46, height: 46, borderRadius: RADIUS.sm, overflow: 'hidden' },
   songCardCoverEmpty: { backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
   songCardInfo: { flex: 1 },
@@ -1023,4 +1176,36 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.14)',
   },
+  // Bottom control row: [length] … [change song] [✓ done].
+  songControlsRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: SOUND_H_PAD, marginTop: SPACING.sm, gap: SPACING.sm,
+  },
+  songChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: RADIUS.full,
+    paddingHorizontal: SPACING.sm + 4, paddingVertical: 7,
+  },
+  songChipText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  songDoneBtn: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  // Clip-length scroll menu (bottom sheet) — respects the app theme.
+  durationOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
+  durationSheet: {
+    backgroundColor: colors.surfaceElevated,
+    borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl,
+    paddingTop: SPACING.sm, paddingHorizontal: SPACING.md, maxHeight: '60%',
+  },
+  durationHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: SPACING.sm },
+  durationTitle: { color: colors.text, fontSize: 16, fontWeight: '800', textAlign: 'center', marginBottom: SPACING.xs },
+  durationList: { alignSelf: 'stretch' },
+  durationRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 13, borderRadius: RADIUS.md,
+  },
+  durationRowSel: { backgroundColor: 'rgba(127,127,127,0.14)' },
+  durationRowText: { color: colors.textSecondary, fontSize: 17, fontWeight: '600' },
+  durationRowTextSel: { color: colors.text, fontWeight: '800' },
 });

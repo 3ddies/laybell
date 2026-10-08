@@ -53,6 +53,7 @@ import { unseenShopActivityCount, hasOpenShop } from '../../lib/shop';
 import { fetchProfileViewers } from '../../lib/profileViews';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ProfileCompletion from '../../components/ProfileCompletion';
+import DailyBadges from '../../components/DailyBadges';
 import { profileProgress, type ProfileTaskKey } from '../../lib/profileCompletion';
 import TranslatableText from '../../components/TranslatableText';
 import { ProfileSkeleton } from '../../components/Skeleton';
@@ -828,7 +829,8 @@ export default function ProfileScreen() {
     // Asked here, not inside the component: an element that renders null is
     // still an element, and the grid would carry an invisible first row for it.
     const facts = { avatarUrl, bio: profile?.bio, posts: stats.posts, hasShop };
-    const showChecklist = key === 'posts' && !checklistHidden && !profileProgress(facts).complete;
+    const setupComplete = profileProgress(facts).complete;
+    const showChecklist = key === 'posts' && !checklistHidden && !setupComplete;
     const checklist = showChecklist ? (
       <ProfileCompletion
         facts={facts}
@@ -845,6 +847,13 @@ export default function ProfileScreen() {
         }}
       />
     ) : null;
+    // Setup done → the setup checklist gives way to the "Daily badges" TODO. The two
+    // are mutually exclusive (one needs !complete, the other complete), so at most one
+    // card sits atop the Posts grid.
+    const dailyCard = key === 'posts' && setupComplete ? (
+      <DailyBadges onSeeAll={() => router.push('/badges')} />
+    ) : null;
+    const topCard = checklist ?? dailyCard;
     if (key === 'posts' && pageLayout) {
       const layout = (
         <ProfileLayoutGrid
@@ -862,9 +871,9 @@ export default function ProfileScreen() {
           onLongPressPost={showPostOptions}
         />
       );
-      return <>{checklist}{layout}</>;
+      return <>{topCard}{layout}</>;
     }
-    if (checklist) return checklist;
+    if (topCard) return topCard;
     if (key === 'videos') {
       const all = dataForTab('videos');
       const films = all.filter((p: any) => isFilm(p));
