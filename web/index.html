@@ -40,8 +40,25 @@ header .name{font-weight:800;font-size:19px;letter-spacing:-.3px}
   background:linear-gradient(92deg,var(--brand),var(--brand2));
   -webkit-background-clip:text;background-clip:text;color:transparent}
 .hero p{font-size:19px;line-height:1.55;color:var(--muted);margin:0;max-width:38ch}
-.status{display:inline-block;margin-top:26px;padding:7px 14px;border-radius:999px;
+.status{display:inline-flex;align-items:center;margin-top:26px;padding:7px 14px;border-radius:999px;
   background:var(--card);border:1px solid var(--line);font-size:13.5px;font-weight:600;color:var(--muted)}
+.status .dot{width:8px;height:8px;border-radius:50%;background:#2bbf4e;margin-right:8px;
+  box-shadow:0 0 0 3px rgba(43,191,78,.18)}
+
+/* Store buttons — the whole point of the page once someone is curious. Custom
+   dark pills (no external badge assets): the Apple glyph and a colour-graded
+   Google play mark, each with the recognisable two-line label. */
+.cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}
+.badge{display:inline-flex;align-items:center;gap:11px;padding:10px 17px;border-radius:13px;
+  background:#000;color:#fff;text-decoration:none;border:1px solid transparent;
+  transition:transform .12s ease,box-shadow .12s ease}
+.badge:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(0,0,0,.20)}
+.badge:active{transform:translateY(0)}
+.badge svg{width:23px;height:23px;flex:none;fill:#fff}
+.badge .bt{display:flex;flex-direction:column;line-height:1.08;text-align:left}
+.badge .bt small{font-size:10px;font-weight:500;letter-spacing:.02em;opacity:.92}
+.badge .bt b{font-size:17px;font-weight:700;letter-spacing:-.2px}
+@media (prefers-color-scheme:dark){ .badge{border-color:#2c2c32} }
 
 h2{font-size:13px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
   margin:64px 0 20px;font-weight:700}
@@ -82,7 +99,17 @@ footer a{color:var(--muted)}
 <section class="hero">
   <h1>Music, made independent.</h1>
   <p>Post your music, go live, sell your beats, and get paid by the people who actually listen.</p>
-  <div class="status">Coming to iOS and Android in 2026</div>
+  <div class="status"><span class="dot"></span>Now available on iPhone &amp; Android</div>
+  <div class="cta">
+    <a class="badge" href="https://apps.apple.com/app/laybell/id6795675871" aria-label="Download Laybell on the App Store">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.543 12.607c-.02-2.31 1.886-3.42 1.973-3.472-1.077-1.574-2.753-1.79-3.348-1.814-1.425-.144-2.78.84-3.502.84-.72 0-1.837-.82-3.02-.797-1.554.023-2.988.903-3.786 2.294-1.615 2.8-.413 6.943 1.157 9.22.767 1.114 1.68 2.363 2.877 2.318 1.154-.045 1.59-.746 2.985-.746 1.394 0 1.787.746 3.006.724 1.24-.02 2.026-1.135 2.785-2.252.878-1.29 1.24-2.542 1.26-2.606-.028-.012-2.417-.927-2.44-3.67zM15.223 5.5c.637-.772 1.067-1.845.95-2.915-.918.037-2.03.612-2.69 1.383-.59.683-1.107 1.775-.968 2.825 1.025.08 2.07-.52 2.708-1.293z"/></svg>
+      <span class="bt"><small>Download on the</small><b>App Store</b></span>
+    </a>
+    <a class="badge" href="https://play.google.com/store/apps/details?id=com.laybell.app" aria-label="Get Laybell on Google Play">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="gp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#00D2FF"/><stop offset=".4" stop-color="#00E676"/><stop offset=".7" stop-color="#FFD000"/><stop offset="1" stop-color="#FF3D47"/></linearGradient></defs><path d="M7 3.5v17l12-8.5z" fill="url(#gp)"/></svg>
+      <span class="bt"><small>Get it on</small><b>Google Play</b></span>
+    </a>
+  </div>
 </section>
 
 <h2>What Laybell does</h2>
@@ -108,8 +135,8 @@ footer a{color:var(--muted)}
 <h2>About</h2>
 <div class="about">
   <p><strong>Laybell LLC</strong> is a Maryland limited liability company building Laybell, a music
-  and social platform for independent artists. The app runs in ten languages and is currently in
-  development ahead of its 2026 release.</p>
+  and social platform for independent artists. The app runs in ten languages and is available now on
+  the App&nbsp;Store and Google&nbsp;Play.</p>
   <p>Laybell operates a registered DMCA agent, is a registered electronic service provider with the
   National Center for Missing &amp; Exploited Children, and holds a public performance licence
   with BMI.</p>
