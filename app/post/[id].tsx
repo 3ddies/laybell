@@ -5,6 +5,7 @@ import { songPlaysFor } from '../../lib/postSong';
 import { ambientMixFor, videoSoundFor } from '../../lib/songMix';
 import { Image as ExpoImage } from 'expo-image';
 import { fullImagePreviewProps } from '../../lib/mediaPreview';
+import { formatCount } from '../../lib/format';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Image, TextInput, KeyboardAvoidingView,
@@ -141,6 +142,11 @@ export default function PostDetailScreen() {
   const [isLiked, setIsLiked] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [saveCount, setSaveCount] = useState<number>(seeded?.save_count ?? 0);
+  // The action row tightens when the post has little engagement and opens up as its
+  // counts appear — same adaptive spacing as the feed.
+  const shareCount = post?.share_count || 0;
+  const engagedActions = (likeCount > 0 ? 1 : 0) + (saveCount > 0 ? 1 : 0) + (shareCount > 0 ? 1 : 0);
+  const actionRowGap = engagedActions === 0 ? 10 : engagedActions === 1 ? 16 : 22;
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(true);
@@ -592,7 +598,7 @@ export default function PostDetailScreen() {
             )}
 
             {/* Actions */}
-            <View style={styles.actions}>
+            <View style={[styles.actions, { gap: actionRowGap }]}>
               <View style={styles.actionBtn}>
                 <TouchableOpacity onPress={handleLike} activeOpacity={0.6} hitSlop={8}>
                   <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={23} color={isLiked ? colors.like : colors.textSecondary} />
@@ -600,13 +606,13 @@ export default function PostDetailScreen() {
                 {/* The COUNT (not the heart) opens the list of who engaged. */}
                 {likeCount > 0 && (
                   <TouchableOpacity onPress={() => router.push(`/post-engagement/${id}`)} activeOpacity={0.6} hitSlop={8}>
-                    <Text style={[styles.actionCount, isLiked && { color: colors.like }]}>{likeCount}</Text>
+                    <Text style={[styles.actionCount, isLiked && { color: colors.like }]} numberOfLines={1}>{formatCount(likeCount)}</Text>
                   </TouchableOpacity>
                 )}
               </View>
               <TouchableOpacity style={styles.actionBtn} onPress={handleSave} activeOpacity={0.6} hitSlop={8}>
                 <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={22} color={isSaved ? colors.text : colors.textSecondary} />
-                {saveCount > 0 && <Text style={[styles.actionCount, isSaved && { color: colors.text }]}>{saveCount}</Text>}
+                {saveCount > 0 && <Text style={[styles.actionCount, isSaved && { color: colors.text }]} numberOfLines={1}>{formatCount(saveCount)}</Text>}
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.actionBtn}
@@ -622,7 +628,7 @@ export default function PostDetailScreen() {
                 })}
               >
                 <Ionicons name="share-social-outline" size={22} color={colors.textSecondary} />
-                {(post.share_count || 0) > 0 && <Text style={styles.actionCount}>{post.share_count}</Text>}
+                {(post.share_count || 0) > 0 && <Text style={styles.actionCount} numberOfLines={1}>{formatCount(post.share_count)}</Text>}
               </TouchableOpacity>
             </View>
           </>
@@ -682,9 +688,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   audioArtist: { color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 2 },
   captionRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
   caption: { color: colors.text, fontSize: 15, lineHeight: 22, flexShrink: 1 },
-  actions: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, gap: SPACING.lg },
+  actions: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  actionCount: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  // tabular-nums keeps digits a fixed width so the icons never nudge as counts change.
+  actionCount: { color: colors.textSecondary, fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] },
   divider: { height: 0.5, backgroundColor: colors.border, marginHorizontal: SPACING.md, marginTop: SPACING.sm },
   commentsLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, textTransform: 'uppercase', letterSpacing: 0.5 },
   emptyComments: { color: colors.textTertiary, fontSize: 14, textAlign: 'center', paddingVertical: SPACING.xl },

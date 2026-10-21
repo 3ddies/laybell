@@ -18,6 +18,7 @@ import { ensureProfileForSession } from '../lib/socialAuth';
 import { sweepAbandonedStreamUploads } from '../lib/streamUpload';
 import { clearAgeCache } from '../lib/minors';
 import { clearScreenCaches } from '../lib/screenCache';
+import { rememberActiveAccount, isAddingAccount, setAddAccountMode } from '../lib/accounts';
 import { Session } from '@supabase/supabase-js';
 import { COLORS } from '../constants/theme';
 import { tg } from '../lib/i18n';
@@ -575,6 +576,13 @@ function RootLayout() {
       // on this device can't inherit the first one's adult status and unlock the
       // 18+ gates. Token refreshes deliberately keep the cache.
       if (event === 'SIGNED_OUT' || event === 'SIGNED_IN') { clearAgeCache(); clearScreenCaches(); }
+      // A new account signing in ends any "add account" flow — the gate can route
+      // to it normally now (and a plain sign-in clears a flag that's already off).
+      if (event === 'SIGNED_IN') setAddAccountMode(false);
+      // Keep the active account's (rotating) refresh token current in the
+      // multi-account store, so the switcher can always hop back to it. Fires on
+      // SIGNED_IN, TOKEN_REFRESHED and the cold-start INITIAL_SESSION alike.
+      if (session?.user?.id) rememberActiveAccount(session).catch(() => {});
     });
 
     return () => subscription.unsubscribe();
@@ -663,7 +671,10 @@ function RootLayout() {
 
     if (!session && !inAuthGroup && !inLegal && !inAuthCallback) {
       router.replace('/(auth)/login');
-    } else if (session && inAuthGroup && !inPasswordReset) {
+    } else if (session && inAuthGroup && !inPasswordReset && !isAddingAccount()) {
+      // Normally a live session can't sit on the login screen — but "add account"
+      // deliberately shows login WITH the current account still signed in, so the
+      // user can cancel back. While that flag is set, don't bounce them out.
       checkOnboarding();
     } else if (session && !inAuthGroup && !inOnboarding && !inLegal) {
       checkOnboarding(true);

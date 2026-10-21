@@ -17,8 +17,15 @@ export type SongMix = {
   videoVolume: number;
 };
 
-/** What the editor opens on: today's behaviour — the song at full, the video silent. */
+/** What the editor opens on: the song at full, the video silent. Right for a
+ *  SILENT clip (lip-sync, aesthetic b-roll) — the song becomes the whole sound. */
 export const DEFAULT_MIX: SongMix = { startSec: 0, songVolume: 1, videoVolume: 0 };
+
+/** Opening mix for a clip that has its OWN audio (someone talking): the video's
+ *  sound stays full and the song is ducked underneath, so the words are still
+ *  clearly audible with music under them — TikTok's commentary-vs-aesthetic call.
+ *  The user can still push either level with the studio's sliders. */
+export const BLEND_MIX: SongMix = { startSec: 0, songVolume: 0.3, videoVolume: 1 };
 
 /**
  * What the ambient song player needs for a post (contexts/PostMusicContext).

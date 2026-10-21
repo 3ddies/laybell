@@ -230,10 +230,36 @@ export default function OnboardingScreen() {
   }
 
   async function handlePermissionsContinue() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user && obPhone.trim()) {
-      await saveOwnPhone(obPhone);
-      upsertOwnIdentifiers(user.id, user.email, obPhone);
+    if (permBusy) return;
+    setPermBusy('continue');
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // Apple 5.1.1(iv): after this explainer the user must always reach the system
+      // permission prompt — we never let them skip it. Request anything they haven't
+      // already acted on; iOS shows the dialog only while the status is undetermined,
+      // and the user stays in control by choosing "Don't Allow" there. (Location is
+      // not requested for minors — see lib/location — which is a separate legal rule.)
+      if (!locEnabled && user) {
+        try { if (await captureAndSaveLocation(user.id)) setLocEnabled(true); } catch {}
+      }
+      if (!contactsEnabled) {
+        try {
+          const perm = await requestContactsPermission();
+          if (perm.granted && user) {
+            await supabase.from('profiles').update({ contacts_enabled: true }).eq('id', user.id);
+            setContactHashes(await readContactHashes());
+            setContactsEnabled(true);
+          }
+        } catch {}
+      }
+
+      if (user && obPhone.trim()) {
+        await saveOwnPhone(obPhone);
+        upsertOwnIdentifiers(user.id, user.email, obPhone);
+      }
+    } finally {
+      setPermBusy(null);
     }
     setStep(3);
   }
@@ -677,14 +703,15 @@ export default function OnboardingScreen() {
         </ScrollView>
 
         <View style={styles.bottomBar}>
-          <TouchableOpacity style={styles.primaryBtn} onPress={handlePermissionsContinue}>
+          <TouchableOpacity style={styles.primaryBtn} onPress={handlePermissionsContinue} disabled={!!permBusy}>
             <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnInner}>
-              <Text style={styles.primaryBtnText}>{t('onboarding.continue')}</Text>
-              <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+              {permBusy === 'continue'
+                ? <ActivityIndicator color="#FFFFFF" size="small" />
+                : <>
+                    <Text style={styles.primaryBtnText}>{t('onboarding.continue')}</Text>
+                    <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+                  </>}
             </LinearGradient>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handlePermissionsContinue}>
-            <Text style={styles.skipText}>{t('onboarding.skip')}</Text>
           </TouchableOpacity>
         </View>
       </View>

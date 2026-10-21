@@ -86,6 +86,25 @@ export function fullImagePreviewProps(p: PreviewPost | null | undefined): Partia
   return previewImageProps(p);
 }
 
+// Feed display size for a Supabase-hosted picture. The feed card renders at phone
+// width (≤ ~430pt × 3 ≈ 1290px), but media_url is the FULL upload (up to ~4000px),
+// so the card pulls and decodes far more than it shows on every image post. This
+// rewrites a Supabase Storage public URL to its on-the-fly image transform bounded to
+// ~1440px — sharp on any phone, a fraction of the bytes and decode — and leaves any
+// non-Supabase URL (or a nullish one) untouched. The fullscreen post viewer keeps the
+// full media_url, where pinch-zoom needs every pixel. Supabase never upscales, so a
+// smaller original is served at its own size.
+const FEED_IMAGE_WIDTH = 1440;
+export function feedImageUri(url: string | null | undefined, width = FEED_IMAGE_WIDTH): string | undefined {
+  if (!url) return undefined;
+  const marker = '/storage/v1/object/public/';
+  const i = url.indexOf(marker);
+  if (i === -1) return url; // not a Supabase Storage public URL — leave it as-is
+  const rewritten = url.slice(0, i) + '/storage/v1/render/image/public/' + url.slice(i + marker.length);
+  const sep = rewritten.includes('?') ? '&' : '?';
+  return `${rewritten}${sep}width=${width}&quality=75`;
+}
+
 /** The best picture for a grid tile — the small copy when the post has one. */
 export function tileImageUri(p: PreviewPost): string | null {
   if (p.thumb_url) return p.thumb_url;

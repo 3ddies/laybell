@@ -1,9 +1,18 @@
-// Abbreviated counts for UI (1234 -> "1.2k", 2_000_000 -> "2M").
+// Counts for the UI. The full number shows through 9,999 — every digit of a
+// like / share / save count reads as "this is taking off" in a way "1.3k" never
+// does, and the extra digits are what make the number feel earned. Only once a
+// count reaches five digits does it abbreviate (10k, 10.5k, 1.2M), where the raw
+// number would be too wide for a button. A trailing ".0" is dropped so the short
+// forms stay tidy (10k, not 10.0k).
 export function formatCount(n?: number | null): string {
   if (!n || n <= 0) return '0';
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}k`;
-  return String(n);
+  if (n < 10_000) return String(Math.round(n)); // 1 … 9999 — show every digit
+  const unit = n >= 1_000_000 ? 1_000_000 : 1_000;
+  const v = n / unit;
+  // One decimal while the mantissa is small (10.5k, 1.2M); none once it is large
+  // (250k, 12M), where a decimal would read as noise rather than precision.
+  const s = v.toFixed(v < 100 ? 1 : 0).replace(/\.0$/, '');
+  return `${s}${unit === 1_000_000 ? 'M' : 'k'}`;
 }
 
 // Human-readable byte sizes for storage UI (0 -> "0 MB", 1.5e9 -> "1.5 GB").

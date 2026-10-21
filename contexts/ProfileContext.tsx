@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image as ExpoImage } from 'expo-image';
 import { supabase } from '../lib/supabase';
@@ -166,8 +166,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // Memoized so a ProfileProvider re-render doesn't hand every useProfile() consumer
+  // (HomeScreen, ReelScreen, …) a fresh object and re-render them for nothing.
+  const value = useMemo(() => ({ profile, loading, refresh, update }), [profile, loading, refresh, update]);
   return (
-    <ProfileContext.Provider value={{ profile, loading, refresh, update }}>
+    <ProfileContext.Provider value={value}>
       {children}
     </ProfileContext.Provider>
   );

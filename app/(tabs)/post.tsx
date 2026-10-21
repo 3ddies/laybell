@@ -42,10 +42,12 @@ import { FullWindowOverlay } from 'react-native-screens';
 import { openShareGlobal } from '../../contexts/ShareContext';
 import { formatSchedule, scheduleProblem } from '../../lib/schedule';
 import { scheduleLiveReminder } from '../../lib/scheduleNotify';
-import { mixColumns, DEFAULT_MIX, type SongMix } from '../../lib/songMix';
+import { mixColumns, DEFAULT_MIX, BLEND_MIX, type SongMix } from '../../lib/songMix';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pauseMainPlayer } from '../../lib/trackPlayerService';
 import { canConcatClips } from '../../lib/videoConcat';
+import { probeClipAudio, clipIsSilent, audioProbeAvailable } from '../../modules/laybell-video-export';
+import { fetchSuggestedSound } from '../../lib/suggestedSound';
 import { makeMediaPreview, NO_PREVIEW, type MediaPreview } from '../../lib/mediaPreview';
 import type { Sticker } from '../../components/StickerLayer';
 import { splitForPublish, timingForPublish } from '../../lib/stickerTiming';
@@ -364,6 +366,19 @@ export default function PostScreen() {
   // song they were set for, so picking a different song quietly starts fresh — a
   // part chosen in one track means nothing in another.
   const [songMix, setSongMix] = useState<(SongMix & { songId: string }) | null>(null);
+  // Whether the picked/recorded clip carries its OWN audio (someone talking): true
+  // for a gallery/Files video and a normal camera take (mic on), false for a silent
+  // lip-sync take. Chooses the studio's OPENING mix when a song is newly added — a
+  // blend that ducks the song under the talking so the words stay audible (BLEND_MIX)
+  // vs. the song at full over a silent clip (DEFAULT_MIX). A saved mix overrides it.
+  const [clipHasOwnAudio, setClipHasOwnAudio] = useState(false);
+  // Auto-music: the suggested song laid over a silent clip, named in a confirmation
+  // toast. songRef mirrors `song` so the async loudness probe sees the latest choice;
+  // autoMusicToken cancels a probe whose clip was replaced or cleared before it resolved.
+  const [musicToast, setMusicToast] = useState<string | null>(null);
+  const songRef = useRef(song);
+  const autoMusicToken = useRef(0);
+  useEffect(() => { songRef.current = song; }, [song]);
   // Where the cover's frame was taken from (seconds on the source's clock), so the
   // studio's cover picker opens on it; null for a photo or the automatic frame.
   const [coverSec, setCoverSec] = useState<number | null>(null);
@@ -918,6 +933,28 @@ export default function PostScreen() {
   // ConfirmDialog at Share is the single, accurate warning now.)
 
   // Resolves false when a gate below refused the pick (having already said why).
+  // Auto-music: when a freshly picked VIDEO reads as silent (no audible track, or
+  // loudness below the quiet threshold), lay a suggested opted-in song over it at full
+  // volume — the app's "a clip with no audio gets music" rule. Talking/ambient clips
+  // measure above the threshold and are left dry. Fire-and-forget from onPickMedia;
+  // `token` is the pick it belongs to, so a later pick or a cleared clip cancels it.
+  async function maybeAutoAddMusic(uri: string, token: number) {
+    if (!audioProbeAvailable()) return; // older build without the native probe
+    try {
+      const probe = await probeClipAudio(uri);
+      if (token !== autoMusicToken.current || songRef.current) return; // superseded, or a song was chosen
+      if (!clipIsSilent(probe)) return; // the clip has its own sound — leave it dry
+      const suggestion = await fetchSuggestedSound(profile?.id ?? null);
+      if (!suggestion) return; // nothing opted in to suggest
+      if (token !== autoMusicToken.current || songRef.current) return; // re-check across the await
+      setSong(suggestion);
+      setMusicVideo(false);
+      setSongMix({ ...DEFAULT_MIX, songId: suggestion.id }); // song full, the silent video muted
+      setClipHasOwnAudio(false);
+      setMusicToast(suggestion.title);
+    } catch {}
+  }
+
   async function onPickMedia(m: PickedMedia): Promise<boolean> {
     // Tapping a thumbnail (even far down the grid) snaps back to the top so the
     // collapsing preview re-expands and shows the media that was just picked.
@@ -951,6 +988,9 @@ export default function PostScreen() {
     }
     if (m.type !== postType) setFormat(defaultFormatFor(m.type as any)); // image↔video
     setPostType(m.type);
+    // A video carries its own sound (gallery/Files clips, and a normal camera take
+    // with the mic on); the silent lip-sync take overrides this to false below.
+    setClipHasOwnAudio(m.type === 'video');
     setPickedId(m.id);
     setMedia({ uri: m.uri, width: m.width, height: m.height, posterUri: m.posterUri });
     setThumbnailUri(null); setCoverSec(null);
@@ -971,6 +1011,11 @@ export default function PostScreen() {
         const { uri } = await VideoThumbnails.getThumbnailAsync(m.uri, { time: at, quality: 0.5 });
         setThumbnailUri(uri);
       } catch {}
+      // Fire-and-forget: measure the clip's loudness and, if it reads as silent, lay a
+      // suggested song over it. The token cancels this if the clip is replaced or
+      // cleared before the probe resolves.
+      autoMusicToken.current += 1;
+      void maybeAutoAddMusic(m.uri, autoMusicToken.current);
     }
     return true;
   }
@@ -1178,6 +1223,9 @@ export default function PostScreen() {
           ? Math.max(0, pause0 - (c.firstClipSec ?? 0) + LIPSYNC_FIRST_COMP_SEC)
           : Math.max(0, captureStartSecRef.current + LIPSYNC_COMP_SEC);
         setSongMix({ ...DEFAULT_MIX, startSec, songId: song.id });
+        // The lip-sync take recorded silently (mic off while the song played), so
+        // the studio opens full-song over it, not ducked under a voice that isn't there.
+        setClipHasOwnAudio(false);
       }
       setStep(meta.durationSec > windowSec ? 'edit' : 'studio');
       closeCamera();
@@ -1214,6 +1262,7 @@ export default function PostScreen() {
 
   // ── Unified Posts picker: single vs slideshow, both off one in-app grid ───────
   function clearMedia() {
+    autoMusicToken.current += 1; // cancel any in-flight auto-music probe for the cleared clip
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null;
     setVideoDuration(0); setTrimStart(0); setTrimEnd(0);
     setPostType('image'); setFormat('1:1');
@@ -2213,6 +2262,7 @@ export default function PostScreen() {
           musicVideo={musicVideo}
           onMusicVideo={setMusicVideo}
           songMix={activeMix}
+          defaultMix={clipHasOwnAudio ? BLEND_MIX : DEFAULT_MIX}
           coverUri={thumbnailUri}
           onCover={setThumbnailUri}
           coverSec={coverSec}
@@ -3576,6 +3626,16 @@ export default function PostScreen() {
         message={t('post.savedDraftBody')}
         bottomOffset={SPACING.xxl + SPACING.md}
         onHide={() => setSavedToast(false)}
+      />
+
+      {/* Auto-music: a silent clip just had a suggested song laid over it. */}
+      <Toast
+        visible={!!musicToast}
+        icon="musical-notes"
+        title={t('post.autoMusicTitle')}
+        message={t('post.autoMusicBody', { song: musicToast ?? '' })}
+        bottomOffset={SPACING.xxl + SPACING.md}
+        onHide={() => setMusicToast(null)}
       />
 
       {/* Posted! confirmation — replaces the default OS alert after a share. */}

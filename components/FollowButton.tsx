@@ -1,10 +1,11 @@
+import { memo } from 'react';
 import { Text, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 // The app's one celebratory gradient — shared, not copied, so the Listen pill,
 // the sign-in buttons and this stay identical.
 import { LISTEN_FILL } from './ListenButton';
-import { useFollow } from '../contexts/FollowContext';
+import { useFollowActions, useFollowCurrentUserId, useIsFollower, useIsFollowing } from '../contexts/FollowContext';
 import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -39,16 +40,19 @@ import { selection } from '../lib/haptics';
 // which the fill stretches to). Passing padding here pads around the pill
 // rather than inside it, and passing alignSelf:'stretch' turns it into a slab.
 // Both of those shipped as bugs once; that is why this comment exists.
-export default function FollowButton({ userId, style }: { userId?: string | null; style?: any }) {
+function FollowButton({ userId, style }: { userId?: string | null; style?: any }) {
   const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
-  const { currentUserId, following, followers, toggleFollow } = useFollow();
+  // Narrow subscriptions: this button re-renders only when THIS user's follow status
+  // (or the signed-in user) changes — not when any other follow button is toggled.
+  const currentUserId = useFollowCurrentUserId();
+  const { toggleFollow } = useFollowActions();
+  const isFollowing = useIsFollowing(userId);
+  const followsMe = useIsFollower(userId);
 
   if (!userId || !currentUserId || userId === currentUserId) return null;
 
-  const isFollowing = following.has(userId);
-  const followsMe = followers.has(userId);
   const isFriend = isFollowing && followsMe;
   const isFollowBack = !isFollowing && followsMe;
   const isFollow = !isFollowing && !followsMe;
@@ -130,6 +134,8 @@ export default function FollowButton({ userId, style }: { userId?: string | null
     </TouchableOpacity>
   );
 }
+
+export default memo(FollowButton);
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // The shell owns the shape + shadow; the gradient inside owns the padding, so

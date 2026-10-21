@@ -30,6 +30,7 @@ import { useStories } from '../../contexts/StoriesContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import ProfileQRModal from '../../components/ProfileQRModal';
+import AccountSwitcher from '../../components/AccountSwitcher';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { type Album, albumCover, fetchAlbums } from '../../lib/albums';
@@ -125,6 +126,7 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [qrVisible, setQrVisible] = useState(false);
+  const [switcherVisible, setSwitcherVisible] = useState(false);
   const [activeTab, setActiveTab] = useState('posts');
   const [userPosts, setUserPosts] = useState<any[]>([]);
   // An edit saved on app/edit-post shows here at once (lib/postEdits).
@@ -139,6 +141,18 @@ export default function ProfileScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const isFocused = useIsFocused();
+
+  // Re-tapping the Profile tab while ALREADY on Profile pulls up the account
+  // switcher (Instagram-style). The custom bar emits `tabPress` on every press —
+  // including a press on the already-focused tab (app/(tabs)/_layout.tsx) — so we
+  // just gate on "are we the focused route": a press arriving from another tab
+  // reaches this listener before Profile is focused, so it's correctly ignored.
+  useEffect(() => {
+    const unsub = navigation.addListener('tabPress' as never, () => {
+      if (navigation.isFocused()) setSwitcherVisible(true);
+    });
+    return unsub;
+  }, [navigation]);
   const { playQueue, expand } = useAudio();
   const { playingId } = useAudioPlayer();
 
@@ -1019,7 +1033,19 @@ export default function ProfileScreen() {
     <View style={styles.container} {...pageSwipePan.panHandlers}>
       <View>
       <View style={styles.headerBar}>
-        <Text style={styles.usernameHeader} numberOfLines={1}>@{profile?.username}</Text>
+        {/* Tap the username → Instagram-style account switcher (switch between
+            signed-in accounts, or add/log into another). */}
+        <TouchableOpacity
+          style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}
+          onPress={() => setSwitcherVisible(true)}
+          hitSlop={8}
+          disabled={!profile?.id}
+          accessibilityRole="button"
+          accessibilityLabel={t('accounts.title')}
+        >
+          <Text style={styles.usernameHeader} numberOfLines={1}>@{profile?.username}</Text>
+          <Ionicons name="chevron-down" size={18} color={colors.textSecondary} style={{ marginTop: 2 }} />
+        </TouchableOpacity>
         <View style={styles.headerActions}>
           <TouchableOpacity
             onPress={() => { markViewsSeen(); router.push('/profile-viewers'); }}
@@ -1069,6 +1095,15 @@ export default function ProfileScreen() {
           avatarUrl={avatarUrl}
         />
       )}
+
+      <AccountSwitcher
+        visible={switcherVisible}
+        onClose={() => setSwitcherVisible(false)}
+        currentUserId={profile?.id ?? ''}
+        currentUsername={profile?.username}
+        currentDisplayName={profile?.display_name}
+        currentAvatar={avatarUrl ?? null}
+      />
 
       {/* Banner — tinted by the user's chosen profile theme (gated by tier) */}
       <LinearGradient colors={bannerColors} style={styles.banner}>

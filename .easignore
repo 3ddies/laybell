@@ -1,0 +1,47 @@
+# EAS Build archive ignore. When this file exists, EAS uses it IN PLACE OF
+# .gitignore to decide what to upload, so this is a SUPERSET: every .gitignore
+# rule repeated, plus the heavy assets that are not part of the native app build.
+# The marketing videos + store listing assets were ~665 MB of a ~663 MB upload.
+
+# ── Mirrors .gitignore (must be repeated — .easignore replaces it) ──
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+*.pem
+.env
+.env*.local
+*.tsbuildinfo
+/ios
+/android
+supabase/.temp/
+*service-account*.json
+*serviceaccount*.json
+*credentials*.json
+laybell-*.json
+revenuecat-play*.json
+scripts/.schema-audit.sql
+scripts/.schema-audit-map.json
+
+# ── The actual size win: assets never bundled in the native app ──
+# Generated marketing videos/images + ASO copy (590 MB).
+marketing/
+# Store listing graphics & screenshots (74 MB) — uploaded to the stores, not the app.
+store/
+# Reference docs and planning files.
+docs/
+# The marketing website — published separately to GitHub Pages, not part of the app.
+web/

@@ -160,21 +160,21 @@ const ReelControls = memo(function ReelControls({
           {/* The COUNT (not the heart) opens who liked / reposted / saved. */}
           {likeCount > 0 && (
             <TouchableOpacity hitSlop={railHit} onPress={() => api.openLikes(item)}>
-              <Text style={styles.railText}>{formatCount(likeCount)}</Text>
+              <Text style={styles.railText} numberOfLines={1}>{formatCount(likeCount)}</Text>
             </TouchableOpacity>
           )}
         </View>
         <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => api.openComments(item)}>
           <Ionicons name="chatbubble-outline" size={30} color="#fff" />
-          {commentCount > 0 && <Text style={styles.railText}>{formatCount(commentCount)}</Text>}
+          {commentCount > 0 && <Text style={styles.railText} numberOfLines={1}>{formatCount(commentCount)}</Text>}
         </TouchableOpacity>
         <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => api.toggleSave(item)}>
           <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={28} color="#fff" />
-          {saveCount > 0 && <Text style={styles.railText}>{formatCount(saveCount)}</Text>}
+          {saveCount > 0 && <Text style={styles.railText} numberOfLines={1}>{formatCount(saveCount)}</Text>}
         </TouchableOpacity>
         <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => api.share(item)}>
           <Ionicons name="share-social-outline" size={28} color="#fff" />
-          {shareCount > 0 && <Text style={styles.railText}>{formatCount(shareCount)}</Text>}
+          {shareCount > 0 && <Text style={styles.railText} numberOfLines={1}>{formatCount(shareCount)}</Text>}
         </TouchableOpacity>
         <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => api.showOptionsFor(item)}>
           <Ionicons name="ellipsis-horizontal" size={28} color="#fff" />
@@ -2347,8 +2347,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   rail: { position: 'absolute', right: SPACING.sm, alignItems: 'center', gap: SPACING.lg },
   // Tighter stack for the shorter landscape viewport so the rail fits bottom-right.
   railCompact: { gap: 14 },
-  railBtn: { alignItems: 'center', gap: 3 },
-  railText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  // Fixed width so the icon sits at the SAME x on every post regardless of how
+  // wide its count is — otherwise a post with "9999" likes would centre its icons
+  // further left than one with "7", and the rail would jump as you scroll. 44 fits
+  // the widest count the formatter emits ("10.5k") at this size with room to spare.
+  railBtn: { alignItems: 'center', gap: 3, width: 44 },
+  railText: { color: '#fff', fontSize: 12, fontWeight: '700', textAlign: 'center', fontVariant: ['tabular-nums'] },
   moreBtn: {
     color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '700', marginTop: 3,
     textShadowColor: 'rgba(0,0,0,0.85)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,

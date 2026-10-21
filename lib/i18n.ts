@@ -1678,6 +1678,16 @@ const en: Record<string, string> = {
   // Danger zone
   'danger.logout': 'Log Out',
   'danger.deleteAccount': 'Delete Account',
+  // Multi-account switcher (tap your username on your profile)
+  'accounts.title': 'Switch account',
+  'accounts.onThisDevice': 'On this device',
+  'accounts.account': 'Account',
+  'accounts.add': 'Add or log into account',
+  'accounts.switchFailedTitle': 'Couldn\'t switch',
+  'accounts.switchFailedBody': 'That account was signed out. Add it again to switch to it.',
+  'accounts.logoutTitle': 'Log out?',
+  'accounts.logoutBody': 'You\'ll need to sign back in to use this account.',
+  'accounts.logoutSwitchBody': 'You\'ll switch to your other account on this device.',
   'logout.title': 'Log Out',
   'logout.body': 'Are you sure you want to log out?',
 
@@ -2023,6 +2033,8 @@ const en: Record<string, string> = {
   'post.tabPosts': 'POSTS',
   'post.tabMusic': 'MUSIC',
   'post.addSound': 'Add sound',
+  'post.autoMusicTitle': 'Music added',
+  'post.autoMusicBody': 'Put "{song}" over your silent clip — change or remove it in the sound options.',
   'post.multiClipHint': 'Record more, or tap ✓',
   'post.deleteLastClip': 'Delete last clip',
   'post.finishClips': 'Done — join clips',

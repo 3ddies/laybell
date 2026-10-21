@@ -108,6 +108,38 @@ export function useSongHostActive(hostId: string): boolean {
   return useSyncExternalStore(subscribe, () => activeIdNow === hostId);
 }
 
+// ── Per-HOST "is this host's song still LOADING?" subscription ────────────────
+// Mirrors the active-host store above, but tracks the LOAD rather than playback:
+// set when playSong begins fetching/buffering a song for a host, cleared when the
+// source is ready (or the host stops). Purely a signal — it changes no playback —
+// so the composer can show a spinner on the Music control for the gap between
+// choosing a song and hearing it.
+let loadingHostNow: string | null = null;
+const loadingSubs = new Map<string, Set<() => void>>();
+function publishLoadingHost(next: string | null) {
+  if (next === loadingHostNow) return;
+  const prev = loadingHostNow;
+  loadingHostNow = next;
+  for (const id of [prev, next]) {
+    if (!id) continue;
+    const s = loadingSubs.get(id);
+    if (s) for (const cb of s) cb();
+  }
+}
+// Re-renders the caller ONLY when `loadingHost === hostId` flips for ITS host.
+export function useSongHostLoading(hostId: string): boolean {
+  const subscribe = useCallback((cb: () => void) => {
+    let s = loadingSubs.get(hostId);
+    if (!s) { s = new Set(); loadingSubs.set(hostId, s); }
+    s.add(cb);
+    return () => {
+      const set = loadingSubs.get(hostId);
+      if (set) { set.delete(cb); if (!set.size) loadingSubs.delete(hostId); }
+    };
+  }, [hostId]);
+  return useSyncExternalStore(subscribe, () => loadingHostNow === hostId);
+}
+
 // ── Per-SONG "is this song playing?" subscription (same pattern, song-keyed) ──
 // The shop listing page and a feed shop-ad strip play the SAME preview under
 // DIFFERENT hosts — host-keyed state can't tell the listing page "your preview
@@ -462,6 +494,7 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     activeSongRef.current = null;
     requestRef.current = null;
     loadingRef.current = null;
+    publishLoadingHost(null);
     playWhenLinedUpRef.current = null;
     mixRef.current = null;
     mixSeekDueRef.current = false;
@@ -711,6 +744,7 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     activeSongRef.current = songId;
     requestRef.current = { hostId, mix: nextMix };
     loadingRef.current = token;
+    publishLoadingHost(hostId); // spinner on the composer's Music control until it plays
     setActiveHost(hostId);
     // The song before stops following its video while this one loads, so nothing
     // can start a new seek on it that is still in flight when the source changes.
@@ -738,6 +772,7 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     try {
       // No longer loading: from here a request for this song applies directly.
       loadingRef.current = null;
+      publishLoadingHost(null);
       // Persistent player: this path never creates, never disposes — replace()
       // is a native source swap, so a song tap over a playing video can't
       // stall the frame anymore.

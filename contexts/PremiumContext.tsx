@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { isPremium as readPremium, isPremiumPlus as readPremiumPlus, subscribePremium } from '../lib/entitlements';
 import { afterHomePaint } from '../lib/startupGate';
@@ -63,10 +63,16 @@ export function PremiumProvider({ children }: { children: React.ReactNode }) {
   const purchase = useCallback((pkg: Pkg) => doPurchase(pkg), []);
   const restore = useCallback(() => doRestore(), []);
 
+  // Memoized so a provider re-render doesn't hand every consumer a fresh object.
+  // `configured` is read each render (it flips once when RevenueCat initialises) and
+  // kept as a dep, so the value still updates the moment it does.
+  const configured = purchasesConfigured();
+  const value = useMemo(
+    () => ({ isPremium: isPremiumState, isPremiumPlus: isPlusState, packages, configured, loading, purchase, restore, refresh }),
+    [isPremiumState, isPlusState, packages, configured, loading, purchase, restore, refresh],
+  );
   return (
-    <PremiumContext.Provider
-      value={{ isPremium: isPremiumState, isPremiumPlus: isPlusState, packages, configured: purchasesConfigured(), loading, purchase, restore, refresh }}
-    >
+    <PremiumContext.Provider value={value}>
       {children}
     </PremiumContext.Provider>
   );

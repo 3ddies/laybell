@@ -6,7 +6,8 @@ import {
 import { loadFeedSnapshot, saveFeedSnapshot, SNAPSHOT_AFTER_MS } from '../../lib/feedSnapshot';
 import { mergeFreshBelow } from '../../lib/feedMerge';
 import { markHomePainted } from '../../lib/startupGate';
-import { fullImagePreviewProps } from '../../lib/mediaPreview';
+import { fullImagePreviewProps, feedImageUri } from '../../lib/mediaPreview';
+import { formatCount } from '../../lib/format';
 import { fetchGirlSpaceCommunityIds } from '../../lib/communities';
 import { captionEchoesTitle, names, songCreditLine, songIsLinkOnly, songPlaysFor } from '../../lib/postSong';
 import { ambientMixFor, videoSoundFor, type AmbientMix } from '../../lib/songMix';
@@ -359,6 +360,10 @@ const PostCard = memo(function PostCard({
   const countColor = mode === 'dark' ? colors.text : colors.textSecondary;
   const commentCount = item.comments[0]?.count || 0;
   const saveCount = item.save_count || 0;
+  // The action row tightens when the post has little engagement and opens up as its
+  // counts appear — a fresh post reads as one compact cluster, not spread-out icons.
+  const engagedActions = (likeCount > 0 ? 1 : 0) + (commentCount > 0 ? 1 : 0) + (saveCount > 0 ? 1 : 0);
+  const actionRowGap = engagedActions === 0 ? 10 : engagedActions === 1 ? 16 : 22;
   const imgRef = useRef<any>(null);
   const vidRef = useRef<any>(null);
   const slideRef = useRef<any>(null);
@@ -496,7 +501,9 @@ const PostCard = memo(function PostCard({
             {/* expo-image: decodes at DISPLAYED size (RN Image decodes the full
                 multi-MP original — memory spikes + dropped frames mid-scroll). */}
             <ExpoImage
-              source={{ uri: item.media_url }}
+              // A ~1440px display variant, not the full multi-MP upload — the feed card
+              // never shows more, and the fullscreen viewer keeps the full file for zoom.
+              source={{ uri: feedImageUri(item.media_url) }}
               // The small copy (or a blurred placeholder) while the photo loads,
               // then a fade — never an empty box (lib/mediaPreview).
               {...fullImagePreviewProps(item as any)}
@@ -784,7 +791,7 @@ const PostCard = memo(function PostCard({
       )}
 
       {/* Actions */}
-      <View style={styles.actions}>
+      <View style={[styles.actions, { gap: actionRowGap }]}>
         <View style={styles.actionBtn}>
           <TouchableOpacity onPress={() => { selection(); popLike(); onLike(item); }} activeOpacity={0.6} hitSlop={8}>
             <Animated.View style={{ transform: [{ scale: likeScale }] }}>
@@ -798,14 +805,14 @@ const PostCard = memo(function PostCard({
           {/* The COUNT (not the heart) opens the list of who engaged. */}
           {likeCount > 0 && (
             <TouchableOpacity onPress={() => onLikesPress(item)} activeOpacity={0.6} hitSlop={8}>
-              <Text style={[styles.actionCount, { color: countColor }, isLiked && { color: colors.like }]}>{likeCount}</Text>
+              <Text style={[styles.actionCount, { color: countColor }, isLiked && { color: colors.like }]} numberOfLines={1}>{formatCount(likeCount)}</Text>
             </TouchableOpacity>
           )}
         </View>
 
         <TouchableOpacity style={styles.actionBtn} onPress={() => onComments(item)} activeOpacity={0.6} hitSlop={8}>
           <Ionicons name="chatbubble-outline" size={22} color={colors.textSecondary} />
-          {commentCount > 0 && <Text style={[styles.actionCount, { color: countColor }]}>{commentCount}</Text>}
+          {commentCount > 0 && <Text style={[styles.actionCount, { color: countColor }]} numberOfLines={1}>{formatCount(commentCount)}</Text>}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionBtn} onPress={() => { selection(); onSave(item); }} activeOpacity={0.6} hitSlop={8}>
@@ -815,7 +822,7 @@ const PostCard = memo(function PostCard({
             color={isSaved ? colors.text : colors.textSecondary}
           />
           {saveCount > 0 && (
-            <Text style={[styles.actionCount, { color: countColor }, isSaved && { color: colors.text }]}>{saveCount}</Text>
+            <Text style={[styles.actionCount, { color: countColor }, isSaved && { color: colors.text }]} numberOfLines={1}>{formatCount(saveCount)}</Text>
           )}
         </TouchableOpacity>
 
@@ -2946,12 +2953,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   menuCheck: { marginLeft: 'auto' },
 
   badge: {
-    position: 'absolute', top: -2, right: -2,
-    minWidth: 16, height: 16, borderRadius: 8,
+    position: 'absolute', top: -4, right: -5,
+    minWidth: 19, height: 19, borderRadius: 9.5,
+    // Always the brand red with a WHITE number — a notification badge reads the
+    // same on every platform and must not follow the theme's text colour into
+    // black on the light theme. No outline — a solid red circle.
     backgroundColor: colors.error,
-    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
   },
-  badgeText: { color: colors.text, fontSize: 9, fontWeight: 'bold' },
+  badgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
 
   feedContent: { paddingBottom: SPACING.xxl + 60 },
 
@@ -3069,11 +3079,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.sm,
     paddingBottom: SPACING.xs,
-    gap: SPACING.lg,
   },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionBtnRight: { marginLeft: 'auto' },
-  actionCount: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  // tabular-nums keeps every digit the same width, so a count ticking up (999→1000)
+  // or differing between posts never nudges the icons beside it.
+  actionCount: { color: colors.textSecondary, fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] },
 
   emptyContainer: { alignItems: 'center', paddingTop: 100, gap: SPACING.md },
   emptyTitle: { color: colors.text, fontSize: 20, fontWeight: '700' },

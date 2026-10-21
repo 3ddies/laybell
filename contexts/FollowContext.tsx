@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { supabase } from '../lib/supabase';
 import { createNotification } from '../lib/createNotification';
 
@@ -36,6 +36,38 @@ const FollowContext = createContext<FollowContextValue>({
 export function useFollow() {
   return useContext(FollowContext);
 }
+
+// ── Narrow per-user selectors ────────────────────────────────────────────────
+// A follow toggle changes the `following` Set's identity, so every useFollow()
+// consumer — every FollowButton on screen — re-renders. These selectors let a button
+// subscribe to just ITS user's status: the module store below mirrors the provider's
+// state, and useSyncExternalStore's snapshot compare means only the buttons whose
+// answer actually changed re-render. Same pattern as useSongHostActive / useCardPlayback.
+let currentUserIdNow: string | null = null;
+let followingNow: Set<string> = new Set();
+let followersNow: Set<string> = new Set();
+const followSubs = new Set<() => void>();
+function subscribeFollow(cb: () => void) { followSubs.add(cb); return () => { followSubs.delete(cb); }; }
+function notifyFollow() { for (const cb of followSubs) cb(); }
+
+/** Whether the current user follows `userId` — re-renders only when THAT answer flips. */
+export function useIsFollowing(userId: string | null | undefined): boolean {
+  return useSyncExternalStore(subscribeFollow, () => !!userId && followingNow.has(userId));
+}
+/** Whether `userId` follows the current user — re-renders only when THAT answer flips. */
+export function useIsFollower(userId: string | null | undefined): boolean {
+  return useSyncExternalStore(subscribeFollow, () => !!userId && followersNow.has(userId));
+}
+/** The signed-in user id, from the same store (so a button needn't read the fat value). */
+export function useFollowCurrentUserId(): string | null {
+  return useSyncExternalStore(subscribeFollow, () => currentUserIdNow);
+}
+
+// Follow actions are stable (useCallback), so they live in their own context whose
+// identity never changes — a button reading only actions never re-renders from here.
+type FollowActions = { toggleFollow: (userId: string) => void; syncFollow: (userId: string, isFollowing: boolean) => void };
+const FollowActionsContext = createContext<FollowActions>({ toggleFollow: () => {}, syncFollow: () => {} });
+export function useFollowActions(): FollowActions { return useContext(FollowActionsContext); }
 
 export function FollowProvider({ children }: { children: React.ReactNode }) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -129,5 +161,21 @@ export function FollowProvider({ children }: { children: React.ReactNode }) {
     [currentUserId, following, followers, friends, isFriend, toggleFollow, syncFollow],
   );
 
-  return <FollowContext.Provider value={value}>{children}</FollowContext.Provider>;
+  // Mirror the React state into the module store for the narrow selectors above, and
+  // tell them to re-check. Runs after commit, so a toggled button flips one frame
+  // later — imperceptible — while the fat useFollow() value still updates this commit.
+  useEffect(() => {
+    currentUserIdNow = currentUserId;
+    followingNow = following;
+    followersNow = followers;
+    notifyFollow();
+  }, [currentUserId, following, followers]);
+
+  const actions = useMemo<FollowActions>(() => ({ toggleFollow, syncFollow }), [toggleFollow, syncFollow]);
+
+  return (
+    <FollowActionsContext.Provider value={actions}>
+      <FollowContext.Provider value={value}>{children}</FollowContext.Provider>
+    </FollowActionsContext.Provider>
+  );
 }

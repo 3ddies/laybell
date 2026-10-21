@@ -9,7 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../contexts/LanguageContext';
-import { usePostMusicActions, usePostMusicMuted } from '../contexts/PostMusicContext';
+import { usePostMusicActions, usePostMusicMuted, useSongHostLoading } from '../contexts/PostMusicContext';
 import { useAudioControls } from '../contexts/AudioContext';
 import AppVideo, { type AppVideoHandle } from './AppVideo';
 import StickerTimeline, { TIMELINE_H } from './StickerTimeline';
@@ -91,6 +91,8 @@ type IconName = ComponentProps<typeof Ionicons>['name'];
 type Tool = {
   key: string; icon: IconName; label: string; onPress: () => void;
   active?: boolean; badge?: boolean; disabled?: boolean;
+  /** Shows a spinner in place of the icon while the song is fetching/buffering. */
+  loading?: boolean;
   /** Drawn in the button instead of the icon — the cover shows itself. */
   image?: string | null;
 };
@@ -106,7 +108,7 @@ export type StudioResult = {
 export default function VideoStudio({
   videoUri, posterUri, aspect, windowStart, windowEnd,
   initialCaptions,
-  song, onSong, musicVideo, onMusicVideo, songMix,
+  song, onSong, musicVideo, onMusicVideo, songMix, defaultMix,
   coverUri, onCover, coverSec, onCoverSec, initialPanel = null,
   nextLabel, nextIcon = 'arrow-forward',
   onBack, onNext,
@@ -127,6 +129,10 @@ export default function VideoStudio({
   onMusicVideo: (on: boolean) => void;
   /** The mix saved for `song`, if one was. */
   songMix: SongMix | null;
+  /** The mix to open on when none is saved for the song: a ducked blend for a
+   *  clip with its own audio (someone talking), full-song for a silent clip.
+   *  Defaults to full-song (DEFAULT_MIX) when not given. */
+  defaultMix?: SongMix;
   coverUri: string | null;
   onCover: (uri: string) => void;
   /** Where the cover's frame was taken from, on the source's clock; null for a photo or the automatic frame. */
@@ -235,17 +241,24 @@ export default function VideoStudio({
   // A music video's song is a credit and never plays, so it has nothing to mix.
   const songPlays = !!song && !musicVideo;
   const songId = song?.id ?? null;
-  const [mix, setMix] = useState<SongMix>(songMix ?? DEFAULT_MIX);
+  const [mix, setMix] = useState<SongMix>(songMix ?? defaultMix ?? DEFAULT_MIX);
+  // Opening on a ducking blend with no saved mix — a talking clip getting its first
+  // song — is a deliberate default, not "no opinion": it has to be written to the
+  // post so the words stay audible without the user touching a slider. A silent
+  // clip's full-song default (DEFAULT_MIX, video muted) stays "untouched" and lets
+  // the post keep its own implicit default, exactly as before this feature.
+  const opensOnBlend = (saved: SongMix | null) => !saved && !!defaultMix && defaultMix.videoVolume > 0;
   // Only a mix set here goes back to the post; untouched, the post keeps its own.
-  const mixTouched = useRef(false);
+  const mixTouched = useRef(opensOnBlend(songMix));
   const [dragStart, setDragStart] = useState<number | null>(null);
   const mixSong = useRef(songId);
   useEffect(() => {
     if (mixSong.current === songId) return;
     mixSong.current = songId;
-    // Another song: its own saved mix, or a fresh one.
-    setMix(songMix ?? DEFAULT_MIX);
-    mixTouched.current = false;
+    // Another song: its own saved mix, or a fresh one (blend when the clip has
+    // its own audio, so a new song ducks under the talking by default).
+    setMix(songMix ?? defaultMix ?? DEFAULT_MIX);
+    mixTouched.current = opensOnBlend(songMix);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [songId]);
 
@@ -267,6 +280,12 @@ export default function VideoStudio({
   const info = songId && songInfo?.id === songId ? songInfo : null;
   const songSec = info?.durationSec ?? 0;
   const songUrl = info?.url ?? null;
+  // While a chosen song is fetching its file info or buffering, show a spinner on the
+  // Music control so the wait between picking a song and hearing it reads as an action,
+  // not a freeze. `!info` is the metadata fetch; hostLoading is the player buffering.
+  // Suppressed while the music panel is open (the song is paused there by design).
+  const hostLoading = useSongHostLoading(HOST);
+  const songLoading = songPlays && !songMuted && panel !== 'music' && (!info || hostLoading);
   const startSec = clampStart(mix.startSec, songSec, windowSec);
 
   // The clip's progress ticks stop when it finishes its pass and freezes (the idle-aware
@@ -567,7 +586,7 @@ export default function VideoStudio({
       onPress: () => { if (firstBandY != null) addStickerAt(0.5, firstBandY); },
       disabled: atMax || firstBandY == null,
     },
-    { key: 'music', icon: 'musical-notes', label: t('post.musicLabel'), onPress: () => togglePanel('music'), active: panel === 'music', badge: !!song },
+    { key: 'music', icon: 'musical-notes', label: t('post.musicLabel'), onPress: () => togglePanel('music'), active: panel === 'music', badge: !!song, loading: songLoading },
     // Only while a song plays over the clip: with no song there is nothing to mix,
     // and a music video's song is the clip's own soundtrack.
     ...(songPlays ? [{
@@ -739,9 +758,11 @@ export default function VideoStudio({
                       !!tool.image && tool.active && styles.toolIconImageActive,
                     ]}
                   >
-                    {tool.image
-                      ? <ExpoImage source={{ uri: tool.image }} style={StyleSheet.absoluteFill} contentFit="cover" />
-                      : <Ionicons name={tool.icon} size={22} color="#fff" />}
+                    {tool.loading
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : tool.image
+                        ? <ExpoImage source={{ uri: tool.image }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                        : <Ionicons name={tool.icon} size={22} color="#fff" />}
                     {tool.badge ? <View style={styles.toolBadge} /> : null}
                   </View>
                   <Text style={styles.toolLabel} numberOfLines={1}>{tool.label}</Text>

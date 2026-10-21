@@ -5,7 +5,9 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
+import { isAddingAccount, setAddAccountMode } from '../../lib/accounts';
 import SocialAuthButtons from '../../components/SocialAuthButtons';
 import AuthLogoMark from '../../components/AuthLogoMark';
 import AuthBackdrop from '../../components/AuthBackdrop';
@@ -20,11 +22,21 @@ export default function LoginScreen() {
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  // True when this login screen was opened to ADD another account (the current
+  // account is still signed in underneath). Captured on mount — it only changes
+  // when we navigate away. Shows a back button so the user can cancel and return
+  // to the account they were on, instead of being stranded on login.
+  const [addMode] = useState(() => isAddingAccount());
+  function cancelAdd() {
+    setAddAccountMode(false);
+    if (router.canGoBack()) router.back();
+  }
   // Backstop for the deliberate "keep spinning on success" below. Cleared on
   // unmount so the usual path — screen goes away — never fires it.
   const stuckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -103,6 +115,20 @@ export default function LoginScreen() {
       enabled={Platform.OS !== 'ios'}
     >
       <AuthBackdrop progress={progress} />
+      {/* Back out of "add another account" → returns to the account you were on
+          (which stayed signed in). Only shown in that mode; the normal signed-out
+          login has nowhere to go back to. */}
+      {addMode && (
+        <TouchableOpacity
+          style={[styles.backBtn, { top: insets.top + SPACING.xs }]}
+          onPress={cancelAdd}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.cancel')}
+        >
+          <Ionicons name="chevron-back" size={26} color={colors.text} />
+        </TouchableOpacity>
+      )}
       {/* A ScrollView, not a plain View. keyboardShouldPersistTaps="handled" is
           the point of it: a tap on empty space closes the keyboard, while a tap
           a control handles still fires. This screen had no ScrollView at all,
@@ -196,6 +222,10 @@ export default function LoginScreen() {
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  backBtn: {
+    position: 'absolute', left: SPACING.sm, zIndex: 10,
+    width: 44, height: 44, alignItems: 'center', justifyContent: 'center',
+  },
   scroll: { flex: 1 },
   // flexGrow, not flex: on a ScrollView's contentContainer, flex:1 pins the
   // content to the viewport and kills scrolling. flexGrow keeps the form
