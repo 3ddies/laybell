@@ -18,6 +18,16 @@ export type VideoInfo = {
   durationSec: number;
 };
 
+export type AudioProbe = {
+  /** Whether the clip has an audio track at all. */
+  hasAudioTrack: boolean;
+  /**
+   * Average linear RMS loudness (0..1) over up to ~20s of the audio, or -1 when it
+   * could not be measured (decode failure). 0 when there is no audio track.
+   */
+  rms: number;
+};
+
 export type ExportOverlay = {
   /** A PNG exactly the output size, laid over the whole frame. */
   uri: string;
@@ -82,6 +92,12 @@ declare class LaybellVideoExportModule extends NativeModule {
    * segments must share a size and orientation (the recorder keeps them on one camera).
    */
   concatClips?: (uris: string[], outputUri: string) => Promise<string>;
+  /**
+   * Measures a local clip's audio loudness, for deciding whether a silent/quiet
+   * video should get background music added automatically. Present only from the
+   * build that added it.
+   */
+  probeAudio?: (uri: string) => Promise<AudioProbe>;
 }
 
 // null on every binary built before the module existed (no OTA on this project).
@@ -103,6 +119,45 @@ export function videoFitAvailable(): boolean {
 /** Whether this build can join recorded clips into one (the multi-clip recorder). */
 export function videoConcatAvailable(): boolean {
   return typeof native?.concatClips === 'function';
+}
+
+/** Whether this build can measure a clip's audio loudness (auto-music). */
+export function audioProbeAvailable(): boolean {
+  return typeof native?.probeAudio === 'function';
+}
+
+/**
+ * The loudness of a local video's audio. Returns null when it can't be measured —
+ * an older build without the probe, or a decode failure — so callers add nothing
+ * rather than guess. The clip must be a readable local file (never a camera-roll
+ * ph:// / content:// URI; the composer resolves picks to file:// before this runs).
+ */
+export async function probeClipAudio(uri: string): Promise<AudioProbe | null> {
+  if (typeof native?.probeAudio !== 'function') return null;
+  try {
+    const r = await native.probeAudio(uri);
+    return r ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Below this average RMS a clip reads as quiet enough to lay music over: room tone
+// and ambience sit well under it, ordinary talking sits above it. ~-34 dBFS. A
+// starting point tuned to err QUIET (music is never forced onto a clip that might be
+// speech); adjust after hearing it on real clips.
+export const SILENT_RMS = 0.02;
+
+/**
+ * Whether a clip reads as SILENT/quiet enough to auto-add music over: no audio track
+ * at all, or measured loudness below SILENT_RMS. An unmeasurable clip (null, or
+ * rms < 0) is treated as NOT silent, so music is never forced onto a clip we could
+ * not actually check.
+ */
+export function clipIsSilent(probe: AudioProbe | null): boolean {
+  if (!probe) return false;
+  if (!probe.hasAudioTrack) return true;
+  return probe.rms >= 0 && probe.rms < SILENT_RMS;
 }
 
 export default native;

@@ -91,6 +91,17 @@ public class LaybellVideoExportModule: Module {
       }
     }
 
+    // The clip's audio loudness, for deciding whether a silent/quiet clip should get
+    // music added automatically (JS: probeClipAudio / clipIsSilent). Reports whether an
+    // audio track exists and the average linear RMS (0..1) over up to ~20s of it; rms
+    // -1 means it could not be measured, which the app treats as "has sound, leave it".
+    AsyncFunction("probeAudio") { (uri: String, promise: Promise) in
+      Task {
+        let result = await LaybellVideoExportModule.probeAudio(fileURL(uri))
+        promise.resolve(result)
+      }
+    }
+
     // Draws a mounted React Native view into a transparent PNG of exactly width x height
     // pixels — a saved video's caption image, drawn by the app's own caption renderer
     // (components/CaptionCaptureHost). View lookups must happen on the main thread.
@@ -160,6 +171,65 @@ public class LaybellVideoExportModule: Module {
           promise.reject(error)
         }
       }
+    }
+  }
+
+  /// Average linear RMS (0..1) of a clip's audio over up to ~20s, read as PCM with an
+  /// AVAssetReader. Never throws: any failure resolves with rms -1 (unmeasured), which
+  /// the app treats as "has sound, don't add". No audio track resolves hasAudioTrack
+  /// false, rms 0 — a true silent clip.
+  private static func probeAudio(_ url: URL) async -> [String: Any] {
+    do {
+      let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+      guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
+        return ["hasAudioTrack": false, "rms": 0.0]
+      }
+      let reader = try AVAssetReader(asset: asset)
+      let settings: [String: Any] = [
+        AVFormatIDKey: kAudioFormatLinearPCM,
+        AVLinearPCMBitDepthKey: 16,
+        AVLinearPCMIsBigEndianKey: false,
+        AVLinearPCMIsFloatKey: false,
+        AVLinearPCMIsNonInterleaved: false
+      ]
+      let output = AVAssetReaderTrackOutput(track: track, outputSettings: settings)
+      output.alwaysCopiesSampleData = false
+      guard reader.canAdd(output) else { return ["hasAudioTrack": true, "rms": -1.0] }
+      reader.add(output)
+      guard reader.startReading() else { return ["hasAudioTrack": true, "rms": -1.0] }
+
+      var sumSquares = 0.0
+      var count: Int64 = 0
+      let maxSamples: Int64 = 48_000 * 2 * 20  // ~20s of stereo at 48 kHz
+
+      while count < maxSamples, let sample = output.copyNextSampleBuffer() {
+        if let block = CMSampleBufferGetDataBuffer(sample) {
+          // Copy a whole number of 16-bit samples: PCM blocks are even-length, but
+          // rounding down guarantees the destination buffer is never overrun.
+          let usable = (CMBlockBufferGetDataLength(block) / 2) * 2
+          if usable >= 2 {
+            var pcm = [Int16](repeating: 0, count: usable / 2)
+            let status = pcm.withUnsafeMutableBytes { raw in
+              CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: usable, destination: raw.baseAddress!)
+            }
+            if status == kCMBlockBufferNoErr {
+              for s in pcm {
+                let v = Double(s) / 32768.0
+                sumSquares += v * v
+                count += 1
+              }
+            }
+          }
+        }
+        CMSampleBufferInvalidate(sample)
+      }
+      reader.cancelReading()
+      if count > 0 {
+        return ["hasAudioTrack": true, "rms": (sumSquares / Double(count)).squareRoot()]
+      }
+      return ["hasAudioTrack": true, "rms": -1.0]
+    } catch {
+      return ["hasAudioTrack": true, "rms": -1.0]
     }
   }
 

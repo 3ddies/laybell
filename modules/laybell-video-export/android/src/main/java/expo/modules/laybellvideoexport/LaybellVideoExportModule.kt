@@ -7,6 +7,10 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
+import android.media.AudioFormat
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
@@ -41,6 +45,7 @@ import expo.modules.kotlin.records.Field
 import expo.modules.kotlin.records.Record
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.ByteOrder
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -201,6 +206,16 @@ class LaybellVideoExportModule : Module() {
         } catch (ignored: Exception) {
           // Already released, or the retriever never opened the file.
         }
+      }
+    }
+
+    // The clip's audio loudness, for deciding whether a silent/quiet clip should get
+    // music added automatically (JS: probeClipAudio / clipIsSilent). Decodes up to ~20s
+    // of the audio off the main thread; rms -1 means it could not be measured, which the
+    // app treats as "has sound, leave it". No audio track → hasAudioTrack false, rms 0.
+    AsyncFunction("probeAudio") { uri: String, promise: Promise ->
+      thread(name = "laybell-audio-probe") {
+        promise.resolve(probeAudioLevel(fileOf(uri).absolutePath))
       }
     }
 
@@ -400,5 +415,93 @@ class LaybellVideoExportModule : Module() {
       builder.setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL)
     }
     return builder.build()
+  }
+
+  // Average linear RMS (0..1) of a clip's audio over up to ~20s, by decoding PCM with
+  // MediaCodec. Never throws: any failure returns rms -1 (unmeasured), which the app
+  // treats as "has sound, don't add". No audio track returns hasAudioTrack false, rms 0.
+  private fun probeAudioLevel(path: String): Map<String, Any> {
+    val extractor = MediaExtractor()
+    var codec: MediaCodec? = null
+    try {
+      extractor.setDataSource(path)
+      var trackIndex = -1
+      var format: MediaFormat? = null
+      for (i in 0 until extractor.trackCount) {
+        val f = extractor.getTrackFormat(i)
+        val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
+        if (mime.startsWith("audio/")) { trackIndex = i; format = f; break }
+      }
+      if (trackIndex < 0 || format == null) {
+        return mapOf("hasAudioTrack" to false, "rms" to 0.0)
+      }
+      extractor.selectTrack(trackIndex)
+      codec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)
+      codec.configure(format, null, null, 0)
+      codec.start()
+
+      val info = MediaCodec.BufferInfo()
+      var sumSquares = 0.0
+      var count = 0L
+      val maxSamples = 48_000L * 2 * 20  // ~20s of stereo at 48 kHz
+      var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
+      var inputDone = false
+      var outputDone = false
+      var guard = 0
+      val timeoutUs = 10_000L
+
+      while (!outputDone && count < maxSamples && guard < 200_000) {
+        guard++
+        if (!inputDone) {
+          val inIndex = codec.dequeueInputBuffer(timeoutUs)
+          if (inIndex >= 0) {
+            val inBuf = codec.getInputBuffer(inIndex)
+            val size = if (inBuf != null) extractor.readSampleData(inBuf, 0) else -1
+            if (size < 0) {
+              codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+              inputDone = true
+            } else {
+              codec.queueInputBuffer(inIndex, 0, size, extractor.sampleTime, 0)
+              extractor.advance()
+            }
+          }
+        }
+        val outIndex = codec.dequeueOutputBuffer(info, timeoutUs)
+        if (outIndex >= 0) {
+          if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) outputDone = true
+          val outBuf = codec.getOutputBuffer(outIndex)
+          if (outBuf != null && info.size > 0) {
+            outBuf.position(info.offset)
+            outBuf.limit(info.offset + info.size)
+            if (pcmEncoding == AudioFormat.ENCODING_PCM_FLOAT) {
+              val fb = outBuf.order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
+              while (fb.hasRemaining() && count < maxSamples) {
+                val v = fb.get().toDouble()
+                sumSquares += v * v; count++
+              }
+            } else {
+              val sb = outBuf.order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+              while (sb.hasRemaining() && count < maxSamples) {
+                val v = sb.get().toDouble() / 32768.0
+                sumSquares += v * v; count++
+              }
+            }
+          }
+          codec.releaseOutputBuffer(outIndex, false)
+        } else if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+          val changed = codec.outputFormat
+          pcmEncoding = if (changed.containsKey(MediaFormat.KEY_PCM_ENCODING))
+            changed.getInteger(MediaFormat.KEY_PCM_ENCODING) else AudioFormat.ENCODING_PCM_16BIT
+        }
+      }
+      return if (count > 0) mapOf("hasAudioTrack" to true, "rms" to Math.sqrt(sumSquares / count))
+      else mapOf("hasAudioTrack" to true, "rms" to -1.0)
+    } catch (e: Exception) {
+      return mapOf("hasAudioTrack" to true, "rms" to -1.0)
+    } finally {
+      try { codec?.stop() } catch (ignored: Exception) {}
+      try { codec?.release() } catch (ignored: Exception) {}
+      try { extractor.release() } catch (ignored: Exception) {}
+    }
   }
 }
