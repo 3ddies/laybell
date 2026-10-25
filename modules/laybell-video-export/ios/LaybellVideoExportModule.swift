@@ -36,6 +36,11 @@ struct ExportOptions: Record {
   @Field var song: SongRecord?
   @Field var overlays: [OverlayRecord] = []
   @Field var videoFit: String = "stretch"
+  // A colour filter baked into every frame: the 20-number row-major 4x5 matrix that
+  // lib/filters `skiaColorMatrix` produces (RGBA rows + a 0..1 bias column), the SAME
+  // matrix the photo filters bake with Skia, so a filtered video matches a filtered
+  // photo. Empty = no filter. Applied over the picture, under the captions.
+  @Field var colorMatrix: [Double] = []
 }
 
 struct CaptureOptions: Record {
@@ -65,6 +70,12 @@ public class LaybellVideoExportModule: Module {
     // Whether this build can fit a clip inside its frame (ExportOptions.videoFit) —
     // JS asks before saving a horizontal clip upright.
     Function("canFitVideo") { () -> Bool in
+      true
+    }
+
+    // Whether this build can bake a colour filter into a video (ExportOptions.colorMatrix)
+    // — JS asks before offering Effects on a video.
+    Function("canFilterVideo") { () -> Bool in
       true
     }
 
@@ -403,12 +414,14 @@ public class LaybellVideoExportModule: Module {
     }
     session.shouldOptimizeForNetworkUse = true
 
-    // The captions go on in a second pass, over the finished picture. Laid on in this
-    // pass with AVVideoCompositionCoreAnimationTool, every frame came out black, the
-    // picture and the captions alike (dev build 847a40c8, 2026-09-11), while the same
-    // export without it was right. Core Image over the picture file needs no layer tree.
+    // The captions and/or the colour filter go on in a second pass, over the finished
+    // picture. (Laid on in THIS pass with AVVideoCompositionCoreAnimationTool, every frame
+    // came out black, the picture and the captions alike — dev build 847a40c8, 2026-09-11 —
+    // while the same export without it was right. Core Image over the picture file needs no
+    // layer tree.) A plain clip with neither captions nor filter skips the pass entirely.
     let overlays = o.overlays.filter { $0.endSec > $0.startSec && !$0.uri.isEmpty }
-    if overlays.isEmpty {
+    let colorMatrix = o.colorMatrix.count == 20 ? o.colorMatrix : nil
+    if overlays.isEmpty && colorMatrix == nil {
       try await runExport(session, to: outputURL)
       return outputURL
     }
@@ -416,38 +429,67 @@ public class LaybellVideoExportModule: Module {
       .appendingPathComponent(outputURL.deletingPathExtension().lastPathComponent + "-picture.mp4")
     defer { try? FileManager.default.removeItem(at: pictureURL) }
     try await runExport(session, to: pictureURL)
-    try await addCaptions(overlays, over: pictureURL, writing: outputURL)
+    try await applyEffects(colorMatrix: colorMatrix, overlays, over: pictureURL, writing: outputURL)
     return outputURL
   }
 
-  /// Each caption image laid over an already finished video, for its own stretch. The
-  /// picture is upright and at its final size there, the size the images were drawn at,
-  /// so each frame only needs the images composited over it.
-  private static func addCaptions(_ overlays: [OverlayRecord], over pictureURL: URL, writing outputURL: URL) async throws {
+  /// A colour filter and/or the caption images laid over an already finished video. The
+  /// picture is upright and at its final size here, the size the images were drawn at, so
+  /// each frame only needs the filter applied and the images composited over it.
+  private static func applyEffects(colorMatrix matrix: [Double]?, _ overlays: [OverlayRecord], over pictureURL: URL, writing outputURL: URL) async throws {
     let captions: [(image: CIImage, start: Double, end: Double)] = overlays.compactMap { overlay in
       guard let image = CIImage(contentsOf: fileURL(overlay.uri)) else { return nil }
       return (image, max(0, overlay.startSec), overlay.endSec)
     }
-    if captions.isEmpty {
+    // Nothing left to add (no filter, and every caption image was unreadable): keep the
+    // picture as it is.
+    if captions.isEmpty && (matrix == nil || matrix!.count != 20) {
       try? FileManager.default.removeItem(at: outputURL)
       try FileManager.default.moveItem(at: pictureURL, to: outputURL)
       return
     }
+
+    // The colour filter as a CIColorMatrix. Our matrix is row-major 4x5 — RGBA rows, each
+    // (r,g,b,a weights of the input) plus a 0..1 bias column: outChannel = dot(weights,
+    // pixel) + bias. CIColorMatrix wants one input-weights vector per output channel and
+    // one bias vector. (Same math lib/filters `skiaColorMatrix` bakes into a photo.)
+    let colorFilter: CIFilter? = {
+      guard let m = matrix, m.count == 20 else { return nil }
+      let f = CIFilter(name: "CIColorMatrix")
+      f?.setValue(CIVector(x: m[0], y: m[1], z: m[2], w: m[3]), forKey: "inputRVector")
+      f?.setValue(CIVector(x: m[5], y: m[6], z: m[7], w: m[8]), forKey: "inputGVector")
+      f?.setValue(CIVector(x: m[10], y: m[11], z: m[12], w: m[13]), forKey: "inputBVector")
+      f?.setValue(CIVector(x: m[15], y: m[16], z: m[17], w: m[18]), forKey: "inputAVector")
+      f?.setValue(CIVector(x: m[4], y: m[9], z: m[14], w: m[19]), forKey: "inputBiasVector")
+      return f
+    }()
+
+    // Apply the matrix to the pixels AS STORED (colour management off), the way Skia bakes
+    // the photo filter, so a filtered video matches a filtered photo. If the two still
+    // diverge on device it's this working-space choice to revisit.
+    let ciContext = CIContext(options: [.workingColorSpace: NSNull()])
+
     let asset = AVURLAsset(url: pictureURL, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
     let videoComposition = AVMutableVideoComposition(asset: asset, applyingCIFiltersWithHandler: { request in
       let frame = request.sourceImage
       let seconds = CMTimeGetSeconds(request.compositionTime)
+      // Filter the PICTURE first, then lay the captions over the filtered picture so the
+      // caption text itself is never tinted.
       var output = frame
+      if let cf = colorFilter {
+        cf.setValue(frame, forKey: kCIInputImageKey)
+        if let filtered = cf.outputImage { output = filtered.cropped(to: frame.extent) }
+      }
       for caption in captions where seconds >= caption.start && seconds < caption.end {
         output = caption.image.composited(over: output)
       }
-      request.finish(with: output.cropped(to: frame.extent), context: nil)
+      request.finish(with: output.cropped(to: frame.extent), context: ciContext)
     })
     videoComposition.colorPrimaries = AVVideoColorPrimaries_ITU_R_709_2
     videoComposition.colorTransferFunction = AVVideoTransferFunction_ITU_R_709_2
     videoComposition.colorYCbCrMatrix = AVVideoYCbCrMatrix_ITU_R_709_2
     guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
-      throw VideoExportException("Could not start the caption pass")
+      throw VideoExportException("Could not start the effects pass")
     }
     session.videoComposition = videoComposition
     session.shouldOptimizeForNetworkUse = true

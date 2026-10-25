@@ -67,6 +67,14 @@ export type ExportOptions = {
    * where canFitVideo() is true know it; an older one stretches.
    */
   videoFit?: 'stretch' | 'contain';
+  /**
+   * A colour filter baked into every frame: the 20-number row-major 4×5 matrix that
+   * lib/filters `skiaColorMatrix` produces (RGBA rows + a 0..1 bias column) — the SAME
+   * matrix the photo filters bake with Skia, so a filtered video matches a filtered
+   * photo. Omitted/empty = no filter. Only builds where canFilterVideo() is true read
+   * it; an older one ignores it.
+   */
+  colorMatrix?: number[];
 };
 
 export type CaptureOptions = {
@@ -86,6 +94,8 @@ declare class LaybellVideoExportModule extends NativeModule {
   exportVideo(options: ExportOptions): Promise<string>;
   /** Present, and true, from the build that knows ExportOptions.videoFit. */
   canFitVideo?: () => boolean;
+  /** Present, and true, from the build that can bake a colour filter (ExportOptions.colorMatrix). */
+  canFilterVideo?: () => boolean;
   /**
    * Joins recorded clips head to tail into one file (the multi-clip recorder's
    * segments), resolving with its URI. Present only from the build that added it; the
@@ -119,6 +129,15 @@ export function videoFitAvailable(): boolean {
 /** Whether this build can join recorded clips into one (the multi-clip recorder). */
 export function videoConcatAvailable(): boolean {
   return typeof native?.concatClips === 'function';
+}
+
+/** Whether this build can bake a colour filter into a video (ExportOptions.colorMatrix). */
+export function videoFilterAvailable(): boolean {
+  try {
+    return typeof native?.canFilterVideo === 'function' && native.canFilterVideo() === true;
+  } catch {
+    return false;
+  }
 }
 
 /** Whether this build can measure a clip's audio loudness (auto-music). */

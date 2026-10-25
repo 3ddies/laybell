@@ -27,6 +27,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
+import androidx.media3.effect.RgbMatrix
 import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
@@ -85,6 +86,11 @@ class ExportOptions : Record {
   @Field val song: SongRecord? = null
   @Field val overlays: List<OverlayRecord> = emptyList()
   @Field val videoFit: String = "stretch"
+  // A colour filter baked into every frame: the 20-number row-major 4x5 matrix that
+  // lib/filters `skiaColorMatrix` produces (RGBA rows + a 0..1 bias column), the SAME
+  // matrix the photo filters bake with Skia, so a filtered video matches a filtered
+  // photo. Empty = no filter. Applied to the picture, under the captions.
+  @Field val colorMatrix: List<Double> = emptyList()
 }
 
 class CaptureOptions : Record {
@@ -178,6 +184,12 @@ class LaybellVideoExportModule : Module() {
     // Whether this build can fit a clip inside its frame (ExportOptions.videoFit) —
     // JS asks before saving a horizontal clip upright.
     Function("canFitVideo") {
+      true
+    }
+
+    // Whether this build can bake a colour filter into a video (ExportOptions.colorMatrix)
+    // — JS asks before offering Effects on a video.
+    Function("canFilterVideo") {
       true
     }
 
@@ -370,6 +382,22 @@ class LaybellVideoExportModule : Module() {
     val videoEffects = mutableListOf<Effect>(
       Presentation.createForWidthAndHeight(width, height, layout)
     )
+    // The colour filter, on the picture and UNDER the captions (added before the overlay
+    // so the caption text itself is never tinted). Our matrix is row-major 4x5 — RGBA rows
+    // plus a 0..1 bias column; Media3's RgbMatrix multiplies vec4(rgb, 1.0) by a
+    // COLUMN-major 4x4 and keeps the source alpha, so the 4th column carries the bias.
+    // Same math lib/filters `skiaColorMatrix` bakes into a photo; if video and photo
+    // diverge on device it's Media3's working colour space to revisit.
+    if (o.colorMatrix.size == 20) {
+      val cm = o.colorMatrix
+      val gl = floatArrayOf(
+        cm[0].toFloat(), cm[5].toFloat(), cm[10].toFloat(), 0f, // column 0 × input r
+        cm[1].toFloat(), cm[6].toFloat(), cm[11].toFloat(), 0f, // column 1 × input g
+        cm[2].toFloat(), cm[7].toFloat(), cm[12].toFloat(), 0f, // column 2 × input b
+        cm[4].toFloat(), cm[9].toFloat(), cm[14].toFloat(), 1f, // column 3 × 1.0 (bias)
+      )
+      videoEffects += RgbMatrix { _, _ -> gl }
+    }
     val pngs = o.overlays
       .filter { it.uri.isNotEmpty() && it.endSec > it.startSec }
       .map { TimedPng(fileOf(it.uri).absolutePath, (max(0.0, it.startSec) * 1_000_000).toLong(), (it.endSec * 1_000_000).toLong()) }
