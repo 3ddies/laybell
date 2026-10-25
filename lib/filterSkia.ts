@@ -12,8 +12,10 @@ import { skiaColorMatrix } from './filters';
 // that predates adding Skia, the import throws and we return the original uri — filters
 // quietly no-op instead of crashing, and start working after the client is rebuilt.
 //
-// `width` scales the output (never upscales): small for fast preview/thumbnail bakes, ~1440
-// for the final upload; omit to keep the source size.
+// `width` scales the output (never upscales): small for fast preview/thumbnail bakes; OMIT
+// for the final capture so it keeps the source resolution (a cap here was making filtered
+// photos look soft next to unfiltered ones). `quality` is the JPEG quality 0..100 — high for
+// the final bake, the default is fine for tiny chips.
 
 let skiaMod: typeof import('@shopify/react-native-skia') | null = null;
 async function loadSkia() {
@@ -21,7 +23,7 @@ async function loadSkia() {
   return skiaMod;
 }
 
-export async function bakeFilter(uri: string, filterKey: string, width?: number): Promise<string> {
+export async function bakeFilter(uri: string, filterKey: string, width?: number, quality = 92): Promise<string> {
   const matrix = skiaColorMatrix(filterKey);
   if (!matrix) return uri; // 'original'/unknown — nothing to bake
   try {
@@ -44,7 +46,7 @@ export async function bakeFilter(uri: string, filterKey: string, width?: number)
 
     const snapshot = surface.makeImageSnapshot();
     // CPU-side copy before encoding (a GPU texture image can't be safely encoded off-thread).
-    const b64 = (snapshot.makeNonTextureImage() ?? snapshot).encodeToBase64(ImageFormat.JPEG, 92);
+    const b64 = (snapshot.makeNonTextureImage() ?? snapshot).encodeToBase64(ImageFormat.JPEG, quality);
     if (!b64) return uri;
 
     const out = `${FileSystem.cacheDirectory}fx_${Date.now()}_${Math.round(Math.random() * 1e6)}.jpg`;
