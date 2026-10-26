@@ -16,7 +16,7 @@ export const AUTO_BLEND_DEFAULT_S = 12;       // blend length when we can't read
 export const AUTO_BLEND_MIN_S = 5;            // never blend shorter than this
 export const AUTO_BLEND_MAX_S = 16;           // or longer than this
 export const AUTO_BEAT_MIN_CONFIDENCE = 0.18; // below this, skip beatmatch (fall back to EQ blend)
-export const AUTO_MAX_STRETCH = 0.06;         // only beatmatch within ±6% tempo change (musical + safe)
+export const AUTO_MAX_STRETCH = 0.08;         // only beatmatch within ±8% tempo change (musical + safe)
 export const AUTO_POST_RESTORE_S = 4;         // after the blend, ease the new track back to its natural tempo over this
 // How far before the outgoing track's TRUE audio end the blend finishes (so it's
 // silent before the stop). Abrupt/cold endings get more headroom than tails.

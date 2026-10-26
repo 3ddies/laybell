@@ -45,49 +45,64 @@ export function analyzeBeatGrid(samples: Float32Array, sampleRate: number): Beat
     energy[f] = sum / HOP;
   }
 
-  // 2. Onset envelope = positive flux, lightly smoothed, then normalized.
-  const onsetRaw = new Float32Array(nFrames);
-  for (let f = 1; f < nFrames; f++) { const d = energy[f] - energy[f - 1]; onsetRaw[f] = d > 0 ? d : 0; }
-  const onset = new Float32Array(nFrames);
-  for (let f = 0; f < nFrames; f++) {
-    const a = onsetRaw[f - 1] ?? 0;
-    const b = onsetRaw[f];
-    const c = onsetRaw[f + 1] ?? 0;
-    onset[f] = (a + 2 * b + c) / 4; // tiny triangular smoothing
+  // 2. Onset envelope = half-wave-rectified LOG-energy flux (log compresses dynamics so beats
+  //    register in quiet and loud passages alike), lightly smoothed.
+  const env = new Float32Array(nFrames);
+  {
+    const flux = new Float32Array(nFrames);
+    for (let f = 1; f < nFrames; f++) {
+      const d = Math.log(1 + 1e3 * energy[f]) - Math.log(1 + 1e3 * energy[f - 1]);
+      flux[f] = d > 0 ? d : 0;
+    }
+    for (let f = 0; f < nFrames; f++) {
+      const a = f > 0 ? flux[f - 1] : 0;
+      const c = f < nFrames - 1 ? flux[f + 1] : 0;
+      env[f] = (a + 2 * flux[f] + c) / 4;
+    }
   }
-  let omax = 0;
-  for (let f = 0; f < nFrames; f++) if (onset[f] > omax) omax = onset[f];
-  if (omax <= 0) return null;
-  for (let f = 0; f < nFrames; f++) onset[f] /= omax;
 
-  // 3. Autocorrelation over the BPM lag range.
+  // 3. Mean-subtract so the autocorrelation reflects PERIODICITY, not the envelope's DC
+  //    offset — an all-positive envelope otherwise gives a near-flat autocorrelation and
+  //    uselessly low confidence (the original bug: conf read ~0.03 on real beats).
+  let mean = 0;
+  for (let f = 0; f < nFrames; f++) mean += env[f];
+  mean /= nFrames;
+  const dev = new Float32Array(nFrames);
+  let var0 = 0;
+  for (let f = 0; f < nFrames; f++) { const d = env[f] - mean; dev[f] = d; var0 += d * d; }
+  if (var0 <= 0) return null;
+
+  // 4. Biased normalized autocorrelation over the BPM lag range (coefficients in [-1,1]).
   const fps = sampleRate / HOP;
   const lagMin = Math.max(1, Math.round((fps * 60) / MAX_BPM));
   const lagMax = Math.round((fps * 60) / MIN_BPM);
   if (lagMax <= lagMin || lagMax >= nFrames) return null;
 
-  const scores = new Float32Array(lagMax + 2);
-  let bestLag = -1;
-  let bestScore = -1;
-  let scoreSum = 0;
-  let scoreCnt = 0;
+  const ac = new Float32Array(lagMax + 1);
   for (let lag = lagMin; lag <= lagMax; lag++) {
     let acc = 0;
-    for (let f = lag; f < nFrames; f++) acc += onset[f] * onset[f - lag];
-    acc /= (nFrames - lag);
-    scores[lag] = acc;
-    scoreSum += acc;
-    scoreCnt++;
-    if (acc > bestScore) { bestScore = acc; bestLag = lag; }
+    for (let f = lag; f < nFrames; f++) acc += dev[f] * dev[f - lag];
+    ac[lag] = acc / var0;
+  }
+
+  // Harmonic enhancement: a true beat period also correlates at 2×/3× the lag — add those so
+  // the fundamental wins over a half-tempo pick.
+  let bestLag = -1;
+  let bestScore = -Infinity;
+  for (let lag = lagMin; lag <= lagMax; lag++) {
+    let e = ac[lag];
+    if (2 * lag <= lagMax) e += 0.5 * ac[2 * lag];
+    if (3 * lag <= lagMax) e += 0.33 * ac[3 * lag];
+    if (e > bestScore) { bestScore = e; bestLag = lag; }
   }
   if (bestLag <= 0) return null;
 
-  // Sub-frame precision via parabolic interpolation around the peak.
+  // Sub-frame precision via parabolic interpolation on the raw autocorrelation.
   let lag = bestLag;
   if (bestLag > lagMin && bestLag < lagMax) {
-    const y0 = scores[bestLag - 1];
-    const y1 = scores[bestLag];
-    const y2 = scores[bestLag + 1];
+    const y0 = ac[bestLag - 1];
+    const y1 = ac[bestLag];
+    const y2 = ac[bestLag + 1];
     const denom = y0 - 2 * y1 + y2;
     if (denom !== 0) {
       const delta = (0.5 * (y0 - y2)) / denom;
@@ -97,17 +112,16 @@ export function analyzeBeatGrid(samples: Float32Array, sampleRate: number): Beat
 
   const beatPeriodS = lag / fps;
   const bpm = 60 / beatPeriodS;
-  const meanScore = scoreCnt > 0 ? scoreSum / scoreCnt : 0;
-  const confidence = meanScore > 0 ? clamp((bestScore / meanScore - 1) / 3, 0, 1) : 0;
+  const confidence = clamp(ac[bestLag], 0, 1); // normalized autocorrelation at the beat period
 
-  // 4. Phase: comb the onset envelope at the beat period; the best offset is the grid origin.
+  // 5. Phase: comb the onset envelope at the beat period; the best offset is the grid origin.
   const periodFrames = Math.max(1, Math.round(lag));
   const stepsAcross = Math.max(1, Math.round(periodFrames / 48));
   let bestPhase = 0;
   let bestPhaseScore = -1;
   for (let p = 0; p < periodFrames; p += stepsAcross) {
     let acc = 0;
-    for (let f = p; f < nFrames; f += periodFrames) acc += onset[f];
+    for (let f = p; f < nFrames; f += periodFrames) acc += env[f];
     if (acc > bestPhaseScore) { bestPhaseScore = acc; bestPhase = p; }
   }
   const firstBeatS = bestPhase / fps;

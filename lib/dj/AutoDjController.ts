@@ -157,6 +157,7 @@ export class AutoDjController {
 
     let blendS = this.estimateBlendS(gOut);
     let matched = false;
+    let matchRatio: number | null = null;
 
     if (
       gOut && gIn &&
@@ -178,6 +179,7 @@ export class AutoDjController {
         }
       }
       if (best) {
+        matchRatio = best.ratio;
         incDeck.setTempo(best.ratio); // incoming's REAL bpm now equals the outgoing's
         const periodOut = 60 / gOut.bpm;
         const sinceGrid = liveDeck.position() - gOut.firstBeatS;
@@ -205,9 +207,10 @@ export class AutoDjController {
     this.liveStretched = matched;
     log('mixing', {
       track: this.queue[this.index]?.title ?? '?',
-      from: this.live, to: inc, blendS: +blendS.toFixed(1), matched, abrupt: !!aOut?.abrupt,
-      end: +end.toFixed(1), dur: +liveDeck.durationS.toFixed(1),
-      outBpm: gOut ? +gOut.bpm.toFixed(1) : null, inBpm: gIn ? +gIn.bpm.toFixed(1) : null,
+      from: this.live, to: inc, blendS: +blendS.toFixed(1), matched,
+      ratio: matchRatio ? +matchRatio.toFixed(3) : null, abrupt: !!aOut?.abrupt,
+      outBpm: gOut ? +gOut.bpm.toFixed(1) : null, outConf: gOut ? +gOut.confidence.toFixed(2) : null,
+      inBpm: gIn ? +gIn.bpm.toFixed(1) : null, inConf: gIn ? +gIn.confidence.toFixed(2) : null,
     });
 
     this.clearPromote();
