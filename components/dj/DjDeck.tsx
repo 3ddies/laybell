@@ -124,6 +124,7 @@ export default memo(function DjDeck({ deck, color, track, peaks, loading, waveWi
               </Pressable>
             ))}
           </View>
+          <Text style={styles.cuesHint}>Long-press to clear</Text>
         </View>
       </View>
     </View>
@@ -145,6 +146,7 @@ const styles = StyleSheet.create({
   cuesCol: { marginLeft: 'auto', alignItems: 'center', gap: 4 },
   cuesLabel: { color: '#6F6F79', fontSize: 9, fontWeight: '800', letterSpacing: 1.5 },
   cues: { flexDirection: 'row', gap: 6 },
+  cuesHint: { color: '#56565E', fontSize: 8.5, fontWeight: '600', letterSpacing: 0.2 },
   cue: { width: 38, height: 44, borderRadius: 8, borderWidth: 1.5, borderColor: '#2E2E34', backgroundColor: '#1A1A1D', alignItems: 'center', justifyContent: 'center' },
   cueTxt: { color: '#8A8A92', fontSize: 14, fontWeight: '800' },
 });
