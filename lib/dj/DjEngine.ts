@@ -46,6 +46,9 @@ const eqKnobToDb = (k: number) => (k < 0 ? k * -EQ_KILL_DB : k * EQ_BOOST_DB);
 // mids/highs cross-blend across the whole phrase (incoming rises early, outgoing
 // leaves late), highs slightly ahead of mids. Tune by ear.
 const MORPH = {
+  // completeFrac: the whole hand-off (volume + EQ) finishes by this fraction of the blend;
+  // the outgoing is then SILENT for the rest, so a loud/abrupt ending can't snap through.
+  completeFrac: 0.72,
   bassOutStart: 0.35, bassOutEnd: 0.52, // outgoing low: flat → kill
   bassInStart: 0.48, bassInEnd: 0.66,   // incoming low: kill → flat (just after)
   midInEnd: 0.55,  midOutStart: 0.45,   // incoming mid rises over [0,.55]; outgoing falls over [.45,1]
@@ -371,17 +374,20 @@ export class DjEngine {
   }
 
   /** Equal-power volume crossfade from one deck to the other over [t0, t0+durS], scheduled
-   *  on the audio thread (smooth + survives backgrounding). */
-  scheduleCross(fromId: DeckId, toId: DeckId, t0: number, durS: number): void {
+   *  on the audio thread (smooth + survives backgrounding). `completeFrac` < 1 finishes the
+   *  cross by that fraction of durS (outgoing hits 0, incoming full) and holds — so the
+   *  outgoing is silent for the remainder, masking a loud/abrupt ending. */
+  scheduleCross(fromId: DeckId, toId: DeckId, t0: number, durS: number, completeFrac = 1): void {
     const from = this.deck(fromId);
     const to = this.deck(toId);
-    const N = 64;
+    const cf = clamp(completeFrac, 0.1, 1);
+    const N = 96;
     const outCurve = new Float32Array(N);
     const inCurve = new Float32Array(N);
     for (let i = 0; i < N; i++) {
-      const x = i / (N - 1);
-      outCurve[i] = Math.cos((x * Math.PI) / 2);       // 1 → 0
-      inCurve[i] = Math.cos(((1 - x) * Math.PI) / 2);  // 0 → 1
+      const xe = Math.min(1, (i / (N - 1)) / cf); // reach the ends by fraction cf, then hold
+      outCurve[i] = Math.cos((xe * Math.PI) / 2);       // 1 → 0
+      inCurve[i] = Math.cos(((1 - xe) * Math.PI) / 2);  // 0 → 1
     }
     from.crossGain.gain.cancelScheduledValues(t0);
     to.crossGain.gain.cancelScheduledValues(t0);
@@ -397,19 +403,20 @@ export class DjEngine {
     const t0 = this.ctx.currentTime;
     const from = this.deck(fromId);
     const to = this.deck(toId);
-    const at = (frac: number) => t0 + frac * blendS;
+    const wS = MORPH.completeFrac * blendS;     // the whole hand-off happens within this window;
+    const at = (frac: number) => t0 + frac * wS; // EQ fractions are relative to it (then the outgoing is silent)
 
-    this.scheduleCross(fromId, toId, t0, blendS);
+    this.scheduleCross(fromId, toId, t0, blendS, MORPH.completeFrac);
 
     // Low: quick swap around the midpoint — only one track holds the sub at a time.
     from.rampEq('low', 0, -1, at(MORPH.bassOutStart), at(MORPH.bassOutEnd));
     to.rampEq('low', -1, 0, at(MORPH.bassInStart), at(MORPH.bassInEnd));
     // Mid: incoming rises early, outgoing fades late.
     to.rampEq('mid', AUTO_MID_DUCK, 0, t0, at(MORPH.midInEnd));
-    from.rampEq('mid', 0, AUTO_MID_DUCK, at(MORPH.midOutStart), t0 + blendS);
+    from.rampEq('mid', 0, AUTO_MID_DUCK, at(MORPH.midOutStart), t0 + wS);
     // High: a touch ahead of the mids.
     to.rampEq('high', AUTO_HIGH_DUCK, 0, t0, at(MORPH.highInEnd));
-    from.rampEq('high', 0, AUTO_HIGH_DUCK, at(MORPH.highOutStart), t0 + blendS);
+    from.rampEq('high', 0, AUTO_HIGH_DUCK, at(MORPH.highOutStart), t0 + wS);
   }
 
   setMasterVolume(v: number): void { this.master.gain.value = clamp(v, 0, 1); }

@@ -125,7 +125,8 @@ export function analyzeBeatGrid(samples: Float32Array, sampleRate: number): Beat
 // headroom to mask the cut) vs. a decaying outro.
 const END_HOP = 1024;
 const END_LOUD_PERCENTILE = 0.75;  // "typical loud" reference = this percentile of frame energy
-const END_PRESENT_FRACTION = 0.12; // music is "present" above this fraction of the loud reference (energy)
+const END_PRESENT_FRACTION = 0.18; // music is "present" above this fraction of the loud reference (energy
+                                   // ≈ 42% amplitude) — ends on the LOUD part, trimming quieter tails
 const END_ABRUPT_FRACTION = 0.5;   // still this loud just before the end (energy) = abrupt/cold stop
 const END_ABRUPT_WINDOW_S = 0.3;
 

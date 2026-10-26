@@ -204,6 +204,7 @@ export class AutoDjController {
     this.engine.scheduleMorph(this.live, inc, blendS);
     this.liveStretched = matched;
     log('mixing', {
+      track: this.queue[this.index]?.title ?? '?',
       from: this.live, to: inc, blendS: +blendS.toFixed(1), matched, abrupt: !!aOut?.abrupt,
       end: +end.toFixed(1), dur: +liveDeck.durationS.toFixed(1),
       outBpm: gOut ? +gOut.bpm.toFixed(1) : null, inBpm: gIn ? +gIn.bpm.toFixed(1) : null,
@@ -315,9 +316,11 @@ export class AutoDjController {
       if (a) {
         this.analysis.set(trackId, a);
         log('analysis', {
+          track: this.queue.find((t) => t.id === trackId)?.title ?? '?',
+          dur: +this.engine.deck(id).durationS.toFixed(1),
+          endS: +a.endS.toFixed(1), abrupt: a.abrupt,
           bpm: a.grid ? +a.grid.bpm.toFixed(1) : null,
           conf: a.grid ? +a.grid.confidence.toFixed(2) : null,
-          endS: +a.endS.toFixed(1), abrupt: a.abrupt,
         });
       }
     } catch (e) { log('analysis FAILED', e); }
