@@ -21,7 +21,8 @@ import {
   type GainNode,
   type BiquadFilterNode,
 } from 'react-native-audio-api';
-import { TEMPO_MIN, TEMPO_MAX, type EqBand, type DeckId } from './constants';
+import { TEMPO_MIN, TEMPO_MAX, AUTO_MID_DUCK, AUTO_HIGH_DUCK, type EqBand, type DeckId } from './constants';
+import { analyzeBeatGrid, type BeatGrid } from './beatGrid';
 
 // EQ knob travel: full kill at the bottom, a modest boost at the top (DJ mixers
 // boost less than they cut — a +6 is already loud, a -26 is effectively "off").
@@ -39,6 +40,17 @@ const clamp =(v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v)
 const expMap = (t: number, from: number, to: number) => from * Math.pow(to / from, clamp(t, 0, 1));
 // EQ knob [-1,1] → dB: <0 scales toward kill, >0 toward boost.
 const eqKnobToDb = (k: number) => (k < 0 ? k * -EQ_KILL_DB : k * EQ_BOOST_DB);
+
+// Auto-DJ morph EQ choreography, as fractions of the blend length. The bass hands
+// off quickly around the midpoint (only one track owns the sub at a time → no mud);
+// mids/highs cross-blend across the whole phrase (incoming rises early, outgoing
+// leaves late), highs slightly ahead of mids. Tune by ear.
+const MORPH = {
+  bassOutStart: 0.35, bassOutEnd: 0.52, // outgoing low: flat → kill
+  bassInStart: 0.48, bassInEnd: 0.66,   // incoming low: kill → flat (just after)
+  midInEnd: 0.55,  midOutStart: 0.45,   // incoming mid rises over [0,.55]; outgoing falls over [.45,1]
+  highInEnd: 0.45, highOutStart: 0.55,  // highs a touch earlier than mids
+} as const;
 
 // Down-sample a decoded track into `n` normalized peak bars (0..1) for the waveform.
 // One pass over channel 0 — done once per load, so the O(samples) cost is fine.
@@ -208,6 +220,39 @@ export class Deck {
     this.eqLow.gain.linearRampToValueAtTime(eqKnobToDb(clamp(toKnob, -1, 1)), endT);
   }
 
+  private eqNode(band: EqBand): BiquadFilterNode {
+    return band === 'low' ? this.eqLow : band === 'mid' ? this.eqMid : this.eqHigh;
+  }
+
+  /** Ramp one EQ band from `fromKnob` to `toKnob` over [startT, endT] on the audio thread.
+   *  The explicit start value anchors the ramp (held before startT). Auto-DJ morph. */
+  rampEq(band: EqBand, fromKnob: number, toKnob: number, startT: number, endT: number): void {
+    const g = this.eqNode(band).gain;
+    g.cancelScheduledValues(startT);
+    g.setValueAtTime(eqKnobToDb(clamp(fromKnob, -1, 1)), startT);
+    g.linearRampToValueAtTime(eqKnobToDb(clamp(toKnob, -1, 1)), endT);
+  }
+
+  /** Cancel any scheduled EQ ramps and flatten all three bands NOW (clean deck reuse). */
+  resetEqNow(): void {
+    const now = this.ctx.currentTime;
+    for (const n of [this.eqLow, this.eqMid, this.eqHigh]) {
+      n.gain.cancelScheduledValues(now);
+      n.gain.value = 0;
+    }
+  }
+
+  /** Estimate this track's beat grid (BPM + phase) from the decoded buffer, or null. */
+  beatGrid(): BeatGrid | null {
+    if (!this.buffer) return null;
+    try {
+      const sr = (this.buffer as unknown as { sampleRate?: number }).sampleRate ?? this.ctx.sampleRate;
+      return analyzeBeatGrid(this.buffer.getChannelData(0), sr);
+    } catch {
+      return null;
+    }
+  }
+
   /** Filter knob in [-1,1]: <0 lowpass (darker), >0 highpass (thinner), 0 = open. */
   setFilter(knob: number): void {
     const k = clamp(knob, -1, 1);
@@ -321,12 +366,9 @@ export class DjEngine {
     this.b.crossGain.gain.value = Math.cos((1 - t) * Math.PI / 2);
   }
 
-  /** Schedule a native equal-power crossfade + bass-swap from one deck to the other over
-   *  `durationS`, starting now. The audio thread runs the ramps (smooth + survives the app
-   *  backgrounding). The incoming deck must already be PLAYING when this is called. */
-  scheduleTransition(fromId: DeckId, toId: DeckId, durationS: number): void {
-    const t0 = this.ctx.currentTime;
-    const t1 = t0 + durationS;
+  /** Equal-power volume crossfade from one deck to the other over [t0, t0+durS], scheduled
+   *  on the audio thread (smooth + survives backgrounding). */
+  scheduleCross(fromId: DeckId, toId: DeckId, t0: number, durS: number): void {
     const from = this.deck(fromId);
     const to = this.deck(toId);
     const N = 64;
@@ -339,13 +381,31 @@ export class DjEngine {
     }
     from.crossGain.gain.cancelScheduledValues(t0);
     to.crossGain.gain.cancelScheduledValues(t0);
-    from.crossGain.gain.setValueCurveAtTime(outCurve, t0, durationS);
-    to.crossGain.gain.setValueCurveAtTime(inCurve, t0, durationS);
-    // Only one track owns the sub during the overlap: outgoing bass drops out, incoming's
-    // comes in (it starts pre-cut).
-    to.setBassNow(-1);
-    from.rampBass(-1, t0, t1);
-    to.rampBass(0, t0, t1);
+    from.crossGain.gain.setValueCurveAtTime(outCurve, t0, durS);
+    to.crossGain.gain.setValueCurveAtTime(inCurve, t0, durS);
+  }
+
+  /** The Auto-DJ "radio morph": over `blendS` seconds starting now, equal-power the volume
+   *  across AND hand off the frequency bands (see MORPH) so one song melts into the next
+   *  instead of merely overlapping. The incoming deck must already be PLAYING, pre-ducked
+   *  (bass killed, mid/high at AUTO_*_DUCK). All ramps run on the audio thread. */
+  scheduleMorph(fromId: DeckId, toId: DeckId, blendS: number): void {
+    const t0 = this.ctx.currentTime;
+    const from = this.deck(fromId);
+    const to = this.deck(toId);
+    const at = (frac: number) => t0 + frac * blendS;
+
+    this.scheduleCross(fromId, toId, t0, blendS);
+
+    // Low: quick swap around the midpoint — only one track holds the sub at a time.
+    from.rampEq('low', 0, -1, at(MORPH.bassOutStart), at(MORPH.bassOutEnd));
+    to.rampEq('low', -1, 0, at(MORPH.bassInStart), at(MORPH.bassInEnd));
+    // Mid: incoming rises early, outgoing fades late.
+    to.rampEq('mid', AUTO_MID_DUCK, 0, t0, at(MORPH.midInEnd));
+    from.rampEq('mid', 0, AUTO_MID_DUCK, at(MORPH.midOutStart), t0 + blendS);
+    // High: a touch ahead of the mids.
+    to.rampEq('high', AUTO_HIGH_DUCK, 0, t0, at(MORPH.highInEnd));
+    from.rampEq('high', 0, AUTO_HIGH_DUCK, at(MORPH.highOutStart), t0 + blendS);
   }
 
   setMasterVolume(v: number): void { this.master.gain.value = clamp(v, 0, 1); }
