@@ -108,6 +108,12 @@ export type AppVideoProps = {
    * preview re-billed on every pass.
    */
   useCaching?: boolean;
+  /** Re-play if an external AVAudioSession interruption (most often the ambient song
+   *  player starting over a muted video) pauses the player while it SHOULD be playing —
+   *  expo-video doesn't auto-resume, so without this the video can sit stuck until a
+   *  re-render. The feed's own cards do this (FeedVideo); opt in for standalone players
+   *  that live in the feed, like the just-posted upload card. */
+  selfHeal?: boolean;
 };
 
 /** Imperative handle for scrubbing/seeking from a parent (e.g. a progress bar). */
@@ -139,6 +145,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   retryLoadErrors = true,
   onLoadError,
   useCaching = false,
+  selfHeal = false,
 }: AppVideoProps, ref) {
   const uri = typeof source === 'string' ? source : source.uri;
   // A full-screen takeover (e.g. the GIF maker) can globally pause background
@@ -312,7 +319,26 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
       }
     });
     const endSub = player.addListener('playToEnd', () => { onEndRef.current?.(); });
-    return () => { statusSub.remove(); timeSub.remove(); endSub.remove(); };
+    // Self-heal (opt-in): an external AVAudioSession interruption — most often the ambient
+    // song player starting over this (muted) video — can PAUSE the player with no change to
+    // OUR intent, and expo-video does NOT auto-resume, so the video sits stuck until some
+    // re-render re-kicks it. Drive it straight back whenever it stops while it should be
+    // playing (bounded retries), the same recovery the feed's own cards use. Intentional
+    // pauses (shouldPlay false) and idle pauses (useIdleAwareLoop) are left alone.
+    let healTimer: ReturnType<typeof setTimeout> | null = null;
+    let healSub: { remove: () => void } | null = null;
+    if (selfHeal) {
+      const heal = (tries: number) => {
+        if (healTimer) { clearTimeout(healTimer); healTimer = null; }
+        if (!shouldPlayRef.current || idleRef.current || player.playing) return;
+        try { player.play(); } catch {}
+        if (tries < 4) healTimer = setTimeout(() => heal(tries + 1), 160);
+      };
+      healSub = player.addListener('playingChange', ({ isPlaying }: any) => {
+        if (!isPlaying && shouldPlayRef.current && !idleRef.current) heal(0);
+      });
+    }
+    return () => { statusSub.remove(); timeSub.remove(); endSub.remove(); healSub?.remove(); if (healTimer) clearTimeout(healTimer); };
   }, [player]);
 
   // Only once the surface has painted: before that the poster is still up, which

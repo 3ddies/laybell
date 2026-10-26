@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { SPACING, isDarkPalette, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 type Props = {
@@ -19,9 +20,12 @@ type Props = {
   onHide: () => void;
 };
 
-// Lightweight confirmation toast: a card that springs up from the bottom and
-// auto-dismisses. Self-contained (no provider) — render it where you need it and
-// drive `visible`. Matches the elevated-card look of BadgeUpgradeToast.
+// iOS-style confirmation banner: a frosted card that springs up from the bottom
+// and auto-dismisses. Self-contained (no provider) — render it where you need it
+// and drive `visible`. The surface is a real BlurView material (matching the
+// mini-player / tab bar) with a continuous-radius corner, a hairline edge and a
+// soft diffuse shadow, so it reads as a native notification rather than a flat
+// Android card.
 export default function Toast({
   visible,
   title,
@@ -33,7 +37,7 @@ export default function Toast({
   onHide,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { mode, colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const anim = useRef(new Animated.Value(0)).current;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -57,14 +61,25 @@ export default function Toast({
   if (!visible) return null;
   const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] });
 
-  const inner = (
-    <View style={styles.card}>
-      <Ionicons name={icon} size={22} color={colors.primary} />
-      <View style={styles.body}>
-        <Text style={styles.title} numberOfLines={1}>{title}</Text>
-        {!!message && <Text style={styles.message} numberOfLines={2}>{message}</Text>}
-      </View>
-      {!!onPress && <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />}
+  const card = (
+    // Shadow lives on the outer wrapper so it isn't clipped by the blur's
+    // overflow:hidden; the BlurView itself carries the rounded, clipped surface.
+    <View style={styles.shadow}>
+      <BlurView
+        tint={mode === 'light' ? 'systemChromeMaterialLight' : 'systemChromeMaterialDark'}
+        intensity={60}
+        style={styles.card}
+      >
+        {/* Legibility tint over the blur — floats over arbitrary feed content, so
+            the material alone isn't opaque enough to keep text crisp. */}
+        <View pointerEvents="none" style={styles.tint} />
+        <Ionicons name={icon} size={23} color={colors.primary} />
+        <View style={styles.body}>
+          <Text style={styles.title} numberOfLines={1}>{title}</Text>
+          {!!message && <Text style={styles.message} numberOfLines={2}>{message}</Text>}
+        </View>
+        {!!onPress && <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />}
+      </BlurView>
     </View>
   );
 
@@ -77,23 +92,43 @@ export default function Toast({
       style={[styles.wrap, { bottom: insets.bottom + bottomOffset, opacity: anim, transform: [{ translateY }] }]}
     >
       {onPress
-        ? <Pressable onPress={() => { onPress(); hide(); }} style={({ pressed }) => (pressed ? { opacity: 0.85 } : null)}>{inner}</Pressable>
-        : inner}
+        ? <Pressable onPress={() => { onPress(); hide(); }} style={({ pressed }) => (pressed ? { opacity: 0.9, transform: [{ scale: 0.99 }] } : null)}>{card}</Pressable>
+        : card}
     </Animated.View>
   );
 }
 
-const makeStyles = (colors: ThemePalette) => StyleSheet.create({
-  wrap: { position: 'absolute', left: SPACING.md, right: SPACING.md, zIndex: 1000 },
-  card: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm + 2,
-    backgroundColor: colors.surfaceElevated, borderRadius: RADIUS.lg,
-    borderWidth: 1, borderColor: colors.border,
-    paddingVertical: SPACING.sm + 4, paddingHorizontal: SPACING.md,
-    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 6 },
-    elevation: 10,
-  },
-  body: { flex: 1 },
-  title: { color: colors.text, fontSize: 14.5, fontWeight: '800', letterSpacing: -0.2 },
-  message: { color: colors.textSecondary, fontSize: 12.5, marginTop: 1, lineHeight: 17 },
-});
+const RADIUS_BANNER = 24; // continuous iOS-banner corner, between RADIUS.lg and .xl
+
+const makeStyles = (colors: ThemePalette) => {
+  const dark = isDarkPalette(colors);
+  return StyleSheet.create({
+    wrap: { position: 'absolute', left: SPACING.md, right: SPACING.md, zIndex: 1000 },
+    // Carries the soft, diffuse drop shadow (iOS casts it from the rounded bounds;
+    // Android uses elevation). No overflow here so the shadow isn't clipped.
+    shadow: {
+      borderRadius: RADIUS_BANNER,
+      shadowColor: '#000',
+      shadowOpacity: dark ? 0.4 : 0.16,
+      shadowRadius: 22,
+      shadowOffset: { width: 0, height: 10 },
+      elevation: 12,
+    },
+    card: {
+      flexDirection: 'row', alignItems: 'center', gap: SPACING.sm + 2,
+      borderRadius: RADIUS_BANNER, overflow: 'hidden',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: dark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.08)',
+      // Thicker top/bottom than the old 12px so the banner feels substantial.
+      paddingVertical: 18, paddingHorizontal: SPACING.md + 2,
+    },
+    // Sits over the blur (first child, absolute) and under the content.
+    tint: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: dark ? 'rgba(22,22,24,0.55)' : 'rgba(255,255,255,0.6)',
+    },
+    body: { flex: 1 },
+    title: { color: colors.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.3 },
+    message: { color: colors.textSecondary, fontSize: 13, fontWeight: '400', marginTop: 2, lineHeight: 18 },
+  });
+};

@@ -49,12 +49,30 @@ export type Sticker = {
   // A horizontal video's captions only: the letterbox band it sits in, with its
   // `y` measured inside that band (lib/bandCaptions).
   band?: 'top' | 'bottom';
-  // A NON-text layer moved by the SAME gestures — currently the reshared post in
-  // the Post-to-story editor. Its content is drawn by the host's `renderKind`
-  // (StickerLayer stays media-agnostic); the story viewer reads its transform to
-  // place the post. Absent (or 'text') = an ordinary text/emoji sticker, so every
-  // sticker posted before this renders exactly as before.
-  kind?: 'text' | 'post';
+  // A NON-text layer moved by the SAME gestures — the reshared post in the
+  // Post-to-story editor, or a 'link' chip. Its content is drawn by the host's
+  // `renderKind` (StickerLayer stays media-agnostic); the story viewer reads its
+  // transform to place it. Absent (or 'text') = an ordinary text/emoji sticker, so
+  // every sticker posted before this renders exactly as before.
+  kind?: 'text' | 'post' | 'link' | 'photo' | 'poll' | 'music' | 'community' | 'shop' | 'slider' | 'reaction'
+    | 'countdown' | 'gif' | 'time' | 'temperature' | 'location';
+  url?: string;       // 'link' kind: the destination (opened via the link-safety guard)
+  uri?: string;       // 'photo' kind: the image (local while composing, hosted once posted)
+  pollId?: string;    // 'poll' kind: stable id that votes reference
+  question?: string;  // 'poll' kind: the prompt
+  options?: string[]; // 'poll' kind: 2–4 choices
+  songId?: string;    // 'music' kind: the track (text = title); plays as the story's audio
+  artist?: string;    // 'music' kind: artist name
+  cover?: string | null; // 'music' kind: cover-art URL
+  musicStyle?: 'card' | 'square'; // 'music' kind: which look (tap the sticker to cycle)
+  communityId?: string; // 'community' kind (text = name); tapping opens the community
+  listingId?: string;   // 'shop' kind (text = title, cover = artwork); tapping opens the listing
+  price?: string;       // 'shop' kind: price label
+  preview?: string | null; // 'shop' kind: preview-audio URL — becomes the story's audio when present
+  emojiChar?: string; // 'slider' / 'reaction' kinds: the chosen emoji ('slider' also uses text = prompt)
+  target?: string;    // 'countdown' kind: ISO target datetime (text = title). gif = uri/w/h; time/temperature/location = text
+  w?: number;         // 'photo' kind: display width
+  h?: number;         // 'photo' kind: display height
 } & CaptionStyle;
 
 export const STICKER_FONTS: { key: StickerFont; label: string }[] = [
@@ -265,7 +283,9 @@ export default function StickerLayer({
   frameH: number;
   editingId: string | null;
   onManipulate: (id: string, style: CaptionStyle) => void;
-  onTapSticker: (id: string) => void;
+  // `offset` is the tap's position relative to the sticker's centre (frame px) so a
+  // host can edit different ZONES of one sticker (e.g. the slider's caption vs emoji).
+  onTapSticker: (id: string, offset?: { dx: number; dy: number }) => void;
   onTapEmpty: (xNorm: number, yNorm: number) => void;
   // Fired when a sticker drag starts/ends — the host shows its trash zone. The
   // active sticker's id rides along so a host can suppress the trash for a sticker
@@ -391,8 +411,11 @@ export default function StickerLayer({
     }
     const id = active.current;
     if (!moved.current) {
-      if (id && nearTap.current) cbRef.current.onTapSticker(id);
-      else cbRef.current.onTapEmpty(grant.current.x / frameW, grant.current.y / frameH);
+      if (id && nearTap.current) {
+        const s = stickersRef.current.find((x) => x.id === id);
+        const off = s ? { dx: grant.current.x - s.x * frameW, dy: grant.current.y - s.y * frameH } : undefined;
+        cbRef.current.onTapSticker(id, off);
+      } else cbRef.current.onTapEmpty(grant.current.x / frameW, grant.current.y / frameH);
     } else if (id) {
       const cur = curRef.current[id];
       if (cur) cbRef.current.onManipulate(id, { x: cur.x / frameW + 0.5, y: cur.y / frameH + 0.5, scale: cur.scale, rotation: cur.rotation });
@@ -532,9 +555,12 @@ export default function StickerLayer({
         // A non-text layer (the reshared post) draws through the host; a text/emoji
         // sticker (no `kind`) still needs its text, so it's culled while empty
         // exactly as before.
-        const isPost = s.kind === 'post';
-        if (!isPost && !s.text) return null;
-        const content = isPost ? renderKind?.(s) : <StickerContent sticker={s} />;
+        // Any non-text/emoji kind (the reshared post, a link chip) is drawn by the
+        // host's renderKind; a text/emoji sticker still needs its text, so it's
+        // culled while empty exactly as before.
+        const isCustom = !!s.kind && s.kind !== 'text';
+        if (!isCustom && !s.text) return null;
+        const content = isCustom ? renderKind?.(s) : <StickerContent sticker={s} />;
         if (!content) return null;
         const a = getAnim(s);
         return (

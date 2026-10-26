@@ -7,7 +7,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { reportCommunity } from '../../lib/postActions';
 import { communityShareUrl } from '../../lib/appLinks';
-import { LinearGradient } from 'expo-linear-gradient';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import ExploreGrid from '../../components/ExploreGrid';
 import { Skeleton, SkeletonLine, GridSkeleton } from '../../components/Skeleton';
@@ -19,23 +18,13 @@ import { countLabel } from '../../lib/i18n';
 import { useProfile } from '../../contexts/ProfileContext';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { genreLabel } from '../../lib/genres';
+import { communityImage } from '../../lib/sampleImages';
 import { formatCount } from '../../lib/format';
 import {
   fetchCommunity, fetchCommunityPosts, joinCommunity, leaveCommunity,
   respondInvite, type Community,
 } from '../../lib/communities';
 
-// Deterministic accent (matches CommunityCard) so the banner is stable per name.
-const ACCENTS: readonly (readonly [string, string])[] = [
-  ['#E8401C', '#F26522'], ['#7C3AED', '#A855F7'], ['#0EA5E9', '#22D3EE'],
-  ['#F59E0B', '#FBBF24'], ['#10B981', '#34D399'], ['#EC4899', '#F472B6'],
-  ['#6366F1', '#818CF8'], ['#EF4444', '#F87171'],
-];
-function accentFor(seed: string): readonly [string, string] {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return ACCENTS[h % ACCENTS.length];
-}
 
 const SCREEN_W = Dimensions.get('window').width;
 
@@ -176,8 +165,10 @@ export default function CommunityDetailScreen() {
 
   function renderContent() {
     if (!community) return null;
-    const accent = accentFor(community.name);
-    const initial = community.name.trim().charAt(0).toUpperCase() || '#';
+    // Same picture as the community's card on the tab (banner_url, else the genre/topic
+    // photo) so the detail header matches what was tapped.
+    const img = community.banner_url || communityImage(community.genre, community.hashtag);
+    const genreTag = genreLabel(community.genre);
     const pending = community.status === 'pending';
 
     const goEdit = () => router.push(`/communities/edit?id=${id}`);
@@ -186,17 +177,10 @@ export default function CommunityDetailScreen() {
     <View>
       {/* For the owner the banner is tappable (→ edit) with a pencil cue. */}
       <TouchableOpacity activeOpacity={isOwner ? 0.9 : 1} onPress={isOwner ? goEdit : undefined} disabled={!isOwner}>
-        {community.banner_url ? (
-          <View style={[styles.banner, styles.bannerWithImg]}>
-            <Image source={{ uri: community.banner_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-            <View style={styles.genrePill}><Text style={styles.genrePillText}>{genreLabel(community.genre)}</Text></View>
-          </View>
-        ) : (
-          <LinearGradient colors={accent as any} style={styles.banner}>
-            <Text style={styles.bannerInitial}>{initial}</Text>
-            <View style={styles.genrePill}><Text style={styles.genrePillText}>{genreLabel(community.genre)}</Text></View>
-          </LinearGradient>
-        )}
+        <View style={[styles.banner, styles.bannerWithImg]}>
+          <Image source={{ uri: img }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          {!!genreTag && <View style={styles.genrePill}><Text style={styles.genrePillText}>{genreTag}</Text></View>}
+        </View>
         {isOwner && (
           <View style={styles.bannerEditBadge}><Ionicons name="create-outline" size={16} color="#fff" /></View>
         )}
@@ -504,14 +488,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   skelBanner: { marginBottom: SPACING.sm },
   skelInfo: { paddingHorizontal: SPACING.md, gap: SPACING.sm },
 
-  banner: { height: 120, padding: SPACING.md, justifyContent: 'space-between', overflow: 'hidden' },
+  banner: { height: 120, padding: SPACING.md, justifyContent: 'space-between', overflow: 'hidden', backgroundColor: colors.surface },
   bannerWithImg: { justifyContent: 'flex-end' },
   bannerEditBadge: {
     position: 'absolute', right: SPACING.md, top: SPACING.md,
     width: 30, height: 30, borderRadius: 15,
     backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center',
   },
-  bannerInitial: { color: '#fff', fontSize: 44, fontWeight: '900', textShadowColor: 'rgba(0,0,0,0.25)', textShadowRadius: 6 },
   genrePill: { alignSelf: 'flex-start', backgroundColor: 'rgba(0,0,0,0.32)', borderRadius: RADIUS.full, paddingHorizontal: SPACING.sm, paddingVertical: 3 },
   genrePillText: { color: '#fff', fontSize: 11, fontWeight: '700' },
 

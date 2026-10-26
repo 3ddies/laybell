@@ -1,4 +1,4 @@
-import { patchPostList, subscribePostEdited } from '../../lib/postEdits';
+import { patchPostList, subscribePostEdited, removeFromPostList, subscribePostDeleted } from '../../lib/postEdits';
 import {
   View, Text, StyleSheet, TextInput,
   FlatList, TouchableOpacity, Image, Keyboard, ScrollView,
@@ -106,6 +106,8 @@ export default function ExploreScreen() {
   const [posts, setPosts] = useState<Post[]>([]);
   // An edit saved on app/edit-post shows here at once (lib/postEdits).
   useEffect(() => subscribePostEdited((id, patch) => setPosts((prev) => patchPostList(prev, id, patch))), []);
+  // A post deleted anywhere drops from explore at once (lib/postEdits).
+  useEffect(() => subscribePostDeleted((id) => setPosts((prev) => removeFromPostList(prev, id))), []);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);

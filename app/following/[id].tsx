@@ -96,6 +96,7 @@ export default function FollowingScreen() {
                 <StoryAvatar
                   userId={item.id}
                   avatarUrl={item.avatar_url}
+                  showPresence
                   name={item.display_name}
                   size={46}
                 />

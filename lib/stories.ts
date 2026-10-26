@@ -7,6 +7,43 @@ import { removePublicUrls } from './storageCleanup';
 // A story is an ephemeral image/video visible to the author and their followers
 // for 24h after posting. story_views drives the unseen/seen ring in the tray.
 
+// A single trending track to suggest at the top of the story composer. Same shape as
+// SongBrowser's PickedSong, so it feeds straight into the composer's song flow.
+export type SuggestedSong = { id: string; title: string; artist: string; artistId: string; cover: string | null };
+
+/** The top reuse-allowed track by plays — surfaced as a one-tap "suggested audio". */
+export async function fetchSuggestedSong(): Promise<SuggestedSong | null> {
+  const EMBED = 'id, caption, cover_url, user_id, stream_count, profiles!posts_user_id_fkey(id, username, display_name)';
+  const base = () => supabase
+    .from('posts')
+    .select(EMBED)
+    .eq('is_public', true)
+    .in('type', ['audio', 'podcast', 'audiobook'])
+    .is('publish_at', null)
+    .is('archived_at', null)
+    .order('stream_count', { ascending: false })
+    .limit(1);
+  try {
+    // Prefer sounds the creator affirmatively allowed others to reuse (sound_optin.sql).
+    let { data, error } = await base().eq('sound_opt_in', true).is('sound_withdrawn_at', null);
+    if (error && /sound_opt_in|sound_withdrawn_at/.test(error.message ?? '')) {
+      ({ data } = await base()); // pre-migration DB: degrade to unfiltered, like the picker
+    }
+    const row: any = data?.[0];
+    if (!row) return null;
+    const prof = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+    return {
+      id: row.id,
+      title: row.caption || 'Audio track',
+      artist: prof?.display_name || prof?.username || 'Unknown artist',
+      artistId: prof?.id || row.user_id,
+      cover: row.cover_url ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export type StoryProfile = {
   id: string;
   username: string;
@@ -66,13 +103,25 @@ export type Story = {
 // Every field is optional so a plain text sticker (the only kind before this) still
 // validates and renders exactly as before.
 export type StorySticker = {
-  kind?: 'text' | 'post' | 'bg' | 'draw' | 'frame';
+  kind?: 'text' | 'post' | 'bg' | 'draw' | 'frame' | 'link' | 'photo' | 'poll' | 'music' | 'community' | 'shop' | 'slider' | 'reaction'
+    | 'countdown' | 'gif' | 'time' | 'temperature' | 'location' | 'collage' | 'boomerang' | 'filter';
   text?: string; x?: number; y?: number; scale?: number; rotation?: number;
   font?: string; color?: string; bg?: string; size?: number; emoji?: boolean;
+  url?: string;                                                       // link layer: destination (text = optional label)
+  uri?: string;                                                       // photo layer: hosted image URL
+  pollId?: string; question?: string; options?: string[];            // poll layer
+  songId?: string; artist?: string; cover?: string | null; musicStyle?: 'card' | 'square'; // music layer (text = title); plays as the story audio
+  communityId?: string;                                              // community layer (text = name); tapping opens the community
+  listingId?: string; price?: string; preview?: string | null;       // shop layer (text = title, cover = artwork); preview becomes the story audio; tapping opens the listing
+  emojiChar?: string;                                                // slider / reaction layers: chosen emoji (slider also uses text = prompt)
+  target?: string;                                                   // countdown layer: ISO target (text = title). gif = uri/w/h; time/temperature/location = text
+  layout?: string; slots?: string[];                                 // collage layer: a storyLayouts id + the hosted image URL per slot (in slot order)
+  frames?: string[];                                                 // boomerang layer: the hosted frame URLs, played forward-then-back on a loop
+  filter?: string;                                                   // filter layer: a lib/filters FilterKey — a GPU color filter applied to the media in the editor + viewer
   id?: string;                                                        // post layer
   background?: { type: 'blur' | 'color' | 'gradient'; color?: string; colors?: string[] }; // bg layer
   strokes?: { c: string; w: number; p: [number, number][] }[];       // draw layer
-  w?: number; h?: number;                                             // frame layer: source image px
+  w?: number; h?: number;                                             // frame layer: source image px · photo layer: display size
 };
 
 export type StoryGroup = {
@@ -103,6 +152,60 @@ export async function uploadStoryMedia(
   });
   if (error) throw error;
   return supabase.storage.from('stories').getPublicUrl(path).data.publicUrl;
+}
+
+const isLocalImageUri = (u: string | null | undefined): u is string => !!u && !/^https?:\/\//i.test(u);
+
+// Re-encode a local image to a capped JPEG and upload it to the stories bucket; returns
+// the hosted URL, or null if it couldn't be uploaded.
+async function hostLocalStoryImage(userId: string, uri: string): Promise<string | null> {
+  try {
+    let up = uri;
+    try {
+      const { manipulateAsync, SaveFormat } = await import('expo-image-manipulator');
+      const r = await manipulateAsync(uri, [{ resize: { width: 1440 } }], { compress: 0.9, format: SaveFormat.JPEG });
+      up = r.uri;
+    } catch { /* use the original bytes */ }
+    return await uploadStoryMedia(userId, up, 'jpg', 'image/jpeg');
+  } catch { return null; }
+}
+
+// Host every local uri in an array, KEEPING ORDER (indices map to layout slots / frame
+// order) — a failed host keeps the local uri rather than shifting everything after it.
+async function hostLocalImageArray(userId: string, arr: string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const u of arr) out.push(isLocalImageUri(u) ? (await hostLocalStoryImage(userId, u)) ?? u : u);
+  return out;
+}
+
+// Photo stickers (and collage slots / boomerang frames) are picked as LOCAL files —
+// upload each to the stories bucket and swap its uri for the hosted URL before the
+// stickers jsonb is written, or no one else could load them. Shared by the main composer
+// (StoryUploadContext), the repost editor and the collage/boomerang stories so they all
+// host identically. Skips anything already hosted; a failed photo-sticker upload drops
+// just that sticker (better than shipping a file:// uri that 404s for every viewer).
+export async function uploadStickerPhotos(
+  userId: string,
+  stickers: StorySticker[] | null,
+): Promise<StorySticker[] | null> {
+  const photoNeeds = (s: StorySticker) => s.kind === 'photo' && isLocalImageUri(s.uri);
+  const collageNeeds = (s: StorySticker) => s.kind === 'collage' && (s.slots ?? []).some(isLocalImageUri);
+  const boomerangNeeds = (s: StorySticker) => s.kind === 'boomerang' && (s.frames ?? []).some(isLocalImageUri);
+  if (!stickers?.length || !stickers.some((s) => photoNeeds(s) || collageNeeds(s) || boomerangNeeds(s))) return stickers;
+  const out: StorySticker[] = [];
+  for (const s of stickers) {
+    if (photoNeeds(s)) {
+      const hosted = await hostLocalStoryImage(userId, s.uri as string);
+      if (hosted) out.push({ ...s, uri: hosted }); // else drop — a file:// uri 404s for everyone
+    } else if (collageNeeds(s)) {
+      out.push({ ...s, slots: await hostLocalImageArray(userId, s.slots ?? []) });
+    } else if (boomerangNeeds(s)) {
+      out.push({ ...s, frames: await hostLocalImageArray(userId, s.frames ?? []) });
+    } else {
+      out.push(s);
+    }
+  }
+  return out;
 }
 
 // Story music clip bounds (story_music_clip.sql): the poster chooses a clip
@@ -208,6 +311,8 @@ export async function createStoryRepost(input: {
   layers: StorySticker[];
   caption?: string | null;
   song?: { id: string; title: string; artist: string; artistId: string } | null;
+  songStartSec?: number | null;
+  songClipSec?: number | null;
 }): Promise<void> {
   const p = input.post;
   const isVideo = p.type === 'video';
@@ -221,8 +326,74 @@ export async function createStoryRepost(input: {
     durationSeconds: isVideo && p.duration_seconds != null ? Math.min(p.duration_seconds, REPOST_MAX_SEC) : null,
     caption: input.caption ?? null,
     song: input.song ?? null,
+    // Start offset + clip length are image-repost only (a video keeps its own length);
+    // clipSec also sets how long the still stays up in the viewer, exactly like an image story.
+    songStartSec: !isVideo && input.song ? input.songStartSec ?? null : null,
+    songClipSec: !isVideo && input.song ? input.songClipSec ?? null : null,
     stickers: input.layers.length ? input.layers : null,
     sharedPostId: input.postId,
+  });
+}
+
+// A photo-collage story: the grid of slot images IS the media, composed at render time
+// from a 'collage' layer (the same way reposts compose their post layer) — nothing is
+// flattened, so you can still add stickers/text/music on top. media_url = the first slot
+// (a real image for the thumbnail/fallback); the collage layer tiles ALL slots over it.
+export async function createCollageStory(input: {
+  userId: string;
+  layers: StorySticker[]; // includes the 'collage' layer (local slot uris) + any stickers
+  caption?: string | null;
+  song?: { id: string; title: string; artist: string; artistId: string } | null;
+  songStartSec?: number | null;
+  songClipSec?: number | null;
+}): Promise<void> {
+  const hosted = (await uploadStickerPhotos(input.userId, input.layers)) ?? input.layers;
+  const collage = hosted.find((l) => l.kind === 'collage');
+  const firstSlot = collage?.slots?.find((s) => /^https?:\/\//i.test(s)) ?? collage?.slots?.[0] ?? null;
+  if (!firstSlot) throw new Error('collage has no usable slots');
+  await createStory({
+    userId: input.userId,
+    mediaUrl: firstSlot,
+    mediaType: 'image',
+    thumbnailUrl: null,
+    aspectRatio: '9:16',
+    durationSeconds: null,
+    caption: input.caption ?? null,
+    song: input.song ?? null,
+    songStartSec: input.song ? input.songStartSec ?? null : null,
+    songClipSec: input.song ? input.songClipSec ?? null : null,
+    stickers: hosted.length ? hosted : null,
+  });
+}
+
+// A boomerang story: a short burst of frames the viewer loops forward-then-back (the
+// classic Instagram boomerang). Like the collage, nothing is flattened — the frames ride
+// in a 'boomerang' layer and compose at view time, so you can add stickers/text/music on
+// top. media_url = the first frame (thumbnail/fallback).
+export async function createBoomerangStory(input: {
+  userId: string;
+  layers: StorySticker[]; // includes the 'boomerang' layer (local frame uris) + any stickers
+  caption?: string | null;
+  song?: { id: string; title: string; artist: string; artistId: string } | null;
+  songStartSec?: number | null;
+  songClipSec?: number | null;
+}): Promise<void> {
+  const hosted = (await uploadStickerPhotos(input.userId, input.layers)) ?? input.layers;
+  const boom = hosted.find((l) => l.kind === 'boomerang');
+  const firstFrame = boom?.frames?.find((f) => /^https?:\/\//i.test(f)) ?? boom?.frames?.[0] ?? null;
+  if (!firstFrame) throw new Error('boomerang has no usable frames');
+  await createStory({
+    userId: input.userId,
+    mediaUrl: firstFrame,
+    mediaType: 'image',
+    thumbnailUrl: null,
+    aspectRatio: '9:16',
+    durationSeconds: null,
+    caption: input.caption ?? null,
+    song: input.song ?? null,
+    songStartSec: input.song ? input.songStartSec ?? null : null,
+    songClipSec: input.song ? input.songClipSec ?? null : null,
+    stickers: hosted.length ? hosted : null,
   });
 }
 
@@ -623,8 +794,14 @@ export async function deleteStory(storyId: string): Promise<void> {
   // source post's cover.
   let media: string[] = [];
   try {
-    const { data } = await supabase.from('stories').select('media_url, thumbnail_url, shared_post_id').eq('id', storyId).single();
+    const { data } = await supabase.from('stories').select('media_url, thumbnail_url, shared_post_id, stickers').eq('id', storyId).single();
     if (data && !(data as any).shared_post_id) media = [data.media_url, (data as any).thumbnail_url].filter(Boolean) as string[];
+    // Photo-sticker images are uploaded into the stories bucket and owned by THIS
+    // story (even a reshared-post story), so clean them up regardless of share.
+    const stks = (data as any)?.stickers as StorySticker[] | null;
+    if (Array.isArray(stks)) {
+      for (const s of stks) if (s.kind === 'photo' && typeof s.uri === 'string' && s.uri.startsWith('http')) media.push(s.uri);
+    }
   } catch {}
   await supabase.from('stories').delete().eq('id', storyId);
   if (media.length) await removePublicUrls(media);
@@ -658,24 +835,29 @@ export async function restoreStory(storyId: string): Promise<boolean> {
 }
 
 export async function fetchStoryViewerCount(storyId: string): Promise<number> {
-  const { count } = await supabase
-    .from('story_views')
-    .select('*', { count: 'exact', head: true })
-    .eq('story_id', storyId);
-  return count ?? 0;
+  // Prefer stories.view_count — the total snapshotted when a story's plain-viewer rows
+  // were purged 48h after it expired (story_views_retention.sql). Live count otherwise.
+  // Degrades to the live count if the column isn't there yet (select errors → null).
+  const [{ data: story }, { count }] = await Promise.all([
+    supabase.from('stories').select('view_count').eq('id', storyId).maybeSingle(),
+    supabase.from('story_views').select('*', { count: 'exact', head: true }).eq('story_id', storyId),
+  ]);
+  const snapshot = (story as any)?.view_count;
+  return typeof snapshot === 'number' ? snapshot : (count ?? 0);
 }
 
 // Who watched a story (owner-facing list), likers sorted to the top with a
 // `liked` flag and their optional public `comment`. Manual two-step join —
 // viewer_id references auth.users, so profiles are fetched separately. Degrades
 // gracefully if story_likes.sql hasn't been applied (likes just read as empty).
-export type StoryViewer = StoryProfile & { liked?: boolean; comment?: string | null; pinned?: boolean };
+export type StoryViewer = StoryProfile & { liked?: boolean; comment?: string | null; pinned?: boolean; voted?: boolean; pollChoice?: string | null };
 
 export async function fetchStoryViewers(storyId: string): Promise<StoryViewer[]> {
-  const [viewsRes, likesRes, storyRes] = await Promise.all([
+  const [viewsRes, likesRes, storyRes, voters] = await Promise.all([
     supabase.from('story_views').select('viewer_id').eq('story_id', storyId),
     supabase.from('story_likes').select('user_id, comment').eq('story_id', storyId),
-    supabase.from('stories').select('pinned_like_by').eq('id', storyId).maybeSingle(),
+    supabase.from('stories').select('pinned_like_by, stickers').eq('id', storyId).maybeSingle(),
+    fetchStoryPollVoters(storyId),
   ]);
   const likedIds = new Set((likesRes.data ?? []).map((l: any) => l.user_id));
   // user_id -> their public like comment (trimmed; empty → none).
@@ -685,9 +867,19 @@ export async function fetchStoryViewers(storyId: string): Promise<StoryViewer[]>
     if (c) commentById.set(l.user_id, c);
   });
   const pinnedId = (storyRes.data as any)?.pinned_like_by ?? null;
+  // poll_id -> option labels, from the story's own poll stickers (to label a vote).
+  const pollOptions = new Map<string, string[]>();
+  const stickers = (storyRes.data as any)?.stickers as StorySticker[] | null;
+  if (Array.isArray(stickers)) {
+    for (const s of stickers) if (s.kind === 'poll' && s.pollId && Array.isArray(s.options)) pollOptions.set(s.pollId, s.options);
+  }
+  // user_id -> their vote (first poll if they voted on several in this story).
+  const voteById = new Map<string, { poll_id: string; option_index: number }>();
+  for (const v of voters) if (!voteById.has(v.user_id)) voteById.set(v.user_id, { poll_id: v.poll_id, option_index: v.option_index });
   const ids = Array.from(new Set([
     ...(viewsRes.data ?? []).map((v: any) => v.viewer_id),
     ...likedIds, // a liker should appear even if their view write is lagging
+    ...voteById.keys(), // ditto a voter
   ]));
   if (ids.length === 0) return [];
   const { data: profiles } = await supabase
@@ -696,8 +888,19 @@ export async function fetchStoryViewers(storyId: string): Promise<StoryViewer[]>
     .in('id', ids);
   // Viewers who have since hidden their account read as "Hidden account".
   return ((profiles ?? []) as StoryProfile[])
-    .map((p) => ({ ...maskHiddenProfile(p as any), liked: likedIds.has(p.id), comment: commentById.get(p.id) ?? null, pinned: !!pinnedId && p.id === pinnedId }))
-    .sort((a, b) => Number(!!b.liked) - Number(!!a.liked));
+    .map((p) => {
+      const vote = voteById.get(p.id);
+      return {
+        ...maskHiddenProfile(p as any),
+        liked: likedIds.has(p.id),
+        comment: commentById.get(p.id) ?? null,
+        pinned: !!pinnedId && p.id === pinnedId,
+        voted: !!vote,
+        pollChoice: vote ? (pollOptions.get(vote.poll_id)?.[vote.option_index] ?? null) : null,
+      };
+    })
+    // Interactors — likers AND poll voters — sorted to the top of the list.
+    .sort((a, b) => Number(!!b.liked || !!b.voted) - Number(!!a.liked || !!a.voted));
 }
 
 // Owner-facing per-story analytics (the Insights "Analytics" tab). Everything
@@ -714,12 +917,16 @@ export type StoryAnalytics = {
 };
 
 export async function fetchStoryAnalytics(storyId: string, authorId: string): Promise<StoryAnalytics> {
-  const [viewsRes, likesRes] = await Promise.all([
+  const [viewsRes, likesRes, storyRes] = await Promise.all([
     supabase.from('story_views').select('viewer_id').eq('story_id', storyId),
     supabase.from('story_likes').select('story_id', { count: 'exact', head: true }).eq('story_id', storyId),
+    supabase.from('stories').select('view_count').eq('id', storyId).maybeSingle(),
   ]);
   const viewerIds = Array.from(new Set((viewsRes.data ?? []).map((v: any) => v.viewer_id)));
-  const viewers = viewerIds.length;
+  // After the 48h purge story_views holds only likers, so use the snapshotted total for
+  // the viewer NUMBER; the follower split below is then of whoever's still on record.
+  const snapshot = (storyRes.data as any)?.view_count;
+  const viewers = typeof snapshot === 'number' ? snapshot : viewerIds.length;
   const likes = likesRes.count ?? 0;
 
   let followers = 0;
@@ -828,6 +1035,36 @@ export async function fetchMyStoryLike(storyId: string, userId: string): Promise
 // Set / edit / clear the current user's PUBLIC like comment. Upsert so it still works
 // if the like row isn't there yet (needs the insert + update policies in
 // story_like_effect.sql). An empty string clears it back to a plain like.
+// ── Poll stickers (story_poll_votes.sql) ─────────────────────────────────────
+/** Cast or change my vote on a poll (auth.uid resolved server-side). */
+export async function voteStoryPoll(pollId: string, storyId: string, option: number): Promise<void> {
+  const { error } = await supabase.rpc('vote_story_poll', { p_poll_id: pollId, p_story_id: storyId, p_option: option });
+  if (error) throw error;
+}
+/** Per-option vote counts for a poll (options with no votes are absent → caller fills 0). */
+export async function fetchStoryPollResults(pollId: string): Promise<{ option_index: number; votes: number }[]> {
+  try {
+    const { data, error } = await supabase.rpc('story_poll_results', { p_poll_id: pollId });
+    if (error || !Array.isArray(data)) return [];
+    return data as { option_index: number; votes: number }[];
+  } catch { return []; }
+}
+/** My own choice for a poll, or -1 if I haven't voted (drives options-vs-results). */
+export async function fetchMyStoryPollVote(pollId: string): Promise<number> {
+  try {
+    const { data } = await supabase.rpc('my_story_poll_vote', { p_poll_id: pollId });
+    return typeof data === 'number' ? data : -1;
+  } catch { return -1; }
+}
+/** Author-only: who voted on this story's polls + their chosen option index. */
+export async function fetchStoryPollVoters(storyId: string): Promise<{ user_id: string; poll_id: string; option_index: number }[]> {
+  try {
+    const { data, error } = await supabase.rpc('story_poll_voters', { p_story_id: storyId });
+    if (error || !Array.isArray(data)) return [];
+    return data as { user_id: string; poll_id: string; option_index: number }[];
+  } catch { return []; }
+}
+
 export async function setStoryLikeComment(storyId: string, userId: string, comment: string): Promise<void> {
   try {
     const trimmed = comment.trim();

@@ -82,7 +82,7 @@ export default function FriendsScreen() {
   const renderRow = (p: Profile, sub?: string) => (
     <View style={styles.userRow}>
       <TouchableOpacity style={styles.userLeft} onPress={() => router.push(`/profile/${p.id}`)}>
-        <StoryAvatar userId={p.id} avatarUrl={p.avatar_url} name={p.display_name} size={46} />
+        <StoryAvatar userId={p.id} avatarUrl={p.avatar_url} name={p.display_name} size={46} showPresence />
         <View style={styles.userInfo}>
           <View style={styles.nameRow}>
             <Text style={styles.displayName} numberOfLines={1}>{p.display_name}</Text>

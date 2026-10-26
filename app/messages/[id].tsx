@@ -15,6 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import { supabase } from '../../lib/supabase';
+import { useIsOnline } from '../../lib/onlineStatus';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -79,6 +80,7 @@ export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const otherOnline = useIsOnline(id); // green dot in the header when they're active now
   // The floating input bar is a frosted-glass strip; in Light mode it must use a
   // light blur + light fills (it was hardcoded dark → a dark bar on a white app).
   const light = mode === 'light';
@@ -627,13 +629,16 @@ export default function ChatScreen() {
           <Ionicons name="chevron-back" size={26} color={colors.text} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.headerUser} activeOpacity={0.7} onPress={() => router.push(`/profile/${id}`)}>
-          {otherUser?.avatar_url ? (
-            <Image source={{ uri: otherUser.avatar_url }} style={styles.headerAvatar} />
-          ) : (
-            <LinearGradient colors={GRADIENTS.avatar} style={styles.headerAvatar}>
-              <Text style={styles.headerAvatarText}>{(otherUser?.display_name || otherUser?.username || '?').charAt(0).toUpperCase()}</Text>
-            </LinearGradient>
-          )}
+          <View>
+            {otherUser?.avatar_url ? (
+              <Image source={{ uri: otherUser.avatar_url }} style={styles.headerAvatar} />
+            ) : (
+              <LinearGradient colors={GRADIENTS.avatar} style={styles.headerAvatar}>
+                <Text style={styles.headerAvatarText}>{(otherUser?.display_name || otherUser?.username || '?').charAt(0).toUpperCase()}</Text>
+              </LinearGradient>
+            )}
+            {otherOnline && <View style={styles.headerPresenceDot} pointerEvents="none" />}
+          </View>
           <View style={styles.headerInfo}>
             <View style={styles.headerNameRow}>
               <Text style={styles.headerName} numberOfLines={1}>{otherUser?.display_name}</Text>
@@ -1006,6 +1011,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
   },
   headerAvatarText: { color: colors.text, fontSize: 17, fontWeight: '800' },
+  headerPresenceDot: {
+    position: 'absolute', bottom: -1, right: -1,
+    width: 13, height: 13, borderRadius: 999,
+    backgroundColor: colors.success, borderWidth: 2.5, borderColor: colors.background,
+  },
   headerInfo: { flex: 1 },
   headerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   headerName: { color: colors.text, fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },

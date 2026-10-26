@@ -180,9 +180,22 @@ export async function uploadVideoToStream(
   uri: string,
   opts?: { maxDurationSeconds?: number; onProgress?: (fraction: number) => void },
 ): Promise<string> {
-  const { data, error } = await supabase.functions.invoke('stream-direct-upload', {
-    body: { maxDurationSeconds: opts?.maxDurationSeconds },
-  });
+  // Mint the one-shot upload URL. For a short video this single edge-function
+  // call is the ONLY network step before the bytes move — and edge functions
+  // cold-start and occasionally blip, so a lone failure here used to surface as
+  // "Could not start the video upload" on a clip that would upload fine a moment
+  // later (the finicky short-video failure). Retry the handshake a few times
+  // with a short backoff so a transient hiccup is invisible; a persistent
+  // failure still throws below with the server's reason.
+  let data: { uploadURL?: string; uid?: string } | null = null;
+  let error: any = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    ({ data, error } = await supabase.functions.invoke('stream-direct-upload', {
+      body: { maxDurationSeconds: opts?.maxDurationSeconds },
+    }));
+    if (!error && data?.uploadURL && data?.uid) break;
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+  }
   if (error || !data?.uploadURL || !data?.uid) {
     let detail = '';
     try { detail = ((await (error as any)?.context?.json?.())?.error) ?? ''; } catch {}
@@ -261,14 +274,21 @@ export async function resolveStreamSubdomain(uid: string): Promise<string | null
   } catch {}
   const start = Date.now();
   while (Date.now() - start < 90_000) {
-    const s = await streamStatus(uid);
-    if (s.state === 'error') throw new Error('Video processing failed');
-    if (s.hls) {
-      const sub = subdomainFromHls(s.hls);
-      if (sub) {
-        cachedSubdomain = sub;
-        try { await AsyncStorage.setItem(SUBDOMAIN_KEY, sub); } catch {}
-        return sub;
+    // A transient status blip (network / edge cold-start) must NOT abort an
+    // otherwise-fine publish: treat an unreadable status as "unknown, keep
+    // polling" rather than letting it throw all the way out. A real Cloudflare
+    // rejection (state 'error') still fails below.
+    let s: Awaited<ReturnType<typeof streamStatus>> | null = null;
+    try { s = await streamStatus(uid); } catch { s = null; }
+    if (s) {
+      if (s.state === 'error') throw new Error('Video processing failed');
+      if (s.hls) {
+        const sub = subdomainFromHls(s.hls);
+        if (sub) {
+          cachedSubdomain = sub;
+          try { await AsyncStorage.setItem(SUBDOMAIN_KEY, sub); } catch {}
+          return sub;
+        }
       }
     }
     await new Promise((r) => setTimeout(r, 2500));

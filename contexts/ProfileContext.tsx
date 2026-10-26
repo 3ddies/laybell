@@ -7,6 +7,7 @@ import { startBadgeRiskReminders } from '../lib/badgeRisk';
 import { upsertOwnIdentifiers, loadOwnPhone } from '../lib/identifiers';
 import { endMyStaleLiveStreams } from '../lib/live';
 import { syncEntitlementsFromProfile } from '../lib/purchases';
+import { syncOnlineStatus } from '../lib/onlineStatus';
 
 // YOUR OWN PROFILE IS KEPT ON THE PHONE (1.0.4).
 //
@@ -165,6 +166,17 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
   }, []);
+
+  // Active Status (green dot): point the heartbeat + presence poll at the current
+  // user and their reciprocal opt-out. Feature-detected on the column, so it stays
+  // fully dormant (no heartbeat, no poll) until active_status.sql ships it — then
+  // ON by default. Toggling it in Settings flips profile.active_status_enabled via
+  // update(), which re-runs this and starts/stops instantly.
+  useEffect(() => {
+    const hasCol = !!profile && Object.prototype.hasOwnProperty.call(profile, 'active_status_enabled');
+    const enabled = hasCol ? (profile as any).active_status_enabled !== false : false;
+    syncOnlineStatus(profile?.id ?? null, enabled);
+  }, [profile?.id, profile?.active_status_enabled]);
 
   // Memoized so a ProfileProvider re-render doesn't hand every useProfile() consumer
   // (HomeScreen, ReelScreen, …) a fresh object and re-render them for nothing.

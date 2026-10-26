@@ -136,7 +136,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow Laybell to use your approximate location to suggest people near you.",
+          "locationWhenInUsePermission": "Allow Laybell to use your approximate location to suggest people near you and to add location and temperature stickers to your stories.",
           "locationAlwaysPermission": false,
           "locationAlwaysAndWhenInUsePermission": false,
           "isAndroidBackgroundLocationEnabled": false
@@ -204,7 +204,8 @@
           "project": "react-native",
           "url": "https://sentry.io/"
         }
-      ]
+      ],
+      "./plugins/withMediaRouterPin"
     ],
     "extra": {
       "router": {},

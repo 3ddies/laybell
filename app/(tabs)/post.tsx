@@ -29,11 +29,12 @@ import { checkFields } from '../../lib/contentFilter';
 import { DEFAULT_SOUND_OPT_IN } from '../../lib/sounds';
 import { viewerIsMinor } from '../../lib/minors';
 import { createNotification } from '../../lib/createNotification';
-import { notifySuccess } from '../../lib/haptics';
+import { notifySuccess, impactLight } from '../../lib/haptics';
 import MentionSuggestions from '../../components/MentionSuggestions';
 import TagPeopleModal, { type TaggedPerson } from '../../components/TagPeopleModal';
 import VideoStudio, { type StudioResult } from '../../components/VideoStudio';
 import CaptureCamera, { type CapturedMedia } from '../../components/CaptureCamera';
+import EffectsTray from '../../components/EffectsTray';
 import SchedulePicker from '../../components/SchedulePicker';
 import PostedCelebration, { type Celebration } from '../../components/PostedCelebration';
 import PullDownMenu, { type MenuAnchor, type MenuOption } from '../../components/PullDownMenu';
@@ -71,6 +72,10 @@ import SlideArranger, { type SlideArrangerHandle } from '../../components/SlideA
 import PhotoGrid, { type PickedMedia, type PhotoGridHandle } from '../../components/PhotoGrid';
 import { MAX_SLIDES, type Slide } from '../../lib/slideshow';
 import { uploadToStorageWithProgress, compressVideoIfPossible, fileSizeBytes } from '../../lib/upload';
+import { type FilterKey } from '../../lib/filters';
+import { bakeFilter } from '../../lib/filterSkia';
+import { bakeVideoFilter } from '../../lib/videoFilter';
+import { useFilteredUri } from '../../lib/useFilteredMedia';
 import { useUploadActions } from '../../contexts/UploadQueueContext';
 import { peekPendingSpotlight, clearPendingSpotlight, activateCampaign, spotlightDurationPhrase } from '../../lib/spotlight';
 import {
@@ -258,10 +263,26 @@ export default function PostScreen() {
   // image/video selection
   const [media, setMedia] = useState<{ uri: string; width: number; height: number; posterUri?: string } | null>(null);
   const [pickedId, setPickedId] = useState<string | null>(null); // grid asset id of the single selection
+  // Effects: an Instagram-style color filter for IMAGE posts. Chosen in a full-screen
+  // chooser off the details preview; applied live there (GPU `filter`) and BAKED into the
+  // uploaded pixels on publish (lib/filterSkia) so every surface shows it. Photos only —
+  // Colour filters apply to photos AND videos — a video's look is baked into the clip by the
+  // native exporter on share (lib/videoFilter), since a clip can't be colour-filtered live.
+  const [postFilter, setPostFilter] = useState<FilterKey>('original');
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
+  // A fresh media selection starts from no filter (never carry one image's look to the next).
+  useEffect(() => { setPostFilter('original'); }, [media?.uri]);
   // A video's cover: a frame grabbed at pick time, until the studio's Cover panel
   // replaces it with any frame of the clip or a camera-roll photo. Post-time only —
   // it uploads through the existing path.
   const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
+  // The baked preview source for the chosen filter: a photo's own file, or — for a video,
+  // which can't be colour-filtered live — its cover frame (thumbnailUri is a file:// JPEG
+  // Skia can read). Drives the preview tile + the chooser; the real filter bakes on share.
+  const filterPreviewSrc = postType === 'image'
+    ? (media?.uri ?? null)
+    : (postType === 'video' ? (thumbnailUri ?? media?.posterUri ?? null) : null);
+  const { uri: filteredPreview } = useFilteredUri(filterPreviewSrc, postFilter, 768);
   // Video captions, placed in the studio with the story sticker system — as many
   // as you like. VERTICAL clips: anywhere over the picture. HORIZONTAL clips: in
   // the black letterbox bands above and below it, kept as band captions
@@ -561,6 +582,11 @@ export default function PostScreen() {
   // Polished "Posted!" confirmation shown after a successful share (replaces the
   // default OS alert). Holds the title/body so the spotlight variant can differ.
   const [postedToast, setPostedToast] = useState<{ title: string; message: string; spotlight: boolean; uploading?: boolean; scheduled?: boolean } | null>(null);
+  // The posted/uploading confirmation is a Post-tab affordance. It auto-dismisses
+  // on its own timer (8s for the uploading hand-off) or on tap, and this clears it
+  // when the user leaves the tab — so switching away dismisses it too, and it
+  // never lingers to reappear when they come back to Post.
+  useFocusEffect(useCallback(() => () => setPostedToast(null), []));
   const [deleteTarget, setDeleteTarget] = useState<Draft | null>(null); // draft pending delete-confirm
   const [importingFile, setImportingFile] = useState(false); // Files-app probe in flight
   // The mode dropdown (Single / Slideshow / Post from Files). Rendered in a
@@ -784,6 +810,7 @@ export default function PostScreen() {
     unloadPreview();
     setIsRecording(false); setRecSecs(0);
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
+    setPostFilter('original'); setFilterModalOpen(false);
     setVideoDuration(0); setTrimStart(0); setTrimEnd(0); setVideoCaptions([]);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
     setCaption(''); setFilmTitle(''); setGenre(''); setSong(null); setSongMix(null); setCoverSec(null); setScheduleAt(null); setMusicVideo(false); setTagged([]); setCommunities([]); setError(''); setStep('pick');
@@ -1760,9 +1787,25 @@ export default function PostScreen() {
         if (__DEV__) console.log(`[save-video] share: switch ${saveToCameraRoll ? 'on' : 'off'}, film ${isFilm}, exporter ${canSaveFinishedVideo() ? 'yes' : 'NO'}`);
         const saveCopy = wantsCopy && await requestSavePermission();
         if (wantsCopy && !saveCopy) reportSaveSkipped('permission');
+        // Bake the colour filter into the pixels — a video can't be colour-filtered live at
+        // playback the way a photo view can, so the look has to travel in the file. The
+        // filtered clip is what uploads AND what the camera-roll copy is made from (its
+        // window/captions/music stay runtime over the filtered pixels). Films are too long
+        // to re-encode on a phone, so they keep the raw clip (filters are a short-form
+        // thing); an older build or any failure returns the source unchanged.
+        let videoLocalUri = media!.uri;
+        if (postFilter !== 'original' && !isFilm) {
+          videoLocalUri = await bakeVideoFilter(media!.uri, postFilter);
+          // The speculative prewarm uploaded the RAW clip; the filtered file is a new
+          // upload, so release the prewarm's abandoned Cloudflare asset.
+          if (videoLocalUri !== media!.uri) discardPrewarm(media!.uri);
+        }
+        // Start-of-upload tick — the commitment haptic. The only other buzz is the success
+        // one at the live/confetti moment (UploadQueueContext), nothing in between.
+        impactLight();
         enqueueVideo({
           userId: user.id,
-          localUri: media!.uri,
+          localUri: videoLocalUri,
           thumbnailUri: thumbnailUri ?? null,               // file:// → uploaded as the post poster
           posterUri: media?.posterUri ?? thumbnailUri ?? null, // ph:// ok → shown in the optimistic card
           aspectRatio: String(videoAspect),
@@ -1815,7 +1858,7 @@ export default function PostScreen() {
           // the app, and iOS stops an export once it leaves (lib/videoExport). Times
           // are on the SOURCE clock, as the captions are.
           queueFinishedVideoSave({
-            localUri: media!.uri,
+            localUri: videoLocalUri,
             windowStart: trimmedV ? trimStart : 0,
             windowEnd: trimmedV ? winEndV : videoDuration,
             vertical: videoAspect <= 1,
@@ -1840,16 +1883,16 @@ export default function PostScreen() {
         // the user holding a success message and an empty feed. The celebratory
         // buzz now fires from UploadQueueContext at real completion, where the
         // post genuinely exists.
-        setPostedToast(scheduleAt != null
-          ? { title: t('schedule.doneTitle'), message: t('schedule.uploadingBody', { when: scheduleWhen(scheduleAt) }), spotlight: false, uploading: true, scheduled: true }
-          : {
-              title: spotLabel ? t('post.postedSpotlightTitle') : t('post.uploadingTitle'),
-              message: spotLabel
-                ? t('post.postedSpotlightBody', { duration: spotlightDurationPhrase(spotLabel) })
-                : t('post.uploadingBody'),
-              spotlight: !!spotLabel,
-              uploading: true,
-            });
+        // Slide-up confirmation: scheduled → when it goes live; spotlight → the promo; plain
+        // video → "Uploading…, it's at the top of your feed." (The feed card carries the live
+        // progress; this toast is the brief "got it, here's where it went" beat.)
+        if (scheduleAt != null) {
+          setPostedToast({ title: t('schedule.doneTitle'), message: t('schedule.uploadingBody', { when: scheduleWhen(scheduleAt) }), spotlight: false, uploading: true, scheduled: true });
+        } else if (spotLabel) {
+          setPostedToast({ title: t('post.postedSpotlightTitle'), message: t('post.postedSpotlightBody', { duration: spotlightDurationPhrase(spotLabel) }), spotlight: true, uploading: true });
+        } else {
+          setPostedToast({ title: t('post.uploadingTitle'), message: t('post.uploadingBody'), spotlight: false, uploading: true });
+        }
         resetAll();
         setLoading(false);
         return;
@@ -1967,6 +2010,13 @@ export default function PostScreen() {
             { compress: 0.92, format: SaveFormat.JPEG },
           );
           outUri = out.uri;
+        }
+        // Bake the chosen color filter into the pixels (a post renders in many surfaces, so
+        // the stored image must carry the look). No-op for 'original'. FULL resolution + high
+        // JPEG quality so a filtered photo looks as sharp as an unfiltered one (which uploads
+        // at source size) — a size cap here used to make filters look soft.
+        if (postFilter !== 'original') {
+          outUri = await bakeFilter(outUri, postFilter, undefined, 95);
         }
         [mediaUrl, preview] = await Promise.all([
           uploadToStorage(user.id, outUri, 'jpg', 'image/jpeg'),
@@ -2416,14 +2466,19 @@ export default function PostScreen() {
               <View style={styles.previewCol}>
                 <TouchableOpacity
                   style={styles.previewBig}
-                  activeOpacity={postType === 'video' && media?.uri ? 0.85 : 1}
-                  disabled={!(postType === 'video' && media?.uri)}
-                  onPress={() => { setStudioPanel('cover'); setStep('studio'); }}
+                  activeOpacity={(postType === 'video' || postType === 'image') && media?.uri ? 0.85 : 1}
+                  disabled={!((postType === 'video' || postType === 'image') && media?.uri)}
+                  // Video → the studio's cover picker. Image → the effects (filter) chooser.
+                  onPress={() => {
+                    if (postType === 'video' && media?.uri) { setStudioPanel('cover'); setStep('studio'); }
+                    else if (postType === 'image' && media?.uri) { setFilterModalOpen(true); }
+                  }}
                 >
                   {thumbUri ? (
                     // ExpoImage renders ph:// reliably and degrades to empty (not a
-                    // broken-image glyph) if the file is gone — unlike RN core Image.
-                    <ExpoImage source={{ uri: thumbUri }} style={styles.previewBig} contentFit="cover" />
+                    // broken-image glyph) if the file is gone — unlike RN core Image. Image
+                    // posts show the BAKED filtered preview (filteredPreview); others the thumb.
+                    <ExpoImage source={{ uri: postType === 'image' ? (filteredPreview ?? thumbUri) : thumbUri }} style={styles.previewBig} contentFit="cover" />
                   ) : (
                     <View style={[styles.previewBig, styles.previewBigPlaceholder]}>
                       <Ionicons name="image-outline" size={28} color={colors.textTertiary} />
@@ -2434,6 +2489,12 @@ export default function PostScreen() {
                   <View style={styles.coverOverlay} pointerEvents="none">
                     <Ionicons name="images-outline" size={12} color="#fff" />
                     <Text style={styles.tagOverlayText}>{t('post.editCover')}</Text>
+                  </View>
+                )}
+                {postType === 'image' && !!media?.uri && (
+                  <View style={styles.coverOverlay} pointerEvents="none">
+                    <Ionicons name="color-filter-outline" size={12} color="#fff" />
+                    <Text style={styles.tagOverlayText}>{t('storyCamera.effects')}</Text>
                   </View>
                 )}
                 <TouchableOpacity
@@ -3392,6 +3453,40 @@ export default function PostScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Effects (colour filter) chooser. For a PHOTO the preview is the photo itself; for a
+          VIDEO it's the cover frame (a clip can't be colour-filtered live), with a note that
+          the look bakes into the whole clip on share. The pick bakes into the pixels then. */}
+      <Modal visible={filterModalOpen} animationType="slide" statusBarTranslucent onRequestClose={() => setFilterModalOpen(false)}>
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+          {(() => {
+            const base = postType === 'image' ? media?.uri : (thumbnailUri ?? media?.posterUri ?? null);
+            const shown = filteredPreview ?? base;
+            return shown ? <ExpoImage source={{ uri: shown }} style={StyleSheet.absoluteFill} contentFit="contain" /> : null;
+          })()}
+          <TouchableOpacity
+            style={{ position: 'absolute', top: insets.top + 8, left: 12, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+            onPress={() => setFilterModalOpen(false)}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.done')}
+          >
+            <Ionicons name="close" size={28} color="#fff" />
+          </TouchableOpacity>
+          {postType === 'video' && (
+            <View style={[styles.filterVideoHint, { top: insets.top + 60 }]} pointerEvents="none">
+              <Text style={styles.filterVideoHintText}>{t('post.filterVideoHint')}</Text>
+            </View>
+          )}
+          <EffectsTray
+            mediaUri={postType === 'image' ? (media?.uri ?? null) : (thumbnailUri ?? media?.posterUri ?? null)}
+            activeKey={postFilter}
+            onSelect={setPostFilter}
+            onClose={() => setFilterModalOpen(false)}
+            bottomInset={insets.bottom}
+          />
+        </View>
+      </Modal>
+
       {/* The in-app camera, from the grid's camera tile. A slideshow's recording is
           capped at what its video budget has left. */}
       <Modal
@@ -3644,10 +3739,11 @@ export default function PostScreen() {
         icon={postedToast?.spotlight ? 'sparkles' : 'checkmark-circle'}
         title={postedToast?.title ?? ''}
         message={postedToast?.message}
-        // Uploading lingers longer than a completion notice: it's the handoff to
-        // the card now sitting at the top of the feed, so it has to survive the
-        // swipe over to Home to be worth anything.
-        duration={postedToast?.uploading ? 5200 : postedToast?.spotlight ? 3800 : 2800}
+        // Uploading lingers longer than a completion notice (8s) — it's the
+        // hand-off to the card now at the top of the feed — but it's a Post-tab
+        // affordance: switching tabs or tapping it dismisses it early (the
+        // on-blur clear sits beside the postedToast state above).
+        duration={postedToast?.uploading ? 8000 : postedToast?.spotlight ? 3800 : 2800}
         bottomOffset={SPACING.xxl + SPACING.md}
         // Tap the confirmation to jump to the Home feed (scrolled to the top) and
         // watch the just-posted video, which is pinned there.
@@ -3940,6 +4036,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.62)', borderRadius: RADIUS.full,
     paddingVertical: 5, paddingHorizontal: SPACING.sm,
   },
+  // The note in the video filter chooser: the preview is the cover frame, the look
+  // bakes into the whole clip on share.
+  filterVideoHint: {
+    position: 'absolute', alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: RADIUS.full,
+    paddingVertical: 6, paddingHorizontal: SPACING.md, maxWidth: '86%',
+  },
+  filterVideoHintText: { color: '#fff', fontSize: 12, fontWeight: '600', textAlign: 'center' },
   rightCol: { flex: 1, gap: SPACING.sm },
   field: { gap: 6 },
   fieldLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },

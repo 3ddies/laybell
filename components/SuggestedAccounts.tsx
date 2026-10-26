@@ -83,6 +83,7 @@ export default function SuggestedAccounts({ currentUserId }: { currentUserId: st
             <StoryAvatar
               userId={item.id}
               avatarUrl={item.avatar_url}
+              showPresence
               name={item.display_name}
               size={56}
               onPressProfile={() => router.push(`/profile/${item.id}`)}

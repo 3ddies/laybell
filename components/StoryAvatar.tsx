@@ -10,6 +10,7 @@ import { badgeGlow } from '../lib/badges';
 import { HIDDEN_NAME } from '../lib/hiddenProfile';
 import { useStories } from '../contexts/StoriesContext';
 import { useLiveStreamId } from '../lib/liveNow';
+import { useIsOnline } from '../lib/onlineStatus';
 
 // Drop-in avatar that shows a ring ONLY while `userId` has an active story (the
 // story is what surfaces the ring) and opens the story viewer on tap; otherwise it
@@ -44,13 +45,19 @@ type Props = {
    * beside a name, where a shadow on 12pt of text-height circle is just noise.
    */
   raised?: boolean;
+  /**
+   * Show the green Active-Status dot when this user is online right now. Opt-in
+   * per surface (chat, profiles, people lists) so it doesn't clutter every avatar.
+   * Honours the viewer's own reciprocal opt-out and never shows on your own avatar.
+   */
+  showPresence?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
 export default function StoryAvatar({
   userId, avatarUrl, name, size,
   onPressProfile, onBeforeOpenStory, badgeRing,
-  showAdd, addColors, onPressAdd, nudge = false, raised = false, style,
+  showAdd, addColors, onPressAdd, nudge = false, raised = false, showPresence = false, style,
 }: Props) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -64,6 +71,13 @@ export default function StoryAvatar({
   // avatars where the pill would be unreadable.
   const liveStreamId = useLiveStreamId(userId);
   const showLive = !!liveStreamId && size >= 32;
+  // Green "online now" dot — shares one poll across every avatar (see
+  // lib/onlineStatus). Yields to the LIVE pill / ＋ button to avoid a cluttered
+  // corner, and hidden on avatars too small to read it.
+  const online = useIsOnline(showPresence ? userId : null);
+  const showDot = online && !showLive && !showAdd && size >= 26;
+  const dotSize = Math.max(9, Math.round(size * 0.28));
+  const dotRing = Math.max(1.5, Math.round(size * 0.045));
 
   // Loading shimmer: while THIS ring's story is pre-opening (warming its first frame so it
   // doesn't flash grey), a SOFT light bleeds through the ring — a wide, feathered gradient
@@ -269,6 +283,15 @@ export default function StoryAvatar({
           </TouchableOpacity>
         </View>
       )}
+      {showDot && (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.presenceDot,
+            { width: dotSize, height: dotSize, borderRadius: dotSize / 2, borderWidth: dotRing },
+          ]}
+        />
+      )}
     </View>
   );
 }
@@ -299,4 +322,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1.5, borderColor: colors.background,
   },
   livePillText: { color: '#fff', fontWeight: '800', letterSpacing: 0.4 },
+  // Green "online now" dot, lower-right, ringed in the surface color so it reads
+  // as sitting on the avatar edge (messenger-style).
+  presenceDot: {
+    position: 'absolute', bottom: 0, right: 0,
+    backgroundColor: colors.success,
+    borderColor: colors.background,
+  },
 });

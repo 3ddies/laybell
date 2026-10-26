@@ -36,7 +36,7 @@ export default function UploadFailedBanner({ onRetry, onDismiss, message }: {
             word happened to land before the ellipsis. */}
         <Text style={styles.text} numberOfLines={4}>{message ?? t('storyCamera.postFailBanner')}</Text>
         <TouchableOpacity onPress={onRetry} style={styles.retryBtn} hitSlop={6}>
-          <Ionicons name="refresh" size={14} color="#fff" />
+          <Ionicons name="refresh" size={14} color={colors.background} />
           <Text style={styles.retryText}>{t('common.retry')}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={onDismiss} hitSlop={8} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
@@ -60,9 +60,12 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   text: { flex: 1, color: c.text, fontSize: 14, fontWeight: '600' },
   retryBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: c.primary, borderRadius: RADIUS.full,
+    // Neutral monochrome CTA, not the brand orange: a c.text fill with
+    // c.background content reads as a clear button in every theme (black-on-light,
+    // white-on-dark) without pulling the eye like a coloured call-to-action.
+    backgroundColor: c.text, borderRadius: RADIUS.full,
     paddingVertical: 6, paddingHorizontal: SPACING.md,
   },
-  retryText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  retryText: { color: c.background, fontSize: 13, fontWeight: '700' },
   closeBtn: { padding: 2 },
 });

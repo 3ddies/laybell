@@ -67,3 +67,8 @@ store/screenshots/raw/*.png
 store/screenshots/raw/*.jpg
 store/screenshots/raw/*.jpeg
 store/screenshots/preview/
+
+# Marketing content workspace — large binaries (TTS models, stock video, rendered
+# creatives). Not app code and never bundled into the EAS build; kept out of git so
+# the repo doesn't balloon by ~600 MB.
+marketing/

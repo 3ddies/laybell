@@ -31,3 +31,28 @@ export function patchPostList<T extends { id: string }>(list: T[], postId: strin
   });
   return hit ? next : list;
 }
+
+// A post its author just deleted, for every OTHER screen already showing it.
+// Deleting on one surface (say the home feed) has to drop the row from every
+// other mounted list (the profile tab, explore, an open viewer) — otherwise a
+// post deleted on one tab lingers as a ghost card on another until that screen
+// next refreshes, which is exactly the "deleted on home, still on my profile"
+// report. Emitted from deletePostById so EVERY delete path broadcasts.
+type DeleteListener = (postId: string) => void;
+const deleteListeners = new Set<DeleteListener>();
+
+export function emitPostDeleted(postId: string): void {
+  for (const l of [...deleteListeners]) {
+    try { l(postId); } catch { /* one screen's failure is not the others' */ }
+  }
+}
+
+export function subscribePostDeleted(l: DeleteListener): () => void {
+  deleteListeners.add(l);
+  return () => { deleteListeners.delete(l); };
+}
+
+/** The list with the post removed — the same array when it is not in it. */
+export function removeFromPostList<T extends { id: string }>(list: T[], postId: string): T[] {
+  return list.some((p) => p.id === postId) ? list.filter((p) => p.id !== postId) : list;
+}

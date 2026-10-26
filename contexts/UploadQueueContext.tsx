@@ -152,6 +152,14 @@ type Ctx = {
   pinnedIds: string[];
   // Manual refresh: release the pins so posts fall back into natural rank.
   clearPinned: () => void;
+  // Manual refresh: drop any lingering 'done' celebration cards so the real posts (deduped
+  // behind them) show as normal cards with no View/Share buttons.
+  clearDone: () => void;
+  // The id of the just-posted post that should wear the celebration overlay (confetti +
+  // View/Share) on its real feed card, or null. Set the moment an upload finishes; cleared
+  // on refresh so the post becomes an ordinary card.
+  celebrateId: string | null;
+  clearCelebrate: () => void;
   // Bumps when the just-posted confirmation asks the Home feed to scroll to top.
   homeScrollTick: number;
   scrollHomeTop: () => void;
@@ -325,6 +333,7 @@ async function startStreamUpload(
 export function UploadQueueProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<PendingUpload[]>([]);
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+  const [celebrateId, setCelebrateId] = useState<string | null>(null);
   const [completedTick, setCompletedTick] = useState(0);
   const [homeScrollTick, setHomeScrollTick] = useState(0);
   const jobsRef = useRef<Map<string, VideoJob>>(new Map());
@@ -368,7 +377,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
 
       // Reuse the speculative prewarm if the details step already started it —
       // otherwise start the upload now. Either way we get {uid, subdomain}.
-      let result: { uid: string; subdomain: string; trimmedFile: boolean; stagedPath?: string | null } | null;
+      let result: { uid: string; subdomain: string; trimmedFile: boolean; stagedPath?: string | null } | null = null;
       const pre = prewarmRef.current.get(job.localUri);
       if (pre) {
         pre.attachedTempId = tempId; // route its live progress into this card
@@ -377,11 +386,16 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         update(tempId, { phase: pre.phase, progress: pre.progress, slowLink: pre.slow });
         result = await pre.promise;
         prewarmRef.current.delete(job.localUri);
-        // The prewarm died — fail with ITS reason, not the generic fallback
-        // below. (A retry after this runs the whole upload fresh: the entry was
-        // just deleted, so the next run takes the else-branch.)
-        if (!result && pre.failure) throw pre.failure;
-      } else {
+      }
+      // No result yet — either nothing was prewarmed, or the speculative prewarm
+      // FAILED (typically a transient network blip during that early, invisible
+      // upload). Run the upload fresh RIGHT HERE rather than surfacing the
+      // prewarm's error as "Upload failed — Retry": a post that uploads fine on
+      // the real attempt should never have shown an error at all. A genuinely
+      // broken file still throws below on this same pass, so real failures —
+      // and their reasons — are unaffected; the user just never taps Retry for a
+      // blip we can silently absorb.
+      if (!result) {
         // Phase rides along ONLY when it changes — a {phase, progress} patch on
         // every tick would bypass the progress throttle above and re-render the
         // whole feed per chunk (the exact storm the throttle exists to stop).
@@ -621,17 +635,24 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
       if (stagedPath) releaseStagedMaster(stagedPath).catch(() => {});
       const shownFor = Date.now() - processingStart;
       if (shownFor < MIN_PROCESSING_MS) await new Promise((r) => setTimeout(r, MIN_PROCESSING_MS - shownFor));
-      // Done — hand off from the optimistic card to the REAL post: pin its id at the
-      // top of Home (rendered as a normal PostCard, fully interactive) and drop the
-      // card. It falls into natural rank on the next manual refresh.
-      // Not a scheduled one: it isn't live, so it has no place at the top of Home yet.
-      if (!job.publishAt) setPinnedIds((ids) => [postId, ...ids.filter((id) => id !== postId)]);
-      // Bump AGAIN on completion, not just after the insert. The pin alone puts
-      // the id at the top, but the feed still has to hold the finished row —
-      // this makes it refetch at the moment encoding lands, so the post appears
-      // by itself instead of waiting for the user to pull to refresh.
+      // Done — hand the finished post off to the REAL feed card instead of lingering on the
+      // optimistic stand-in. The stand-in played a bare HLS file: it couldn't autoplay through
+      // the feed's viewability machinery and it couldn't play the post's SONG (that rides the
+      // feed's one persistent music player), so a fresh post sat silent-of-its-song and needed
+      // a scroll to start. Pinning the real row to the top makes it a fully-interactive
+      // PostCard — autoplay and song work exactly as any other post — and `celebrateId` puts
+      // the confetti + View/Share overlay on it. Both clear on refresh. A scheduled post isn't
+      // live yet, so its card just drops with no celebration.
+      if (job.publishAt) {
+        remove(tempId);
+      } else {
+        setPinnedIds((ids) => (ids.includes(postId) ? ids : [postId, ...ids]));
+        setCelebrateId(postId);
+        remove(tempId);
+      }
+      // Bump on completion so the feed refetches at the moment encoding lands and holds the
+      // finished (now pinned) row.
       setCompletedTick((n) => n + 1);
-      remove(tempId);
       // THE moment the post actually exists — row inserted, file uploaded,
       // encoding finished. The composer deliberately stays quiet at enqueue
       // time (it can't know any of that yet), so this is the only celebration,
@@ -712,7 +733,9 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         isFilm: !!job.film,
         durationSec: job.durationSeconds ?? undefined,
       },
-      ...list,
+      // Drop any lingering 'done' celebration card — it's already been celebrated, and
+      // stacking them would pile old posts above the new upload.
+      ...list.filter((p) => p.phase !== 'done'),
     ]);
     run(tempId, job);
   }, [run]);
@@ -733,6 +756,11 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
 
   // Manual refresh: release the top-pins so those posts fall back into natural rank.
   const clearPinned = useCallback(() => setPinnedIds([]), []);
+  // Manual refresh: drop lingering 'done' celebration cards so the real posts take over.
+  const clearDone = useCallback(() => setPending((list) => list.filter((p) => p.phase !== 'done')), []);
+  // Manual refresh: take the celebration overlay off the just-posted card so it reads as a
+  // plain post (the pin is released alongside by clearPinned).
+  const clearCelebrate = useCallback(() => setCelebrateId(null), []);
 
   const scrollHomeTop = useCallback(() => setHomeScrollTick((n) => n + 1), []);
 
@@ -744,7 +772,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <UploadQueueContext.Provider value={{ pending, completedTick, prewarmVideo, discardPrewarm, enqueueVideo, retry, dismiss, pinnedIds, clearPinned, homeScrollTick, scrollHomeTop }}>
+    <UploadQueueContext.Provider value={{ pending, completedTick, prewarmVideo, discardPrewarm, enqueueVideo, retry, dismiss, pinnedIds, clearPinned, clearDone, celebrateId, clearCelebrate, homeScrollTick, scrollHomeTop }}>
       <UploadActionsContext.Provider value={actions}>
         {children}
       </UploadActionsContext.Provider>

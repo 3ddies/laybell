@@ -1,5 +1,5 @@
 import {
-  forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore,
+  forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert, Linking, Dimensions, Pressable,
@@ -13,9 +13,10 @@ import * as MediaLibrary from 'expo-media-library';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { pauseMainPlayer } from '../lib/trackPlayerService';
 import { canConcatClips, concatClips, getClipDurationSec } from '../lib/videoConcat';
+import { useCameraTurn } from '../lib/cameraTurn';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -50,44 +51,9 @@ const SHUTTER = 78;
 const RING_D = 92;             // multi-clip progress ring around the record button
 const RING_W = 5;
 
-// ── One camera view at a time ─────────────────────────────────────────────────
-// The story camera stays mounted on its page while the composer's opens over the
-// tabs, and on Android two camera views break each other: `active` is iOS-only, a
-// view binds through CameraX's process-wide unbindAll() and calls it again when it's
-// destroyed, and a bound view never re-binds by itself (ExpoCameraView.kt) — so the
-// story camera would sit black after the composer's closed. Only the newest open
-// camera renders a CameraView; an older one keeps its place and settings over black
-// and gets a fresh view once the newer one has closed — a beat later, so the old
-// view's teardown has run before the next one binds.
-const HANDOVER_MS = 150;
-const openCameras: number[] = [];
-const turnListeners = new Set<() => void>();
-let lastCameraId = 0;
-function subscribeTurns(listener: () => void) {
-  turnListeners.add(listener);
-  return () => { turnListeners.delete(listener); };
-}
-function useCameraTurn(): boolean {
-  const [id] = useState(() => ++lastCameraId);
-  useEffect(() => {
-    openCameras.push(id);
-    turnListeners.forEach((listener) => listener());
-    return () => {
-      const i = openCameras.indexOf(id);
-      if (i >= 0) openCameras.splice(i, 1);
-      turnListeners.forEach((listener) => listener());
-    };
-  }, [id]);
-  const newest = useSyncExternalStore(subscribeTurns, () => openCameras[openCameras.length - 1] === id);
-  const [settled, setSettled] = useState(false);
-  useEffect(() => {
-    setSettled(false);
-    if (!newest) return;
-    const timer = setTimeout(() => setSettled(true), HANDOVER_MS);
-    return () => clearTimeout(timer);
-  }, [newest]);
-  return newest && settled; // losing the turn is immediate; getting it waits the beat
-}
+// The single-live-camera coordinator (so the story camera, the composer's camera and the
+// collage builder hand the one live CameraView off instead of fighting over it) now lives
+// in lib/cameraTurn — see useCameraTurn there.
 
 type Props = {
   /** Running: preview live, ready to shoot. Paused (still mounted) otherwise. */
@@ -109,6 +75,14 @@ type Props = {
   onClose: () => void;
   /** The library button, bottom left. */
   onLibrary: () => void;
+  /** Story only: opens the photo-collage layout builder. Omitted (e.g. the post
+   *  composer) means no layout button is shown. */
+  onLayout?: () => void;
+  /** Story only: opens the boomerang capturer. Omitted = no boomerang button. */
+  onBoomerang?: () => void;
+  // Color filters are NOT offered on the live camera: they can't preview on expo-camera's
+  // feed (no frame access), so the button lives only in the story/post editors, where the
+  // filter previews on the captured shot and bakes in.
   /** The way out of the camera-permission screen. */
   closeLabel: string;
   /** Video-only capture (e.g. React reactions): no PHOTO mode, tap = record. */
@@ -152,7 +126,7 @@ type Props = {
 export type CapturedSegment = { uri: string; sec: number };
 
 const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCamera({
-  active, focused, hidden = false, maxVideoSec, onCapture, onRecordingChange, onClose, onLibrary, closeLabel, videoOnly = false,
+  active, focused, hidden = false, maxVideoSec, onCapture, onRecordingChange, onClose, onLibrary, onLayout, onBoomerang, closeLabel, videoOnly = false,
   recordMic = true, beforeRecord, multiClip = false, initialSegments, onSegmentsChange, onStopRequested,
 }, ref) {
   const { colors } = useTheme();
@@ -359,8 +333,22 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
 
   async function toggleMode() {
     const next: Mode = mode === 'picture' ? 'video' : 'picture';
-    if (next === 'video' && micPermission && !micPermission.granted && micPermission.canAskAgain) {
-      await requestMicPermission();
+    if (next === 'video') {
+      // Pre-attach the mic the moment we enter VIDEO mode, so the FIRST record tap starts
+      // instantly instead of stalling ~350ms while the mic claims the audio session — that
+      // stall is what made the first tap feel like it didn't register. Pause the app's own
+      // player here (as beginRecording does) so its UI stays in sync with the OS taking the
+      // session. beginRecording keeps its own 350ms wait as a fallback for any path that
+      // reaches it without the mic already live.
+      let granted = micPermission?.granted ?? false;
+      if (!granted && micPermission?.canAskAgain) {
+        const res = await requestMicPermission();
+        granted = !!res?.granted;
+      }
+      if (recordMic && granted) { pauseMainPlayer(); setMicLive(true); }
+    } else {
+      // Back to PHOTO with nothing recording — release the mic's session claim.
+      setMicLive(false);
     }
     setMode(next);
   }
@@ -837,7 +825,7 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
       <View style={[styles.topRow, { top: insets.top + 12 }]}>
         {!recording ? (
           <TouchableOpacity style={styles.roundBtn} onPress={handleCloseButton} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
-            <Ionicons name="close" size={28} color="#fff" />
+            <Feather name="x" size={27} color="#fff" style={styles.iconGlyph} />
           </TouchableOpacity>
         ) : <View style={styles.roundBtn} />}
 
@@ -859,28 +847,40 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
               }}
             >
               {mode === 'video' ? (
-                <Ionicons name={torchOn ? 'flashlight' : 'flashlight-outline'} size={22} color={torchOn ? colors.primaryLight : '#fff'} />
+                <Ionicons name={torchOn ? 'flashlight' : 'flashlight-outline'} size={22} color={torchOn ? colors.primaryLight : '#fff'} style={styles.iconGlyph} />
               ) : flash === 'auto' ? (
                 <View style={styles.flashAutoWrap}>
-                  <Ionicons name="flash" size={20} color="#fff" />
+                  <Ionicons name="flash" size={20} color="#fff" style={styles.iconGlyph} />
                   <Text style={styles.flashAutoA}>A</Text>
                 </View>
               ) : (
-                <Ionicons name={flash === 'off' ? 'flash-off' : 'flash'} size={22} color={flash === 'on' ? colors.primaryLight : '#fff'} />
+                <Ionicons name={flash === 'off' ? 'flash-off' : 'flash'} size={22} color={flash === 'on' ? colors.primaryLight : '#fff'} style={styles.iconGlyph} />
               )}
             </TouchableOpacity>
             <TouchableOpacity style={styles.roundBtn} onPress={() => setTimerMode((m) => (m === 0 ? 3 : m === 3 ? 10 : 0))}>
               {timerMode === 0 ? (
-                <Ionicons name="timer-outline" size={22} color="#fff" />
+                <Feather name="clock" size={21} color="#fff" style={styles.iconGlyph} />
               ) : (
                 <Text style={styles.timerBadge}>{timerMode}s</Text>
               )}
             </TouchableOpacity>
+            {/* Story only: photo-collage layouts (TikTok-style). */}
+            {onLayout && (
+              <TouchableOpacity style={styles.roundBtn} onPress={onLayout} accessibilityRole="button" accessibilityLabel={t('storyCamera.layout')}>
+                <Feather name="grid" size={21} color="#fff" style={styles.iconGlyph} />
+              </TouchableOpacity>
+            )}
+            {/* Story only: "Capture" (burst of frames looped forward-then-back). */}
+            {onBoomerang && (
+              <TouchableOpacity style={styles.roundBtn} onPress={onBoomerang} accessibilityRole="button" accessibilityLabel={t('storyCamera.boomerang')}>
+                <MaterialCommunityIcons name="infinity" size={23} color="#fff" style={styles.iconGlyph} />
+              </TouchableOpacity>
+            )}
             {/* With a multi-clip take banked the shutter row shows ✓ instead of flip, so
                 the flip lives here too (double-tap also flips). */}
             {multi && segments.length > 0 && (
               <TouchableOpacity style={styles.roundBtn} onPress={flipCamera} accessibilityRole="button" accessibilityLabel={t('a11y.flipCamera')}>
-                <Ionicons name="camera-reverse-outline" size={22} color="#fff" />
+                <Ionicons name="camera-reverse-outline" size={22} color="#fff" style={styles.iconGlyph} />
               </TouchableOpacity>
             )}
           </View>
@@ -943,7 +943,7 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
               accessibilityRole="button"
               accessibilityLabel={t('post.deleteLastClip')}
             >
-              <Ionicons name="arrow-undo-outline" size={28} color="#fff" />
+              <Ionicons name="arrow-undo-outline" size={28} color="#fff" style={styles.iconGlyph} />
             </TouchableOpacity>
           ) : (
             // Faded out (not unmounted) while recording so it doesn't pop.
@@ -952,7 +952,7 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
                 {libThumb ? (
                   <ExpoImage source={{ uri: libThumb }} style={styles.galleryThumb} contentFit="cover" />
                 ) : (
-                  <Ionicons name="images-outline" size={26} color="#fff" />
+                  <Feather name="image" size={24} color="#fff" style={styles.iconGlyph} />
                 )}
               </TouchableOpacity>
             </Animated.View>
@@ -1005,7 +1005,7 @@ const CaptureCamera = forwardRef<CaptureCameraHandle, Props>(function CaptureCam
           ) : (
             <Animated.View style={{ opacity: shutterStyle.controlsFade }} pointerEvents={recording ? 'none' : 'auto'}>
               <TouchableOpacity style={styles.galleryBtn} onPress={flipCamera} accessibilityRole="button" accessibilityLabel={t('a11y.flipCamera')}>
-                <Ionicons name="camera-reverse-outline" size={28} color="#fff" />
+                <Ionicons name="camera-reverse-outline" size={28} color="#fff" style={styles.iconGlyph} />
               </TouchableOpacity>
             </Animated.View>
           )}
@@ -1056,15 +1056,16 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
   },
   railCol: { gap: SPACING.sm },
+  // iOS-style controls: no chip, just a bold white glyph with a soft shadow for legibility
+  // over the preview (matches the story editor's tool rail).
   roundBtn: {
-    width: 44, height: 44, borderRadius: 22,
+    width: 44, height: 44,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.18)',
   },
+  iconGlyph: { textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 5 },
   flashAutoWrap: { flexDirection: 'row', alignItems: 'flex-start' },
-  flashAutoA: { color: '#fff', fontSize: 10, fontWeight: '800', marginLeft: -2 },
-  timerBadge: { color: colors.primaryLight, fontSize: 14, fontWeight: '800' },
+  flashAutoA: { color: '#fff', fontSize: 10, fontWeight: '800', marginLeft: -2, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
+  timerBadge: { color: colors.primaryLight, fontSize: 14, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
 
   focusBox: {
     position: 'absolute', width: 72, height: 72, borderRadius: 14,
@@ -1077,6 +1078,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingVertical: 5, paddingHorizontal: 14,
   },
   zoomHudText: { color: '#fff', fontSize: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
+
 
   countdownWrap: { alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.25)' },
   countdownText: {

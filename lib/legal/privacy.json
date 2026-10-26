@@ -145,7 +145,7 @@
         },
         {
           "type": "p",
-          "text": "Location is OPTIONAL and is off by default. If you enable it, we request foreground-only location permission through expo-location. We store only COARSE location: your latitude and longitude rounded to about one decimal place (roughly an 11-kilometer area), plus a reverse-geocoded city name. Reverse geocoding is performed on your device by your operating system; your coarse coordinates are not sent to a separate third-party geocoding service. We never store your precise position and we do not perform background or continuous tracking. Coarse location is used only to power \"people near you\" and related recommendations. You can disable location at any time in the app, which clears the stored area, and you can revoke the permission in your device settings. Because we collect only a coarse, low-precision area and not your precise position, this location data is not \"precise geolocation\" and is not \"sensitive personal information\" under the CCPA/CPRA."
+          "text": "Location is OPTIONAL and is off by default. If you enable it, we request foreground-only location permission through expo-location. We store only COARSE location: your latitude and longitude rounded to about one decimal place (roughly an 11-kilometer area), plus a reverse-geocoded city name. Reverse geocoding is performed on your device by your operating system, and — apart from the temperature-sticker weather lookup described below — your coarse coordinates are not sent to a separate third-party service. We never store your precise position and we do not perform background or continuous tracking. Coarse location is used to power\"people near you\" and related recommendations. Coarse location also powers the optional story stickers you can add: a location sticker (which shows a reverse-geocoded place name on your story) and a temperature sticker. For the temperature sticker, your approximate (coarse) coordinates are sent to our own backend, which fetches the current temperature from a third-party weather provider (Open-Meteo) on our servers rather than from your device; we do not store those coordinates. You can disable location at any time in the app, which clears the stored area, and you can revoke the permission in your device settings. Because we collect only a coarse, low-precision area and not your precise position, this location data is not \"precise geolocation\" and is not \"sensitive personal information\" under the CCPA/CPRA."
         },
         {
           "type": "subheading",
@@ -389,7 +389,7 @@
         },
         {
           "type": "p",
-          "text": "Supabase, Expo, Apple, and Google act as our service providers, contractors, and/or processors. Where the CCPA applies, Supabase and Expo are our service providers or contractors and are contractually restricted to processing personal data only for the business purposes we specify. Apple and Google may act as independent third parties for some functions (such as app distribution, push-notification delivery, and future billing) under their own privacy policies. In addition, a machine-translation provider (currently Google Cloud Translation) processes only the specific text you choose to translate, and Giphy acts as an independent third party that powers GIF search under its own privacy policy."
+          "text": "Supabase, Expo, Apple, and Google act as our service providers, contractors, and/or processors. Where the CCPA applies, Supabase and Expo are our service providers or contractors and are contractually restricted to processing personal data only for the business purposes we specify. Apple and Google may act as independent third parties for some functions (such as app distribution, push-notification delivery, and future billing) under their own privacy policies. In addition, a machine-translation provider (currently Google Cloud Translation) processes only the specific text you choose to translate, and Giphy acts as an independent third party that powers GIF search under its own privacy policy, and Open-Meteo provides weather data for the optional temperature story sticker under its own terms."
         },
         {
           "type": "bullet",
@@ -414,6 +414,10 @@
         {
           "type": "bullet",
           "text": "Giphy, Inc. - powers the GIF search and trending GIFs in our GIF picker. When you open the GIF picker and search, your search terms and the network request metadata Giphy needs to respond (including your IP address) are sent directly to Giphy, which returns matching GIFs and hosts them from its own servers under its own privacy policy. We do not send Giphy your identity, your messages, or your other content. GIFs you have saved or created within Laybell (\"My GIFs\") are stored by Supabase, not Giphy."
+        },
+        {
+          "type": "bullet",
+          "text": "Open-Meteo - provides current weather (temperature) for the optional temperature story sticker. When you add that sticker, your approximate (coarse, roughly 11-kilometer) coordinates are sent from our backend (not directly from your device) to Open-Meteo, which returns the current temperature; we do not store your coordinates, and we do not send Open-Meteo your identity, your messages, or any other content."
         },
         {
           "type": "subheading",

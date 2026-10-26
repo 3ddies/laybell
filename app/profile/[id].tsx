@@ -896,6 +896,7 @@ export default function PublicProfileScreen() {
         <View style={styles.avatarWrap}>
           <StoryAvatar
             userId={profile?.id ?? id}
+            showPresence
             avatarUrl={profile?.avatar_url}
             name={profile?.display_name}
             size={88}

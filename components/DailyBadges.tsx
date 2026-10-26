@@ -1,5 +1,6 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
@@ -18,6 +19,10 @@ const GOALS: Goal[] = [
   { id: 'spotlight', icon: 'flame', value: (m) => m.todayAdEngagements, target: 1 },
 ];
 
+// A manual close is remembered for the rest of the day (keyed by the local day, so a
+// new day's goals bring the card back).
+const DISMISS_KEY = 'dailyBadges:dismissed';
+
 // Shown on the signed-in user's OWN profile once the account-setup checklist is
 // complete (see ProfileCompletion): the next TODO list — the day's badge goals and
 // progress. Loads its own metrics because ProfileContext doesn't surface them.
@@ -26,6 +31,8 @@ function DailyBadgesBase({ onSeeAll }: { onSeeAll: () => void }) {
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const [metrics, setMetrics] = useState<BadgeMetrics | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -38,8 +45,31 @@ function DailyBadgesBase({ onSeeAll }: { onSeeAll: () => void }) {
     return () => { alive = false; };
   }, []);
 
+  // Restore a dismissal made earlier today (don't flash the card before we know).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const v = await AsyncStorage.getItem(DISMISS_KEY);
+        if (alive && v === new Date().toDateString()) setDismissed(true);
+      } catch {}
+      if (alive) setHydrated(true);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const handleClose = useCallback(() => {
+    setDismissed(true);
+    AsyncStorage.setItem(DISMISS_KEY, new Date().toDateString()).catch(() => {});
+  }, []);
+
   const done = metrics ? GOALS.filter((g) => g.value(metrics) >= g.target).length : 0;
   const pct = done / GOALS.length;
+  const allDone = !!metrics && done === GOALS.length;
+
+  // Exit the dropdown once every daily badge is earned (all goals complete), once it's
+  // been closed for the day, or until that stored dismissal has been read.
+  if (!hydrated || dismissed || allDone) return null;
 
   return (
     <View style={styles.wrap}>
@@ -49,6 +79,9 @@ function DailyBadgesBase({ onSeeAll }: { onSeeAll: () => void }) {
           <Text style={styles.sub}>{t('dailyBadges.sub')}</Text>
         </View>
         <Text style={styles.count}>{t('dailyBadges.progress', { done, total: GOALS.length })}</Text>
+        <TouchableOpacity onPress={handleClose} style={styles.closeBtn} hitSlop={10} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={t('common.close')}>
+          <Ionicons name="close" size={16} color={colors.background} />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.track}>
@@ -97,6 +130,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   title: { color: colors.background, fontSize: 16, fontWeight: '800' },
   sub: { color: colors.background, opacity: 0.7, fontSize: 12.5, marginTop: 1 },
   count: { color: colors.background, opacity: 0.85, fontSize: 12.5, fontWeight: '700' },
+  closeBtn: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background + '1F' },
   track: { height: 5, borderRadius: 3, backgroundColor: colors.background + '26', overflow: 'hidden', marginTop: SPACING.sm },
   fill: { height: '100%', borderRadius: 3 },
   loading: { paddingVertical: SPACING.lg, alignItems: 'center' },

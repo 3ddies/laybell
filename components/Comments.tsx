@@ -307,6 +307,7 @@ export default function Comments({
     <View style={[styles.row, isReply && styles.replyRow]}>
       <StoryAvatar
         userId={item.user_id}
+        showPresence
         avatarUrl={item.profiles?.avatar_url}
         name={item.profiles?.display_name}
         size={isReply ? 30 : 34}

@@ -4,6 +4,7 @@ import { logAccess } from './accessLog';
 import { collectPostMediaUrls, removePublicUrls } from './storageCleanup';
 import { deleteStreamVideo } from './streamUpload';
 import { isPostSpotlighted } from './spotlight';
+import { emitPostDeleted } from './postEdits';
 import { tg } from './i18n';
 
 export async function deletePostById(postId: string): Promise<boolean> {
@@ -43,6 +44,9 @@ export async function deletePostById(postId: string): Promise<boolean> {
   // storage. Ownership is enforced server-side; fire-and-forget so the delete stays
   // snappy (best-effort cleanup, never throws).
   if (videoUid) deleteStreamVideo(videoUid);
+  // Tell every other mounted screen to drop this row now, so a post deleted on one
+  // surface can't linger as a ghost on another (home ↔ profile ↔ explore ↔ viewers).
+  emitPostDeleted(postId);
   return true;
 }
 

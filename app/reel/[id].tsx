@@ -1,4 +1,4 @@
-import { patchPostList, subscribePostEdited } from '../../lib/postEdits';
+import { patchPostList, subscribePostEdited, removeFromPostList, subscribePostDeleted } from '../../lib/postEdits';
 import AppVideo, { type AppVideoHandle } from '../../components/AppVideo';
 import SlideshowCarousel from '../../components/SlideshowCarousel';
 import FloatingComments from '../../components/FloatingComments';
@@ -634,6 +634,8 @@ export default function ReelScreen() {
   const [posts, setPosts] = useState<any[]>(seed ? [seed] : []);
   // An edit saved on app/edit-post shows here at once (lib/postEdits).
   useEffect(() => subscribePostEdited((id, patch) => setPosts((prev) => patchPostList(prev, id, patch))), []);
+  // A post deleted anywhere drops out of the pager at once (lib/postEdits).
+  useEffect(() => subscribePostDeleted((id) => setPosts((prev) => removeFromPostList(prev, id))), []);
   // ── Reel kind filter ────────────────────────────────────────────────────────
   // A dropdown rather than a hard switch, because these are not exclusive
   // universes: picking Vertical does not mean "never show me anything else", it

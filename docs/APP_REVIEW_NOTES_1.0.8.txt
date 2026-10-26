@@ -1,0 +1,43 @@
+Laybell is a music-focused social platform for independent artists and their listeners. Sign-in is required for all features. United States only.
+
+DEMO ACCOUNT
+Email: 3ddiemusic@gmail.com / Password: review1
+Sign in with the EMAIL above, not a username. Both subscription tiers are active, so every subscriber feature is reachable without buying anything.
+
+RESUBMISSION — WHAT CHANGED SINCE BUILD 17 (Submission ID 4fc33eca-c022-4f46-be7e-00046840232c)
+1) Guideline 5.1.1(iv) — Privacy, contacts/location permission. FIXED in this build (1.0.8, build 18). The onboarding "Permissions" step no longer has a "Skip for now" button, and its "Continue" button now always proceeds to the system permission prompt for location and contacts. The user always reaches the iOS prompt and keeps full control there (they may choose "Don't Allow"). Location is not requested for self-identified minors, which is a separate legal requirement (see MINORS below).
+2) Guideline 2.1 — "Does the app upload users' contacts to its server?" No. Contacts access is optional (the user taps "Enable" and grants the iOS permission) and is used only to find which of their contacts already have a Laybell account. The address book is read on-device; each phone number and email is normalized and one-way SHA-256 hashed locally; only those irreversible hashes are sent to our server to match against existing accounts. Raw contact data — names, phone numbers, emails — never leaves the device and cannot be recovered from the hashes.
+3) Guideline 2.1(b) — Locating the In-App Purchases. Steps below. The Account Holder has accepted the Paid Apps Agreement (Laybell LLC).
+
+HOW TO FIND AND BUY A BEAT (In-App Purchase, Guideline 3.1.1 / 2.1(b))
+The demo account cannot buy its OWN listings, so please buy from a different seller. The account @3ddie has beats priced at fixed In-App Purchase tiers.
+1. Sign in with the demo account above.
+2. Tap Search, type "3ddie", and open the profile @3ddie. (Alternatively, open the Shop tab and open "Cypher type beat".)
+3. On @3ddie's profile, tap the storefront icon to open their shop.
+4. Open the beat "Cypher type beat".
+5. Tap the green "Lease - $9.99" button. This launches the In-App Purchase (product laybell_item_999). Complete it with your sandbox account; the beat's file is then delivered in the app (a "Download" button appears). The "Buy - $59.99" exclusive button (laybell_item_5999) works the same way.
+Note: beats priced off the fixed tiers fall back to paying with in-app credits; every beat on @3ddie is on-tier (leases $9.99-$14.99, exclusives $39.99-$99.99). All 22 beat products are consumable laybell_item_<cents>, $4.99-$999.99.
+
+PURCHASES (Guideline 3.1.1)
+All digital purchases use In-App Purchase. Consumable credit packs at $4.99, $9.99, $19.99, $49.99 and $99.99 - Settings > Credits. A beat in the Shop with a set price can also be bought directly with In-App Purchase (consumable products laybell_item_<cents>), as an alternative to spending credits. Credits are spent in-app (tips, Shop purchases, promoting a post) and cannot be converted back into money or transferred. Creator earnings are a separate balance, paid out through Stripe, never redeemable as credits.
+
+SUBSCRIPTION
+Two auto-renewing tiers in one group - Laybell Premium $9.99/month and Laybell Premium+ $19.99/month - Settings > Promotion Tools > the Premium card. Premium+ adds Films (landscape video up to one hour), removal of all advertising, and unlimited offline downloads.
+
+NOTIFICATIONS (Guideline 4.5.4)
+Two reminders (a badge about to lapse; twelve days without opening the app) are OFF by default and need an explicit opt-in: an UNTICKED checkbox at onboarding, or Settings > Notifications > "Reminders from Laybell". Activity notifications (likes, comments, follows, going live) are not promotional. No push carries financial detail.
+
+USER-GENERATED CONTENT (Guideline 1.2)
+Automated filtering of objectionable terms on captions and comments. Report: the "..." menu on any post, profile, comment or message > Report. Block: the "..." menu > Block. Published contact information in the app and at laybell.app.
+
+MINORS
+Users under 18 are identified at signup. For them the app disables location capture and targeted advertising, defaults posts to friends-only, limits incoming messages to accounts they follow, blocks broadcasting, hides mature content, and excludes them from reminders and marketing email. Enforced server-side.
+
+MUSIC LICENSING
+All audio is uploaded by users, who warrant they own or control the rights. Laybell LLC holds BMI and ASCAP public performance licences, has a registered DMCA agent, and enforces a repeat-infringer policy.
+
+EXTERNAL SERVICES
+Supabase (auth, database, storage); RevenueCat (entitlements); Cloudflare Stream (video, live); LiveKit (studio audio); Stripe Connect (payouts only); Resend (email); Google Cloud Translation; Tenor (GIFs); Expo/EAS (build, push). No AI services. No tracking across other companies' apps, so no App Tracking Transparency prompt.
+
+CONTACT
+support@laybell.app

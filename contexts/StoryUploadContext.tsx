@@ -3,7 +3,7 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { supabase } from '../lib/supabase';
 import { tg } from '../lib/i18n';
-import { uploadStoryMedia, createStory, type StorySticker } from '../lib/stories';
+import { uploadStoryMedia, createStory, uploadStickerPhotos, type StorySticker } from '../lib/stories';
 import { compressVideoIfPossible, uploadToStorageWithProgress } from '../lib/upload';
 import { removePublicUrls } from '../lib/storageCleanup';
 import { useStories } from './StoriesContext';
@@ -144,6 +144,8 @@ export function StoryUploadProvider({ children }: { children: ReactNode }) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error(tg('storyCamera.notAuthenticated'));
+      // Host any local photo-sticker images once, then reuse across createStory retries.
+      const stickersToSave = await uploadStickerPhotos(user.id, job.stickers);
       for (let attempt = 1; ; attempt++) {
         try {
           if (!uploaded) uploaded = await uploadCaptured(job.captured);
@@ -158,7 +160,7 @@ export function StoryUploadProvider({ children }: { children: ReactNode }) {
             song: job.song,
             songStartSec: job.songStartSec,
             songClipSec: job.songClipSec,
-            stickers: job.stickers,
+            stickers: stickersToSave,
           });
           refreshStories(); // the finished story pops into the tray, already ready
           return;

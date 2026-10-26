@@ -197,6 +197,11 @@ export default function SettingsScreen() {
   // says otherwise. See supabase/sql/reengagement.sql for why the two differ.
   const [remindersOn, setRemindersOn] = useState(false);
   useEffect(() => { setRemindersOn((profile as any)?.reengage_opt_in === true); }, [profile]);
+  // Active Status (green online dot). Opt-OUT, on by default — and reciprocal: off
+  // means you can't see others' dots and they can't see yours (enforced server-side
+  // in online_user_ids()). Mirrors the profile so the switch is right on open.
+  const [activeStatusOn, setActiveStatusOn] = useState(true);
+  useEffect(() => { setActiveStatusOn((profile as any)?.active_status_enabled !== false); }, [profile]);
   const { colors, mode, setMode } = useTheme();
   const { usageBytes, prefs: offlinePrefs, setPref: setOfflinePref } = useOffline();
   const { isPremium, isPremiumPlus } = usePremium();
@@ -379,6 +384,22 @@ export default function SettingsScreen() {
     }
   }
 
+  async function toggleActiveStatus(next: boolean) {
+    setActiveStatusOn(next);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('no session');
+      const { error } = await supabase.from('profiles')
+        .update({ active_status_enabled: next })
+        .eq('id', user.id);
+      if (error) throw error;
+      update({ active_status_enabled: next } as any); // ProfileContext re-syncs the heartbeat + poll
+    } catch {
+      setActiveStatusOn(!next);
+      Alert.alert(t('editProfile.error'), t('settings.activeStatusSaveFailed'));
+    }
+  }
+
   function toggleHidden(next: boolean) {
     if (next) {
       Alert.alert(
@@ -531,6 +552,13 @@ export default function SettingsScreen() {
   ];
 
   const privacyItems: SectionItem[] = [
+    {
+      icon: 'ellipse',
+      label: t('account.activeStatus'),
+      subtitle: t('account.activeStatusSub'),
+      value: activeStatusOn,
+      onValueChange: toggleActiveStatus,
+    },
     {
       icon: 'eye-off-outline',
       label: t('account.hideProfile'),

@@ -1,4 +1,4 @@
-import { patchPostList, subscribePostEdited } from '../../lib/postEdits';
+import { patchPostList, subscribePostEdited, removeFromPostList, subscribePostDeleted } from '../../lib/postEdits';
 import { isFilm, filmName, fmtRuntime } from '../../lib/tv';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
@@ -29,6 +29,7 @@ import FeaturedRotator from '../../components/FeaturedRotator';
 import { useStories } from '../../contexts/StoriesContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
+import PageHealthMeter, { type PageHealthMeterHandle } from '../../components/PageHealthMeter';
 import ProfileQRModal from '../../components/ProfileQRModal';
 import AccountSwitcher from '../../components/AccountSwitcher';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
@@ -131,6 +132,8 @@ export default function ProfileScreen() {
   const [userPosts, setUserPosts] = useState<any[]>([]);
   // An edit saved on app/edit-post shows here at once (lib/postEdits).
   useEffect(() => subscribePostEdited((id, patch) => setUserPosts((prev) => patchPostList(prev, id, patch))), []);
+  // A post deleted anywhere (the feed, a viewer) drops from this grid at once.
+  useEffect(() => subscribePostDeleted((id) => setUserPosts((prev) => removeFromPostList(prev, id))), []);
   // Post ids with a LIVE spotlight → a subtle sparkle on their grid thumbnail.
   const [spotlightIds, setSpotlightIds] = useState<Set<string>>(new Set());
   const [repostedPosts, setRepostedPosts] = useState<any[]>([]);
@@ -382,6 +385,7 @@ export default function ProfileScreen() {
     }
   };
 
+  const pageHealthRef = useRef<PageHealthMeterHandle>(null);
   const pageSwipePan = useRef(PanResponder.create({
     // Forgiving dominance bar (1.25×) so slightly diagonal side-swipes register.
     // On Posts, rightward moves are left to the OUTER pager (the live exit
@@ -1030,7 +1034,7 @@ export default function ProfileScreen() {
   return (
     // pageSwipePan lives on the ROOT: flings anywhere — header, grid, empty
     // space — step the sub-tabs; a right-fling on Posts exits to Music.
-    <View style={styles.container} {...pageSwipePan.panHandlers}>
+    <View style={styles.container} {...pageSwipePan.panHandlers} onTouchStart={() => pageHealthRef.current?.collapse()}>
       <View>
       <View style={styles.headerBar}>
         {/* Tap the username → Instagram-style account switcher (switch between
@@ -1277,6 +1281,10 @@ export default function ProfileScreen() {
           );
         })}
       </Animated.View>
+      {/* Page Health — a private slide-out side meter (right edge, at the shop slot).
+          Collapsed via the root's passive onTouchStart, so a scroll/swipe dismisses it
+          AND still registers as a scroll/swipe. */}
+      <PageHealthMeter ref={pageHealthRef} userId={profile?.id} badgeTier={(profile as any)?.badge_tier} />
     </View>
   );
 }

@@ -33,8 +33,21 @@ import RepostPostMedia, { repostCardSize } from '../../components/RepostPostMedi
 import RepostAuthorChip from '../../components/RepostAuthorChip';
 import { StoryBackground, type StoryBg } from '../../components/StoryBackgroundLayer';
 import { StoryDrawRenderer, type DrawStroke } from '../../components/StoryDrawLayer';
+import StoryCollage from '../../components/StoryCollage';
+import StoryBoomerang from '../../components/StoryBoomerang';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import { captionStickerTextStyle, resolveSticker, StickerContent } from '../../components/StickerLayer';
+import { LinkStickerContent } from '../../components/LinkSticker';
+import { MusicStickerContent } from '../../components/MusicSticker';
+import { CommunityStickerContent } from '../../components/CommunitySticker';
+import { ShopStickerContent } from '../../components/ShopSticker';
+import { EmojiSliderContent } from '../../components/EmojiSlider';
+import { EmojiReactionContent } from '../../components/EmojiReaction';
+import { InfoStickerContent } from '../../components/InfoSticker';
+import { CountdownStickerContent } from '../../components/CountdownSticker';
+import { StoryPollView } from '../../components/StoryPollView';
+import { pollOptionTone, POLL_TONE_HEX } from '../../components/PollSticker';
+import { useLinkGuard } from '../../contexts/LinkGuardContext';
 import { useStories } from '../../contexts/StoriesContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { usePostMusicActions, usePostMusicMuted } from '../../contexts/PostMusicContext';
@@ -85,6 +98,7 @@ export default function StoryViewerScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const linkGuard = useLinkGuard(); // opens link-sticker URLs through the safety guard
   const isFocused = useIsFocused();
   const { refresh: refreshStories, markSeen, openCamera, groups: trayGroups } = useStories();
   const { profile: myProfile } = useProfile();
@@ -626,7 +640,10 @@ export default function StoryViewerScreen() {
   useEffect(() => {
     const sid = story?.song_id;
     const hostId = story?.id;
+    // With no attached song, a shop sticker's preview (if any) is the story's audio.
+    const shop = !sid ? (story?.stickers ?? []).find((st: any) => st?.kind === 'shop' && st?.listingId && st?.preview) : null;
     if (isFocused && hostId && sid) playSong(hostId, sid, null, storySongMix(story));
+    else if (isFocused && hostId && shop) playSong(hostId, shop.listingId as string, shop.preview ?? null, null);
     else if (hostId) stopSong(hostId);
     return () => { if (hostId) stopSong(hostId); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1336,6 +1353,44 @@ export default function StoryViewerScreen() {
                   if (n <= 3) setTimeout(() => setReloadTick((t) => t + 1), 500 * n);
                   else setReadyId(story.id);
                 };
+                // A 'collage' layer means a photo-layout story: render the grid of slot
+                // images (composed at view time). media_url = the first slot, so a tiny
+                // hidden copy drives the usual image-ready/retry gate.
+                const col = (story.stickers ?? []).find((l: any) => l?.kind === 'collage') as any;
+                if (col && col.layout && Array.isArray(col.slots) && col.slots.length) {
+                  return (
+                    <View style={StyleSheet.absoluteFill}>
+                      <StoryCollage layout={col.layout} slots={col.slots} frameW={SCREEN_W} frameH={SCREEN_H} />
+                      <ExpoImage
+                        key={`${story.id}:${reloadTick}`}
+                        source={{ uri: story.media_url }}
+                        style={{ position: 'absolute', width: 1, height: 1, opacity: 0 }}
+                        cachePolicy="memory-disk"
+                        onLoad={onImgLoad}
+                        onError={onImgErr}
+                      />
+                    </View>
+                  );
+                }
+                // A 'boomerang' layer means a frame-burst story: loop the frames
+                // forward-then-back while it's on screen. media_url = the first frame,
+                // so the hidden copy drives the image-ready/retry gate as usual.
+                const boom = (story.stickers ?? []).find((l: any) => l?.kind === 'boomerang') as any;
+                if (boom && Array.isArray(boom.frames) && boom.frames.length) {
+                  return (
+                    <View style={StyleSheet.absoluteFill}>
+                      <StoryBoomerang frames={boom.frames} frameW={SCREEN_W} frameH={SCREEN_H} active={isFocused} />
+                      <ExpoImage
+                        key={`${story.id}:${reloadTick}`}
+                        source={{ uri: story.media_url }}
+                        style={{ position: 'absolute', width: 1, height: 1, opacity: 0 }}
+                        cachePolicy="memory-disk"
+                        onLoad={onImgLoad}
+                        onError={onImgErr}
+                      />
+                    </View>
+                  );
+                }
                 // A 'frame' layer means the author repositioned/zoomed the photo:
                 // redraw it with that transform over a blurred backdrop, so a
                 // zoomed-OUT photo shows the backdrop around it. x/y are fractions of
@@ -1358,7 +1413,9 @@ export default function StoryViewerScreen() {
                         contentFit="cover"
                         cachePolicy="memory-disk"
                         style={{
-                          position: 'absolute', width: bw, height: bh,
+                          // Rounded corners ON THE PHOTO itself, scaling with the author's
+                          // zoom — the picture is always a rounded rectangle.
+                          position: 'absolute', width: bw, height: bh, borderRadius: RADIUS.xl,
                           left: (SCREEN_W - bw) / 2, top: (SCREEN_H - bh) / 2,
                           transform: [
                             { translateX: (fr.x ?? 0) * SCREEN_W },
@@ -1374,15 +1431,18 @@ export default function StoryViewerScreen() {
                   );
                 }
                 return (
-                  <ExpoImage
-                    key={`${story.id}:${reloadTick}`}
-                    source={{ uri: story.media_url }}
-                    style={StyleSheet.absoluteFill}
-                    contentFit="cover"
-                    cachePolicy="memory-disk"
-                    onLoad={onImgLoad}
-                    onError={onImgErr}
-                  />
+                  <View style={StyleSheet.absoluteFill}>
+                    <ExpoImage source={{ uri: story.media_url }} style={StyleSheet.absoluteFill} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
+                    <ExpoImage
+                      key={`${story.id}:${reloadTick}`}
+                      source={{ uri: story.media_url }}
+                      style={[StyleSheet.absoluteFill, { borderRadius: RADIUS.xl }]}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                      onLoad={onImgLoad}
+                      onError={onImgErr}
+                    />
+                  </View>
                 );
               })()
             ) : (
@@ -1619,6 +1679,202 @@ export default function StoryViewerScreen() {
                       >
                         {/* Shared renderer → 'boxy' shows per-line pills. */}
                         <StickerContent sticker={st} />
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </Animated.View>
+            )}
+
+            {/* Photo stickers — a picked image placed on the story (non-interactive). */}
+            {(story.stickers ?? []).some((st: any) => st.kind === 'photo' && st.uri) && (
+              <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="none">
+                {(story.stickers ?? []).filter((st: any) => st.kind === 'photo' && st.uri).map((st: any, i: number) => (
+                  <View key={i} style={StyleSheet.absoluteFill}>
+                    <View style={styles.captionStickerCenter}>
+                      <View
+                        style={{
+                          transform: [
+                            { translateX: (st.x - 0.5) * SCREEN_W },
+                            { translateY: (st.y - 0.5) * SCREEN_H },
+                            { scale: st.scale ?? 1 },
+                            { rotate: `${st.rotation ?? 0}deg` },
+                          ],
+                        }}
+                      >
+                        <ExpoImage source={{ uri: st.uri }} style={{ width: st.w ?? 160, height: st.h ?? 160, borderRadius: 16 }} contentFit="cover" cachePolicy="memory-disk" />
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </Animated.View>
+            )}
+
+            {/* Link stickers — tappable chips in their OWN box-none overlay: a tap on a
+                chip opens the link through the safety guard, while taps anywhere else
+                still fall through to advance/pause the story. */}
+            {(story.stickers ?? []).some((st: any) => st.kind === 'link' && st.url) && (
+              <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="box-none">
+                {(story.stickers ?? []).filter((st: any) => st.kind === 'link' && st.url).map((st: any, i: number) => (
+                  <View key={i} style={StyleSheet.absoluteFill} pointerEvents="box-none">
+                    <View style={styles.captionStickerCenter} pointerEvents="box-none">
+                      <View
+                        pointerEvents="box-none"
+                        style={{
+                          transform: [
+                            { translateX: (st.x - 0.5) * SCREEN_W },
+                            { translateY: (st.y - 0.5) * SCREEN_H },
+                            { scale: st.scale ?? 1 },
+                            { rotate: `${st.rotation ?? 0}deg` },
+                          ],
+                        }}
+                      >
+                        <TouchableOpacity activeOpacity={0.85} onPress={() => linkGuard.open(st.url, { context: 'other' })}>
+                          <LinkStickerContent url={st.url} title={st.text} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </Animated.View>
+            )}
+
+            {/* Music stickers — the cover-art card; the track itself plays as the
+                story's audio, so this is purely the placed visual (non-interactive). */}
+            {(story.stickers ?? []).some((st: any) => st.kind === 'music') && (
+              <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="none">
+                {(story.stickers ?? []).filter((st: any) => st.kind === 'music').map((st: any, i: number) => (
+                  <View key={i} style={StyleSheet.absoluteFill} pointerEvents="none">
+                    <View style={styles.captionStickerCenter}>
+                      <View
+                        style={{
+                          transform: [
+                            { translateX: (st.x - 0.5) * SCREEN_W },
+                            { translateY: (st.y - 0.5) * SCREEN_H },
+                            { scale: st.scale ?? 1 },
+                            { rotate: `${st.rotation ?? 0}deg` },
+                          ],
+                        }}
+                      >
+                        <MusicStickerContent title={st.text} artist={st.artist} cover={st.cover} variant={st.musicStyle} />
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </Animated.View>
+            )}
+
+            {/* Community stickers — tap to open the community. */}
+            {(story.stickers ?? []).some((st: any) => st.kind === 'community' && st.communityId) && (
+              <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="box-none">
+                {(story.stickers ?? []).filter((st: any) => st.kind === 'community' && st.communityId).map((st: any, i: number) => (
+                  <View key={i} style={StyleSheet.absoluteFill} pointerEvents="box-none">
+                    <View style={styles.captionStickerCenter} pointerEvents="box-none">
+                      <View pointerEvents="box-none" style={{ transform: [{ translateX: (st.x - 0.5) * SCREEN_W }, { translateY: (st.y - 0.5) * SCREEN_H }, { scale: st.scale ?? 1 }, { rotate: `${st.rotation ?? 0}deg` }] }}>
+                        <TouchableOpacity activeOpacity={0.85} onPress={() => router.push(`/communities/${st.communityId}` as any)}>
+                          <CommunityStickerContent name={st.text} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </Animated.View>
+            )}
+
+            {/* Shop stickers — tap to open the listing. */}
+            {(story.stickers ?? []).some((st: any) => st.kind === 'shop' && st.listingId) && (
+              <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="box-none">
+                {(story.stickers ?? []).filter((st: any) => st.kind === 'shop' && st.listingId).map((st: any, i: number) => (
+                  <View key={i} style={StyleSheet.absoluteFill} pointerEvents="box-none">
+                    <View style={styles.captionStickerCenter} pointerEvents="box-none">
+                      <View pointerEvents="box-none" style={{ transform: [{ translateX: (st.x - 0.5) * SCREEN_W }, { translateY: (st.y - 0.5) * SCREEN_H }, { scale: st.scale ?? 1 }, { rotate: `${st.rotation ?? 0}deg` }] }}>
+                        <TouchableOpacity activeOpacity={0.85} onPress={() => router.push(`/shop/listing/${st.listingId}` as any)}>
+                          <ShopStickerContent title={st.text} price={st.price} cover={st.cover} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </Animated.View>
+            )}
+
+            {/* Emoji slider — viewers drag to rate; releasing likes the story with the
+                emoji + value as the comment. The author's own view is static. */}
+            {(story.stickers ?? []).some((st: any) => st.kind === 'slider') && (
+              <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="box-none">
+                {(story.stickers ?? []).filter((st: any) => st.kind === 'slider').map((st: any, i: number) => (
+                  <View key={i} style={StyleSheet.absoluteFill} pointerEvents="box-none">
+                    <View style={styles.captionStickerCenter} pointerEvents="box-none">
+                      <View pointerEvents="box-none" style={{ transform: [{ translateX: (st.x - 0.5) * SCREEN_W }, { translateY: (st.y - 0.5) * SCREEN_H }, { scale: st.scale ?? 1 }, { rotate: `${st.rotation ?? 0}deg` }] }}>
+                        <EmojiSliderContent
+                          prompt={st.text}
+                          emoji={st.emojiChar}
+                          interactive={!isOwn}
+                          onRelease={(pct) => { if (currentUserId) { setStoryLikeComment(story.id, currentUserId, `${st.emojiChar || '😍'} ${pct}%`); setLiked(true); } }}
+                        />
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </Animated.View>
+            )}
+
+            {/* Emoji reaction — tap to like the story + comment that emoji. */}
+            {(story.stickers ?? []).some((st: any) => st.kind === 'reaction') && (
+              <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="box-none">
+                {(story.stickers ?? []).filter((st: any) => st.kind === 'reaction').map((st: any, i: number) => (
+                  <View key={i} style={StyleSheet.absoluteFill} pointerEvents="box-none">
+                    <View style={styles.captionStickerCenter} pointerEvents="box-none">
+                      <View pointerEvents="box-none" style={{ transform: [{ translateX: (st.x - 0.5) * SCREEN_W }, { translateY: (st.y - 0.5) * SCREEN_H }, { scale: st.scale ?? 1 }, { rotate: `${st.rotation ?? 0}deg` }] }}>
+                        <TouchableOpacity activeOpacity={0.7} disabled={isOwn} onPress={() => { if (currentUserId) { setStoryLikeComment(story.id, currentUserId, st.emojiChar || '❤️'); setLiked(true); } }}>
+                          <EmojiReactionContent emoji={st.emojiChar} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </Animated.View>
+            )}
+
+            {/* Countdown / GIF / time / temperature / location — non-interactive layers. */}
+            {(story.stickers ?? []).some((st: any) => ['countdown', 'gif', 'time', 'temperature', 'location'].includes(st.kind)) && (
+              <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="none">
+                {(story.stickers ?? []).filter((st: any) => ['countdown', 'gif', 'time', 'temperature', 'location'].includes(st.kind)).map((st: any, i: number) => (
+                  <View key={i} style={StyleSheet.absoluteFill} pointerEvents="none">
+                    <View style={styles.captionStickerCenter}>
+                      <View style={{ transform: [{ translateX: (st.x - 0.5) * SCREEN_W }, { translateY: (st.y - 0.5) * SCREEN_H }, { scale: st.scale ?? 1 }, { rotate: `${st.rotation ?? 0}deg` }] }}>
+                        {st.kind === 'countdown' && <CountdownStickerContent title={st.text} target={st.target} />}
+                        {st.kind === 'gif' && !!st.uri && <ExpoImage source={{ uri: st.uri }} style={{ width: st.w ?? 160, height: st.h ?? 160, borderRadius: 16 }} contentFit="cover" />}
+                        {st.kind === 'time' && <InfoStickerContent icon="time-outline" text={st.text} />}
+                        {st.kind === 'temperature' && <InfoStickerContent icon="thermometer-outline" text={st.text} />}
+                        {st.kind === 'location' && <InfoStickerContent icon="location-outline" text={st.text} />}
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </Animated.View>
+            )}
+
+            {/* Poll stickers — interactive (tap an option to vote → live bars), in a
+                box-none overlay so only the options capture taps; the rest of the
+                screen still advances/pauses. */}
+            {(story.stickers ?? []).some((st: any) => st.kind === 'poll' && st.pollId && st.question) && (
+              <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="box-none">
+                {(story.stickers ?? []).filter((st: any) => st.kind === 'poll' && st.pollId && st.question).map((st: any, i: number) => (
+                  <View key={i} style={StyleSheet.absoluteFill} pointerEvents="box-none">
+                    <View style={styles.captionStickerCenter} pointerEvents="box-none">
+                      <View
+                        pointerEvents="box-none"
+                        style={{
+                          transform: [
+                            { translateX: (st.x - 0.5) * SCREEN_W },
+                            { translateY: (st.y - 0.5) * SCREEN_H },
+                            { scale: st.scale ?? 1 },
+                            { rotate: `${st.rotation ?? 0}deg` },
+                          ],
+                        }}
+                      >
+                        <StoryPollView pollId={st.pollId} storyId={story.id} question={st.question} options={st.options ?? []} />
                       </View>
                     </View>
                   </View>
@@ -2150,6 +2406,14 @@ export default function StoryViewerScreen() {
                           </View>
                           <Text style={styles.viewerHandle} numberOfLines={1}>@{v.username}</Text>
                         </View>
+                        {/* Which poll option they chose — a pill beside the name, so
+                            poll voters are as scannable to the author as likers. */}
+                        {!!v.pollChoice && (
+                          <View style={[styles.viewerPoll, { backgroundColor: POLL_TONE_HEX[pollOptionTone(v.pollChoice)] + '2E' }]}>
+                            <Ionicons name="stats-chart" size={12} color={POLL_TONE_HEX[pollOptionTone(v.pollChoice)]} />
+                            <Text style={styles.viewerPollText} numberOfLines={1}>{v.pollChoice}</Text>
+                          </View>
+                        )}
                         {/* Their public like comment — in the open space to the RIGHT of
                             the name/username, as a fun throbbing "bubble" line. */}
                         {!!v.comment && (
@@ -2381,6 +2645,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Their public like comment — fills the open space to the RIGHT of the name, a fun
   // chunky "bubble" line in white (the viewers sheet is a fixed dark panel). Throbs
   // via commentThrobScale on the Animated.View. minWidth keeps it readable.
+  viewerPoll: {
+    flexShrink: 1, marginLeft: 'auto', maxWidth: 160,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(242,101,34,0.18)', borderRadius: RADIUS.full,
+    paddingHorizontal: 10, paddingVertical: 5,
+  },
+  viewerPollText: { color: '#fff', fontSize: 13, fontWeight: '800', flexShrink: 1 },
   viewerComment: { flex: 1, minWidth: 90, flexDirection: 'row', alignItems: 'center', gap: 5 },
   viewerCommentText: { flex: 1, color: '#fff', fontSize: 15, fontWeight: '900', lineHeight: 19, letterSpacing: 0.2 },
   // Pin control at the right of a commenter's row; gold disc when it's the pinned one.

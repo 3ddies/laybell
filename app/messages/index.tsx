@@ -554,6 +554,7 @@ export default function MessagesScreen() {
             </View>
             <StoryAvatar
               userId={item.other_user.id}
+              showPresence
               avatarUrl={item.other_user.avatar_url}
               name={item.other_user.display_name}
               size={56}

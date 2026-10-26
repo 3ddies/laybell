@@ -74,6 +74,7 @@ export default function PeopleRow({ currentUserId }: { currentUserId: string | n
               <StoryAvatar
                 userId={p.id}
                 avatarUrl={p.avatar_url}
+                showPresence
                 name={p.display_name || p.username}
                 size={64}
                 onPressProfile={() => router.push(`/profile/${p.id}`)}

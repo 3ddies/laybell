@@ -18,15 +18,16 @@ const BAR_GAP = 2;
 // drags along it: where the window starts is where the song starts. Dragging
 // anywhere on the strip moves the window, the way a waveform scrolls under a fixed
 // selection elsewhere. The start commits on release; the label follows the finger.
-export function SongPartStrip({ seed, songSec, windowSec, startSec, onDrag, onCommit }: {
+export function SongPartStrip({ seed, songSec, windowSec, startSec, onDrag, onCommit, hPad = SOUND_H_PAD }: {
   seed: string;
   songSec: number;
   windowSec: number;
   startSec: number;
   onDrag: (sec: number | null) => void;
   onCommit: (sec: number) => void;
+  hPad?: number; // inset from the screen edge; larger = more side space inside its card
 }) {
-  const trackW = SCREEN_W - SOUND_H_PAD * 2;
+  const trackW = SCREEN_W - hPad * 2;
   const bars = useMemo(() => barsFor(seed, BAR_COUNT), [seed]);
   const barW = (trackW - BAR_GAP * (BAR_COUNT - 1)) / BAR_COUNT;
   const fit = Math.min(windowSec > 0 ? windowSec : songSec, songSec);
@@ -192,7 +193,7 @@ export function SecondsSlider({ icon, label, value, min, max, onChange }: {
 }
 
 const styles = StyleSheet.create({
-  strip: { height: 56, justifyContent: 'center' },
+  strip: { height: 56, justifyContent: 'center', alignSelf: 'center' },
   bars: { ...StyleSheet.absoluteFillObject, flexDirection: 'row', alignItems: 'center' },
   bar: { borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.28)' },
   barInside: { backgroundColor: '#FAB525' },

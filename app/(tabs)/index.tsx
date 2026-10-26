@@ -1,4 +1,4 @@
-import { patchPostList, subscribePostEdited } from '../../lib/postEdits';
+import { patchPostList, subscribePostEdited, removeFromPostList, subscribePostDeleted } from '../../lib/postEdits';
 import {
   loadAffinityProfileFast, loadSeenPostIds, recordSeenPostIds, scorePost, arrangeFeed,
   EMPTY_PROFILE, type UserAffinityProfile, type ScoreOpts,
@@ -152,7 +152,7 @@ const toTrack = (p: any): Track => ({
   id: p.id, uri: p.media_url, caption: p.caption,
   artist: p.profiles?.display_name ?? '', cover: p.cover_url ?? null,
 });
-import { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo, memo, type ReactNode } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Image as ExpoImage } from 'expo-image';
@@ -200,7 +200,9 @@ import { parseFeatures } from '../../lib/features';
 import StoriesTray from '../../components/StoriesTray';
 import PeopleRow from '../../components/PeopleRow';
 import ShopCard from '../../components/ShopCard';
+import PromoCard from '../../components/PromoCard';
 import PendingUploads from '../../components/PendingUploads';
+import PostCelebration from '../../components/PostCelebration';
 import Spinner from '../../components/Spinner';
 import { useUploadQueue } from '../../contexts/UploadQueueContext';
 import StoryAvatar from '../../components/StoryAvatar';
@@ -306,6 +308,9 @@ type PostCardProps = {
   /** Raised while a pinch is live on this card's photo, so the feed can stop
    *  scrolling underneath the gesture. */
   onMediaZoom?: (zooming: boolean) => void;
+  /** Just-posted celebration overlay (confetti + View/Share), drawn over this card's
+   *  video. Set only on the freshly-pinned post; undefined on every other card. */
+  celebration?: ReactNode;
 };
 
 // Memoized so that toggling a like/save on one post (which changes the feed's
@@ -342,7 +347,7 @@ function songSquareArtist(item: Post): string | null {
 
 const PostCard = memo(function PostCard({
   item, isOwn, isLiked, isSaved, audioActive, songSquare, videoMuted, songMuted,
-  onProfile, onProfileId, onOptions, onOpenPost, onOpenReel, onComments, onLikesPress, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onMediaZoom,
+  onProfile, onProfileId, onOptions, onOpenPost, onOpenReel, onComments, onLikesPress, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onMediaZoom, celebration,
 }: PostCardProps) {
   const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -440,6 +445,7 @@ const PostCard = memo(function PostCard({
           name={item.profiles?.display_name}
           size={38}
           onPressProfile={() => onProfile(item)}
+          showPresence
         />
         <View style={styles.postHeaderInfo}>
           <View style={styles.postNameRow}>
@@ -709,12 +715,18 @@ const PostCard = memo(function PostCard({
                 </View>
               ) : null}
               {heart}
+              {/* Just-posted celebration (confetti + View/Share), only on the freshly
+                  pinned card — drawn last so it sits over the player. */}
+              {celebration}
             </View>
           </TouchableOpacity>
           <TouchableOpacity style={styles.videoAudioBtn} onPress={songPlaysFor(item) ? onToggleSongMute : onToggleMuted}>
             <Ionicons name={(songPlaysFor(item) ? songMuted : videoMuted) ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
           </TouchableOpacity>
-          {!!item.song_id && (
+          {/* Hidden while the just-posted celebration is up — the song pill sits where
+              the View/Share bar does and would otherwise cover it. It returns the moment
+              a refresh clears the celebration. */}
+          {!!item.song_id && !celebration && (
             <SongAttribution
               songId={item.song_id}
               title={item.song_title}
@@ -735,7 +747,7 @@ const PostCard = memo(function PostCard({
                 (videoPlaybackRef.current.postId === item.id ? videoPlaybackRef.current : null)}
             />
           )}
-          <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />
+          {!celebration && <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />}
         </View>
       )}
 
@@ -847,12 +859,51 @@ const PostCard = memo(function PostCard({
 const GATE_POSTS = 3;
 // How many posts you scroll past before the people rail appears.
 const PEOPLE_AFTER = 8;
-// One friendly shop card for every user, parked after this many real posts — an early
-// gap that sits BEFORE the people rail (PEOPLE_AFTER) and the first feed ad (AD_FEED_GAP
-// = 9 in lib/ads.ts), so it never crowds an ad or another established feed element.
-const SHOP_AFTER = 5;
-// Stable sentinel row for the shop card (stable identity across memo recomputes).
-const SHOP_ROW = { id: '__shop__', __shop: true } as unknown as Post;
+// ── Feature promo cards ──────────────────────────────────────────────────────
+// A small pool of "poster" cards — Shop, Badges, Ads, Spotlight, Premium — injected
+// into two early feed slots to help people DISCOVER Laybell's features. Which two
+// show, and in which slot, re-rolls every feed load (cold reopen + pull-to-refresh),
+// so over a few sessions a user meets all of them without the feed ever carrying more
+// than two at once. Each is a feed sentinel (like the old shop card) — not a post, not
+// an ad — so they never touch the ad cadence.
+//
+// Slot A sits BEFORE the people rail (PEOPLE_AFTER) and the first feed ad (AD_FEED_GAP
+// = 9 in lib/ads.ts); slot B is further down, only on feeds long enough to reach it.
+const PROMO_SLOT_A = 5;
+const PROMO_SLOT_B = 14;
+const PROMO_KEYS = ['shop', 'badges', 'ads', 'spotlight', 'premium'] as const;
+type PromoKey = typeof PROMO_KEYS[number];
+// Stable sentinel rows (stable identity across memo recomputes), one per card. The
+// `__promo` VALUE is the card key; it never collides with item.__spotlight (a
+// spotlight-boosted POST — a different field entirely).
+const PROMO_ROW: Record<PromoKey, Post> = {
+  shop: { id: '__shop__', __promo: 'shop' } as unknown as Post,
+  badges: { id: '__badges__', __promo: 'badges' } as unknown as Post,
+  ads: { id: '__ads__', __promo: 'ads' } as unknown as Post,
+  spotlight: { id: '__spotlight_card__', __promo: 'spotlight' } as unknown as Post,
+  premium: { id: '__premium__', __promo: 'premium' } as unknown as Post,
+};
+// Look-and-feel per card (keys resolve through i18n). Shop keeps its own component; the
+// rest render through the generic PromoCard. Badges = icy diamond blue, Ads = white /
+// black mono, Spotlight = purple, Premium = red.
+const PROMO_CARDS = {
+  badges: { fill: ['#2563EB', '#22D3EE'] as const, icon: 'ribbon' as const, motifs: ['ribbon', 'star'] as const, titleKey: 'badgesCard.title', subKey: 'badgesCard.sub', ctaKey: 'badgesCard.cta' },
+  ads: { mono: true as const, icon: 'megaphone' as const, motifs: ['megaphone', 'star'] as const, titleKey: 'adsCard.title', subKey: 'adsCard.sub', ctaKey: 'adsCard.cta' },
+  spotlight: { fill: ['#7C3AED', '#A855F7'] as const, icon: 'sparkles' as const, motifs: ['sparkles', 'star'] as const, titleKey: 'spotlightCard.title', subKey: 'spotlightCard.sub', ctaKey: 'spotlightCard.cta' },
+  premium: { fill: ['#DC2626', '#EF4444'] as const, icon: 'star' as const, motifs: ['star', 'sparkles'] as const, titleKey: 'premiumCard.title', subKey: 'premiumCard.sub', ctaKey: 'premiumCard.cta' },
+};
+// A deterministic shuffle of the pool by the session seed → the first two become this
+// session's slot-A / slot-B cards. A new seed each load, so the pair rotates.
+function pickPromos(seed: number): [PromoKey, PromoKey] {
+  const pool = PROMO_KEYS.slice();
+  let s = (seed >>> 0) || 1;
+  for (let i = pool.length - 1; i > 0; i--) {
+    s = (s * 1103515245 + 12345) >>> 0;
+    const j = s % (i + 1);
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return [pool[0], pool[1]];
+}
 // Dwell AFTER the user reaches the bound. Pure pacing — the prefetch passes
 // are fire-and-forget and never awaited, so shortening this only trims how
 // long the warm-up gets to run (trimmed 5s → 3.5s for snappier unlock).
@@ -882,6 +933,13 @@ export default function HomeScreen() {
     setPosts((prev) => patchPostList(prev, id, patch));
     setPinnedPosts((prev) => patchPostList(prev, id, patch));
   }), []);
+  // A post deleted on ANY surface (a viewer, the profile tab) drops out of the feed
+  // here at once — from both the normal list and the just-posted pin — instead of
+  // lingering as a ghost card until the next refresh (lib/postEdits).
+  useEffect(() => subscribePostDeleted((id) => {
+    setPosts((prev) => removeFromPostList(prev, id));
+    setPinnedPosts((prev) => removeFromPostList(prev, id));
+  }), []);
   // Which songs render as the square poster card: one in every three, counted
   // across the songs in the feed rather than across all posts, so the rhythm is
   // "every third song you meet" regardless of how much sits between them.
@@ -905,7 +963,7 @@ export default function HomeScreen() {
   // Background video uploads: optimistic cards render at the top of the feed while
   // the upload/encode runs (see PendingUploads), and completedTick pulls the real
   // row in once it lands.
-  const { pending, completedTick, pinnedIds, clearPinned, homeScrollTick } = useUploadQueue();
+  const { pending, completedTick, pinnedIds, clearPinned, clearDone, celebrateId, clearCelebrate, homeScrollTick } = useUploadQueue();
   const [pinnedPosts, setPinnedPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -1013,34 +1071,33 @@ export default function HomeScreen() {
     return gatedFeedData;
   }, [gatedFeedData, currentUserId]);
 
-  // One shop card in an early, ad-free gap — for EVERY user. Counts real posts only
-  // (skips every sentinel) and drops it in after SHOP_AFTER, which is before the people
-  // rail and the first ad, so it never lands next to an ad or crowds another element.
-  // Skipped entirely while the feed gate is locked — the gate card must stay the last
-  // row until the user arms it. A short feed still gets one card (after its last post),
-  // so a brand-new user discovers the shop too.
-  const shopFeedData = useMemo(() => {
+  // Which two feature cards show this feed load, and where. A fresh seed each load
+  // (cold reopen via the useState init, pull-to-refresh via setPromoSeed in onRefresh)
+  // rotates the pair, so a user discovers every feature over a few sessions.
+  const [promoSeed, setPromoSeed] = useState(() => (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0);
+  const [promoA, promoB] = useMemo(() => pickPromos(promoSeed), [promoSeed]);
+  // Inject this session's cards into slot A (always — after its post, or the last post
+  // on a short feed, so a brand-new user still gets one) and slot B (only on a feed long
+  // enough to reach it). Counts real posts only (skips every sentinel). Skipped while the
+  // feed gate is locked — the gate card must stay the last row until the user arms it.
+  const promoFeedData = useMemo(() => {
     if (peopleFeedData.some((r: any) => r.__gate)) return peopleFeedData;
-    let posts = 0;
-    let lastPostIdx = -1;
+    let posts = 0, idxA = -1, idxB = -1, lastPostIdx = -1;
     for (let i = 0; i < peopleFeedData.length; i++) {
       const row = peopleFeedData[i] as any;
-      if (row.__stories || row.__pending || row.__people || row.__shop) continue;
+      if (row.__stories || row.__pending || row.__people || row.__promo) continue;
       posts++;
       lastPostIdx = i;
-      if (posts === SHOP_AFTER) {
-        const out = peopleFeedData.slice();
-        out.splice(i + 1, 0, SHOP_ROW);
-        return out;
-      }
+      if (posts === PROMO_SLOT_A) idxA = i;
+      if (posts === PROMO_SLOT_B) idxB = i;
     }
-    if (lastPostIdx >= 0) {
-      const out = peopleFeedData.slice();
-      out.splice(lastPostIdx + 1, 0, SHOP_ROW);
-      return out;
-    }
-    return peopleFeedData;
-  }, [peopleFeedData]);
+    if (lastPostIdx < 0) return peopleFeedData; // no real posts yet
+    const out = peopleFeedData.slice();
+    // Splice the LATER slot first so the earlier insert doesn't shift its index.
+    if (idxB >= 0) out.splice(idxB + 1, 0, PROMO_ROW[promoB]);
+    out.splice(idxA >= 0 ? idxA + 1 : lastPostIdx + 1, 0, PROMO_ROW[promoA]);
+    return out;
+  }, [peopleFeedData, promoA, promoB]);
 
   // Live mirrors for the geometry-based active-video resolver (below). It reads
   // these from refs so it can stay a stable, identity-constant callback while
@@ -1052,7 +1109,7 @@ export default function HomeScreen() {
   // every post below an inserted row by one, so the video played one post off from the
   // one in focus.
   const renderedFeedDataRef = useRef<Post[]>([]);
-  renderedFeedDataRef.current = shopFeedData;
+  renderedFeedDataRef.current = promoFeedData;
   const lastVideoTokens = useRef<any[]>([]);       // most recent 40%-visible video tokens (geometry fallback)
   const headerHRef = useRef(140);                  // floating-header height (assigned once headerH is known)
   const bottomClearRef = useRef(68);               // tab bar + safe-area cover at the bottom of the band
@@ -1553,6 +1610,50 @@ export default function HomeScreen() {
     visibleMusicRef.current = firstMusic ? { id: firstMusic.item.id, songId: firstMusic.item.song_id, mix: ambientMixFor(firstMusic.item) } : null;
     syncAmbientSongRef.current();
   }).current;
+
+  // ── Autoplay the just-pinned post ───────────────────────────────────────────
+  // A freshly-finished upload is pinned to the top as a real card, but pinning is a
+  // pure DATA change: FlashList fires no viewability pass, so the resolver never runs
+  // and the post sits on its poster until a scroll. And the resolver prefers whatever
+  // is nearest the viewport CENTRE — a tall vertical post fills the band and wins, but
+  // a short HORIZONTAL frame pinned at the very top never does. So for the just-posted
+  // post specifically, FORCE it active (its video AND its song) the moment it lays out,
+  // as long as it is on screen. We decide exactly once, then hand control back to the
+  // normal resolver — so this can't fight a scroll and never plays an off-screen post.
+  useEffect(() => {
+    if (!celebrateId) return;
+    let attempts = 0;
+    let decided = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tryForce = () => {
+      attempts += 1;
+      if (!decided && !fastScrollRef.current) {
+        const data = renderedFeedDataRef.current;
+        const idx = data.findIndex((p) => (p as any).id === celebrateId);
+        const list: any = feedListRef.current;
+        const item = idx >= 0 ? data[idx] : null;
+        const L = item && list?.getLayout ? list.getLayout(idx) : null;
+        if (item && L) {
+          // Layout is measured — make the one decision.
+          const scrollY = list.getAbsoluteLastScrollOffset?.() ?? 0;
+          const padTop = list.getFirstItemOffset?.() ?? headerHRef.current;
+          const winH = list.getWindowSize?.().height ?? SCREEN_H;
+          const viewTop = scrollY - padTop;
+          const onScreen = L.y + L.height > viewTop + 1 && L.y < viewTop + winH - 1;
+          if (onScreen) {
+            setVisibleVideoId(celebrateId);
+            setWarmVideoIds([celebrateId]);
+            syncSongToActiveVideo(item);
+          }
+          decided = true; // played (on screen) or deliberately skipped (off screen)
+        }
+      }
+      if (!decided && attempts < 12) timer = setTimeout(tryForce, 150);
+    };
+    timer = setTimeout(tryForce, 60);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [celebrateId]);
   const pendingMusicViewables = useRef<any[] | null>(null);
   const onImpressionViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
     // This snapshot stays parked until the scroll RESTS. Note what that is and
@@ -2386,6 +2487,10 @@ export default function HomeScreen() {
   // The feed's shop card → open the marketplace. Guarded like the other taps so a tab
   // swipe gliding over the card can't open it.
   const onShopPress = useCallback(() => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push('/shop'); }, []);
+  const onBadgesPress = useCallback(() => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push('/badges'); }, []);
+  const onAdsPress = useCallback(() => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push('/ad-manager'); }, []);
+  const onSpotlightPress = useCallback(() => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push('/spotlight'); }, []);
+  const onPremiumPress = useCallback(() => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push('/premium'); }, []);
   const onOpenPost = useCallback((item: Post, src?: SourceRect, index?: number) => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push({ pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}), ...(index != null ? { index: String(index) } : {}) } }); }, []);
   const onOpenReel = useCallback((item: Post, src?: SourceRect) => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push({ pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}) } }); }, []);
   // The spotlight tap is NOT recorded here — opening the sheet to read isn't
@@ -2479,7 +2584,11 @@ export default function HomeScreen() {
     (item as any).__pending ? <PendingUploads /> :
     (item as any).__gate ? <FeedGateCard onArm={onGateArm} /> :
     (item as any).__people ? <PeopleRow currentUserId={currentUserId} /> :
-    (item as any).__shop ? <ShopCard onPress={onShopPress} /> :
+    (item as any).__promo === 'shop' ? <ShopCard onPress={onShopPress} /> :
+    (item as any).__promo === 'badges' ? <PromoCard {...PROMO_CARDS.badges} onPress={onBadgesPress} /> :
+    (item as any).__promo === 'ads' ? <PromoCard {...PROMO_CARDS.ads} onPress={onAdsPress} /> :
+    (item as any).__promo === 'spotlight' ? <PromoCard {...PROMO_CARDS.spotlight} onPress={onSpotlightPress} /> :
+    (item as any).__promo === 'premium' ? <PromoCard {...PROMO_CARDS.premium} onPress={onPremiumPress} /> :
     <ElasticSwipeView resetKey={(item as any).__spotlight ? `spot:${(item as any).__spotlight.campaignId}` : item.id}>
       {(item as any).__ad ? (
         <SponsoredCard
@@ -2515,6 +2624,11 @@ export default function HomeScreen() {
           onShare={onShare}
           onSlideAudioActive={onSlideAudioActive}
           onMediaZoom={onMediaZoom}
+          // The just-posted post (pinned at the top) wears the celebration overlay on its
+          // real card, so the video autoplays and its song plays like any other post.
+          celebration={celebrateId && item.id === celebrateId
+            ? <PostCelebration onView={() => onOpenPost(item)} onShare={() => onShare(item)} />
+            : undefined}
         />
       )}
     </ElasticSwipeView>
@@ -2525,8 +2639,8 @@ export default function HomeScreen() {
   // songSquareIds is a NEW Set whenever the list changes, which is exactly when
   // the square positions can move — so it belongs here. Leaving it out would
   // freeze the pattern at whatever the first load happened to be.
-  ), [currentUserId, likedPosts, savedPosts, isPlaying, playingTrackId, videoMuted, songMuted, songSquareIds,
-      onProfile, onProfileId, onOptions, onOpenPost, onOpenReel, onComments, onLikesPress, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions, onGateArm, onShopPress]);
+  ), [currentUserId, likedPosts, savedPosts, isPlaying, playingTrackId, videoMuted, songMuted, songSquareIds, celebrateId,
+      onProfile, onProfileId, onOptions, onOpenPost, onOpenReel, onComments, onLikesPress, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions, onGateArm, onShopPress, onBadgesPress, onAdsPress, onSpotlightPress, onPremiumPress]);
 
   if (loading) {
     return (
@@ -2728,15 +2842,15 @@ export default function HomeScreen() {
       <FlashList
         ref={feedListRef}
         scrollEnabled={!zoomLock}
-        data={shopFeedData}
+        data={promoFeedData}
         // Spotlight instances key off their campaign so a promoted post can
         // never key-collide with itself (organic copies are filtered at merge).
         // In v2 this is also the recycler's stable id — load-bearing.
-        keyExtractor={(item) => ((item as any).__stories ? 'stories' : (item as any).__pending ? 'pending' : (item as any).__people ? 'people' : (item as any).__shop ? 'shop' : item.__spotlight ? `spot:${item.__spotlight.campaignId}` : item.id)}
+        keyExtractor={(item) => ((item as any).__stories ? 'stories' : (item as any).__pending ? 'pending' : (item as any).__people ? 'people' : (item as any).__promo ? `promo:${(item as any).__promo}` : item.__spotlight ? `spot:${item.__spotlight.campaignId}` : item.id)}
         // Recycle pools are per-type: an ad cell must never be recycled into a
         // post cell (renderPost's root ternary would swap component trees —
         // a full remount AND a polluted pool).
-        getItemType={(item) => ((item as any).__stories ? 'stories' : (item as any).__pending ? 'pending' : (item as any).__people ? 'people' : (item as any).__shop ? 'shop' : (item as any).__gate ? 'gate' : (item as any).__ad ? 'ad' : 'post')}
+        getItemType={(item) => ((item as any).__stories ? 'stories' : (item as any).__pending ? 'pending' : (item as any).__people ? 'people' : (item as any).__promo ? `promo:${(item as any).__promo}` : (item as any).__gate ? 'gate' : (item as any).__ad ? 'ad' : 'post')}
         renderItem={renderPost}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={feedContentStyle}
@@ -2786,6 +2900,8 @@ export default function HomeScreen() {
             onRefresh={async () => {
               impactLight(); // tactile confirm the pull-to-refresh caught
               setRefreshing(true);
+              setPromoSeed((Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0); // rotate the feature cards
+
               // RE-GATE (owner design): a refresh brings fresh content, so the
               // optimization pass must repeat — the gate returns at the bottom
               // of the new post 3 and re-arms/prefetches for the new list.
@@ -2793,8 +2909,11 @@ export default function HomeScreen() {
               gateArmedRef.current = false;
               setFeedGateUnlocked(false);
               refreshStories();
-              // Release any pinned just-posted posts so they fall into natural rank.
+              // Release any pinned just-posted posts so they fall into natural rank, and
+              // clear the celebration overlay so the real post reads as a plain card.
               clearPinned();
+              clearDone();
+              clearCelebrate();
               const seen = await loadSeenPostIds();
               setSeenPostIds(seen);
               await fetchPosts(currentUserId || undefined, seen);
