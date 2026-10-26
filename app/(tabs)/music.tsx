@@ -1151,6 +1151,15 @@ export default function MusicScreen() {
               <Text style={styles.newBtnText}>{t('music.playlist')}</Text>
             </TouchableOpacity>
           )}
+          {/* DJ Booth — load two tracks and mix them live (components/dj + app/dj). */}
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="DJ Booth"
+            style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' }}
+            onPress={() => router.push('/dj')}
+          >
+            <Ionicons name="disc" size={22} color={colors.text} />
+          </TouchableOpacity>
           {/* Listen mode. Fades the tab bar away, locks tab swiping and silences
               notifications for distraction-free listening; tap again to bring
               everything back. The pill owns its own gradient + sheen — see

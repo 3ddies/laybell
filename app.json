@@ -205,7 +205,13 @@
           "url": "https://sentry.io/"
         }
       ],
-      "./plugins/withMediaRouterPin"
+      "./plugins/withMediaRouterPin",
+      [
+        "react-native-audio-api",
+        {
+          "disableFFmpeg": true
+        }
+      ]
     ],
     "extra": {
       "router": {},
