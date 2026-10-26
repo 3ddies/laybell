@@ -4,7 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSharedValue } from 'react-native-reanimated';
 import DjKnob from './DjKnob';
 import DjWaveform from './DjWaveform';
-import { type Deck, TEMPO_MIN, TEMPO_MAX } from '../../lib/dj/DjEngine';
+import type { Deck } from '../../lib/dj/DjEngine';
+import { TEMPO_MIN, TEMPO_MAX } from '../../lib/dj/constants';
 
 // One deck's full surface: track header + load, waveform, EQ/filter/tempo/vol knobs,
 // transport, loop, and 4 hot-cue pads. It owns a ~60fps loop that drives the waveform

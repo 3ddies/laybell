@@ -21,9 +21,7 @@ import {
   type GainNode,
   type BiquadFilterNode,
 } from 'react-native-audio-api';
-
-export type EqBand = 'low' | 'mid' | 'high';
-export type DeckId = 'a' | 'b';
+import { TEMPO_MIN, TEMPO_MAX, type EqBand, type DeckId } from './constants';
 
 // EQ knob travel: full kill at the bottom, a modest boost at the top (DJ mixers
 // boost less than they cut — a +6 is already loud, a -26 is effectively "off").
@@ -36,11 +34,7 @@ const LP_OPEN_HZ = 20000; // lowpass fully open ≈ no effect
 const LP_MIN_HZ = 180;    // darkest lowpass
 const HP_MIN_HZ = 20;     // highpass just opening = no effect
 const HP_MAX_HZ = 9000;   // thinnest highpass
-// Tempo travel: ±8%, the classic pitch-fader range.
-export const TEMPO_MIN = 0.92;
-export const TEMPO_MAX = 1.08;
-
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const clamp =(v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 // Exponential map t∈[0,1] → [from,to] (frequencies feel linear to the ear in log space).
 const expMap = (t: number, from: number, to: number) => from * Math.pow(to / from, clamp(t, 0, 1));
 

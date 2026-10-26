@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, Pressable, ScrollView, Dimensions, Alert } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { DjEngine, type DeckId } from '../lib/dj/DjEngine';
+import type { DjEngine } from '../lib/dj/DjEngine';
+import type { DeckId } from '../lib/dj/constants';
 import DjDeck from '../components/dj/DjDeck';
 import DjCrossfader from '../components/dj/DjCrossfader';
 import SongPickerModal, { type PickedSong } from '../components/SongPickerModal';
@@ -34,10 +35,16 @@ export default function DjBoothScreen() {
   useEffect(() => {
     let engine: DjEngine | null = null;
     try {
-      engine = new DjEngine();
+      // Loaded lazily, NOT as a top-level import: react-native-audio-api installs its
+      // native bindings the instant its JS is imported and throws "failed to install"
+      // on a build that predates the module. A static import would therefore crash the
+      // whole app at startup (Expo Router evaluates every route file). Opening the booth
+      // on an old build throws HERE instead — caught → the "needs a build" screen.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mod = require('../lib/dj/DjEngine') as typeof import('../lib/dj/DjEngine');
+      engine = new mod.DjEngine();
       engineRef.current = engine;
     } catch {
-      // The native audio engine isn't in this build yet (needs a fresh dev build).
       setUnavailable(true);
       return;
     }
