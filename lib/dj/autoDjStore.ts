@@ -21,6 +21,8 @@ let controller: AutoDjController | null = null;
 let queue: AutoDjTrack[] = [];
 let onHandBack: ((remaining: AutoDjTrack[]) => void) | null = null;
 
+const log = (...a: unknown[]) => { if (__DEV__) console.log('[auto-dj]', ...a); };
+
 function ensure(): AutoDjController | null {
   if (controller) return controller;
   try {
@@ -35,7 +37,8 @@ function ensure(): AutoDjController | null {
       onMixing: (mixing) => set({ mixing }),
     });
     return controller;
-  } catch {
+  } catch (e) {
+    log('ensure() FAILED to construct the native engine', e);
     engine = null;
     controller = null;
     return null;
@@ -50,9 +53,11 @@ export async function startAutoDj(
   index: number,
   opts: { pauseMusic?: () => void; handBack?: (remaining: AutoDjTrack[]) => void } = {},
 ): Promise<boolean> {
+  log('startAutoDj()', { tracks: tracks.length, index });
   const c = ensure();
-  if (!c || !engine) return false;
+  if (!c || !engine) { log('engine unavailable — ensure() returned null (native module missing?)'); return false; }
   try {
+    log('init…');
     await engine.init();                    // resume the context + claim the session BEFORE playback
     queue = tracks;
     onHandBack = opts.handBack ?? null;
