@@ -114,3 +114,39 @@ export function analyzeBeatGrid(samples: Float32Array, sampleRate: number): Beat
 
   return { bpm, beatPeriodS, firstBeatS, confidence };
 }
+
+// ── Song ending analysis ─────────────────────────────────────────────────────
+// Where a track's audio TRULY ends (trailing digital silence trimmed) and whether
+// that ending is abrupt (still loud at the stop — a cold ending with no outro, vs.
+// a decaying tail). The Auto-DJ controller anchors the blend to this so the
+// outgoing song is faded out by the time it actually stops — no snap-off.
+const END_SILENCE_PEAK = 0.012;   // |sample| below this ≈ silence
+const END_WINDOW_S = 0.4;         // window before the end we judge loudness over
+const END_ABRUPT_FRACTION = 0.5;  // final window this loud (vs track peak) = abrupt
+
+export function analyzeEnding(samples: Float32Array, sampleRate: number): { endS: number; abrupt: boolean } {
+  const n = samples?.length ?? 0;
+  if (!n || !sampleRate) return { endS: 0, abrupt: false };
+
+  let peak = 0;
+  for (let i = 0; i < n; i += 4) { const a = Math.abs(samples[i]); if (a > peak) peak = a; }
+  if (peak <= 0) return { endS: n / sampleRate, abrupt: false };
+
+  const thresh = Math.max(END_SILENCE_PEAK, peak * 0.015);
+  const H = 1024;
+  let endSample = n;
+  for (let end = n; end > H; end -= H) {
+    const s = end - H;
+    let m = 0;
+    for (let i = s; i < end; i++) { const a = Math.abs(samples[i]); if (a > m) { m = a; if (m >= thresh) break; } }
+    if (m >= thresh) { endSample = end; break; }
+  }
+
+  // Loud right up to the stop → abrupt (needs more fade headroom to mask the cut).
+  const w = Math.min(endSample, Math.floor(END_WINDOW_S * sampleRate));
+  let winPeak = 0;
+  for (let i = endSample - w; i < endSample; i++) { const a = Math.abs(samples[i]); if (a > winPeak) winPeak = a; }
+  const abrupt = winPeak >= peak * END_ABRUPT_FRACTION;
+
+  return { endS: endSample / sampleRate, abrupt };
+}

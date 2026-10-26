@@ -5,17 +5,20 @@
 // docs/AUTO_DJ_SPEC.md.
 //
 // How a transition is built (beginTransition):
-//   • Beat grids for both tracks are analysed offline on preload (cached).
-//   • If both read confidently and the tempos are within ±AUTO_MAX_STRETCH, the
-//     incoming deck is tempo-matched and started PHASE-LOCKED to the outgoing's
-//     current beat — so the beats land together ("beatmatch").
-//   • The engine then runs a native-scheduled "morph": an equal-power volume
-//     crossfade plus a staggered 3-band EQ hand-off (bass swaps mid-blend; mids/
-//     highs cross-blend over the whole phrase). Blend length = 16 beats.
-//   • If the grids aren't confident, it falls back to the SAME morph without
-//     tempo/phase matching — still far smoother than a plain crossfade, never
-//     worse than a wrong beatmatch.
-//   • After the blend, the new (now live) deck eases back to its natural tempo.
+//   • Each track is analysed once on preload (cached): its beat grid (BPM +
+//     phase) AND where its audio truly ends (trailing silence trimmed) + whether
+//     that ending is abrupt.
+//   • If both grids read confidently and the tempos are within ±AUTO_MAX_STRETCH,
+//     the incoming deck is tempo-matched and started PHASE-LOCKED to the
+//     outgoing's current beat ("beatmatch").
+//   • The engine runs a native-scheduled "morph": equal-power volume crossfade +
+//     a staggered 3-band EQ hand-off. Blend length = 16 beats.
+//   • The blend is anchored to the outgoing track's TRUE audio end (not the file
+//     length), so it's faded out before the song actually stops — no snap-off.
+//     Cold/abrupt endings get extra headroom.
+//   • If grids aren't confident, it falls back to the SAME morph without tempo/
+//     phase matching — smoother than a crossfade, never a wrong beatmatch.
+//   • After the blend the new (now live) deck eases back to its natural tempo.
 //
 // Imports only TYPES from the engine, so this module is safe to load anywhere.
 import type { DjEngine } from './DjEngine';
@@ -28,12 +31,15 @@ import {
   AUTO_BEAT_MIN_CONFIDENCE,
   AUTO_MAX_STRETCH,
   AUTO_POST_RESTORE_S,
+  AUTO_END_GUARD_S,
+  AUTO_END_GUARD_ABRUPT_S,
   AUTO_MID_DUCK,
   AUTO_HIGH_DUCK,
 } from './constants';
 import { type BeatGrid } from './beatGrid';
 
 export type AutoDjTrack = { id: string; title: string; artist: string; url: string; cover?: string | null };
+type TrackAnalysis = { grid: BeatGrid | null; endS: number; abrupt: boolean };
 
 type Listener = {
   onTrack?: (track: AutoDjTrack | null, index: number) => void;
@@ -52,7 +58,7 @@ export class AutoDjController {
   private live: DeckId = 'a';
   private transitioning = false;
   private preloadedIdx = -1;            // queue index currently loaded on the idle deck
-  private grids = new Map<string, BeatGrid>(); // beat grid by track id (cached)
+  private analysis = new Map<string, TrackAnalysis>(); // by track id (cached)
   private tick: ReturnType<typeof setInterval> | null = null;
   private promoteTimer: ReturnType<typeof setTimeout> | null = null;
   private restoreTimer: ReturnType<typeof setInterval> | null = null;
@@ -66,6 +72,15 @@ export class AutoDjController {
   get currentIndex() { return this.index; }
   get isMixing() { return this.transitioning; }
   private idle(): DeckId { return this.live === 'a' ? 'b' : 'a'; }
+  private gridOf(trackId?: string): BeatGrid | undefined { return trackId ? this.analysis.get(trackId)?.grid ?? undefined : undefined; }
+
+  /** The outgoing track's true audio end (trailing silence trimmed), falling back to the file
+   *  length. The blend is anchored here, not to durationS. */
+  private effectiveEnd(deckId: DeckId, trackId?: string): number {
+    const dur = this.engine.deck(deckId).durationS;
+    const a = trackId ? this.analysis.get(trackId) : undefined;
+    return a && a.endS > 0 && a.endS <= dur ? a.endS : dur;
+  }
 
   /** Start `queue` from `index`, optionally at a position (hand-off from the normal player).
    *  Loads the current track on the live deck and preloads the next on the idle deck. */
@@ -84,7 +99,7 @@ export class AutoDjController {
     this.engine.a.play();
     log('started', { idx: this.index, dur: this.engine.a.durationS.toFixed(1), n: queue.length });
     this.emitTrack();
-    this.computeGrid('a', t.id);
+    this.computeAnalysis('a', t.id);
     this.preloadNext();
     this.startTick();
   }
@@ -107,15 +122,16 @@ export class AutoDjController {
     const liveDeck = this.engine.deck(this.live);
     const dur = liveDeck.durationS;
     if (dur <= 0) return;
-    const remaining = dur - liveDeck.position();
+    const pos = liveDeck.position();
     const hasNext = this.index + 1 < this.queue.length;
-    if (!hasNext) { if (remaining <= 0.2) this.stop(); return; }
-    if (this.preloadedIdx === this.index + 1) {
-      const outId = this.queue[this.index]?.id;
-      const estBlend = this.estimateBlendS(outId ? this.grids.get(outId) : undefined);
-      if (remaining <= estBlend && remaining > 1) { this.beginTransition(); return; }
+    if (!hasNext) { if (dur - pos <= 0.2) this.stop(); return; }
+    const outId = this.queue[this.index]?.id;
+    const remaining = this.effectiveEnd(this.live, outId) - pos; // time to the TRUE audio end
+    if (this.preloadedIdx === this.index + 1 && remaining <= this.estimateBlendS(this.gridOf(outId)) && remaining > 1) {
+      this.beginTransition();
+      return;
     }
-    if (remaining <= 0.4) void this.hardAdvance(); // ending without a ready blend → don't stall
+    if (remaining <= 0.4) void this.hardAdvance(); // at the audio end with no blend ready → don't stall
   }
 
   private beginTransition() {
@@ -124,8 +140,9 @@ export class AutoDjController {
     const incDeck = this.engine.deck(inc);
     const outId = this.queue[this.index]?.id;
     const inId = this.queue[this.index + 1]?.id;
-    const gOut = outId ? this.grids.get(outId) : undefined;
-    const gIn = inId ? this.grids.get(inId) : undefined;
+    const aOut = outId ? this.analysis.get(outId) : undefined;
+    const gOut = aOut?.grid ?? undefined;
+    const gIn = this.gridOf(inId);
 
     this.clearRestore();
     this.transitioning = true;
@@ -162,7 +179,6 @@ export class AutoDjController {
       }
       if (best) {
         incDeck.setTempo(best.ratio); // incoming's REAL bpm now equals the outgoing's
-        // Phase-lock: start the incoming at the same fractional beat position the outgoing is at.
         const periodOut = 60 / gOut.bpm;
         const sinceGrid = liveDeck.position() - gOut.firstBeatS;
         const phaseFrac = ((sinceGrid % periodOut) + periodOut) % periodOut / periodOut;
@@ -176,16 +192,20 @@ export class AutoDjController {
     }
     if (!matched) incDeck.seek(gIn?.firstBeatS ?? 0);
 
-    // Fit the blend inside the remaining runway with a small tail.
-    const remaining = liveDeck.durationS - liveDeck.position();
-    blendS = Math.min(blendS, remaining - 0.3);
+    // Anchor the blend to the outgoing's TRUE audio end, with headroom so the fade is
+    // complete before the song stops (more for cold/abrupt endings).
+    const end = this.effectiveEnd(this.live, outId);
+    const guard = aOut?.abrupt ? AUTO_END_GUARD_ABRUPT_S : AUTO_END_GUARD_S;
+    const runway = end - liveDeck.position() - guard;
+    blendS = Math.min(blendS, runway);
     if (!(blendS > 0.5)) { this.transitioning = false; this.emitMixing(false); void this.hardAdvance(); return; }
 
     incDeck.play();
     this.engine.scheduleMorph(this.live, inc, blendS);
     this.liveStretched = matched;
     log('mixing', {
-      from: this.live, to: inc, blendS: +blendS.toFixed(1), matched,
+      from: this.live, to: inc, blendS: +blendS.toFixed(1), matched, abrupt: !!aOut?.abrupt,
+      end: +end.toFixed(1), dur: +liveDeck.durationS.toFixed(1),
       outBpm: gOut ? +gOut.bpm.toFixed(1) : null, inBpm: gIn ? +gIn.bpm.toFixed(1) : null,
     });
 
@@ -265,7 +285,7 @@ export class AutoDjController {
       d.setTempo(1);
       await d.load(this.queue[this.index].url);
       d.play();
-      this.computeGrid(this.live, this.queue[this.index].id);
+      this.computeAnalysis(this.live, this.queue[this.index].id);
     }
     this.emitTrack();
     this.preloadNext();
@@ -282,23 +302,25 @@ export class AutoDjController {
       d.setTempo(1);
       this.preloadedIdx = nextIdx;
       log('preloaded', nextIdx, 'on', idle);
-      this.computeGrid(idle, this.queue[nextIdx].id);
+      this.computeAnalysis(idle, this.queue[nextIdx].id);
     } catch (e) { this.preloadedIdx = -1; log('preload FAILED', nextIdx, e); }
   }
 
-  /** Analyse + cache the beat grid for a loaded deck (once per track id). Synchronous CPU
-   *  (~100ms), run with plenty of headroom before the transition. */
-  private computeGrid(id: DeckId, trackId: string) {
-    if (!trackId || this.grids.has(trackId)) return;
+  /** Analyse + cache a loaded deck's beat grid + true audio end (once per track id).
+   *  Synchronous CPU (~100-200ms), run with plenty of headroom before the transition. */
+  private computeAnalysis(id: DeckId, trackId: string) {
+    if (!trackId || this.analysis.has(trackId)) return;
     try {
-      const g = this.engine.deck(id).beatGrid();
-      if (g) {
-        this.grids.set(trackId, g);
-        log('grid', { bpm: +g.bpm.toFixed(1), conf: +g.confidence.toFixed(2), firstBeat: +g.firstBeatS.toFixed(2) });
-      } else {
-        log('grid: none');
+      const a = this.engine.deck(id).analyze();
+      if (a) {
+        this.analysis.set(trackId, a);
+        log('analysis', {
+          bpm: a.grid ? +a.grid.bpm.toFixed(1) : null,
+          conf: a.grid ? +a.grid.confidence.toFixed(2) : null,
+          endS: +a.endS.toFixed(1), abrupt: a.abrupt,
+        });
       }
-    } catch (e) { log('grid FAILED', e); }
+    } catch (e) { log('analysis FAILED', e); }
   }
 
   /** Manual skip — instant hard-cut (no mix). Mid-blend, finish the blend immediately. */

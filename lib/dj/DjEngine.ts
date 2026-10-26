@@ -22,7 +22,7 @@ import {
   type BiquadFilterNode,
 } from 'react-native-audio-api';
 import { TEMPO_MIN, TEMPO_MAX, AUTO_MID_DUCK, AUTO_HIGH_DUCK, type EqBand, type DeckId } from './constants';
-import { analyzeBeatGrid, type BeatGrid } from './beatGrid';
+import { analyzeBeatGrid, analyzeEnding, type BeatGrid } from './beatGrid';
 
 // EQ knob travel: full kill at the bottom, a modest boost at the top (DJ mixers
 // boost less than they cut — a +6 is already loud, a -26 is effectively "off").
@@ -242,12 +242,16 @@ export class Deck {
     }
   }
 
-  /** Estimate this track's beat grid (BPM + phase) from the decoded buffer, or null. */
-  beatGrid(): BeatGrid | null {
+  /** Analyse this track once: beat grid (BPM + phase) AND where its audio truly ends
+   *  (trailing silence trimmed) + whether that end is abrupt. Null if nothing loaded. */
+  analyze(): { grid: BeatGrid | null; endS: number; abrupt: boolean } | null {
     if (!this.buffer) return null;
     try {
+      const data = this.buffer.getChannelData(0);
       const sr = (this.buffer as unknown as { sampleRate?: number }).sampleRate ?? this.ctx.sampleRate;
-      return analyzeBeatGrid(this.buffer.getChannelData(0), sr);
+      const grid = analyzeBeatGrid(data, sr);
+      const { endS, abrupt } = analyzeEnding(data, sr);
+      return { grid, endS: endS > 0 ? Math.min(endS, this.durationS) : this.durationS, abrupt };
     } catch {
       return null;
     }

@@ -18,6 +18,10 @@ export const AUTO_BLEND_MAX_S = 16;           // or longer than this
 export const AUTO_BEAT_MIN_CONFIDENCE = 0.18; // below this, skip beatmatch (fall back to EQ blend)
 export const AUTO_MAX_STRETCH = 0.06;         // only beatmatch within ±6% tempo change (musical + safe)
 export const AUTO_POST_RESTORE_S = 4;         // after the blend, ease the new track back to its natural tempo over this
+// How far before the outgoing track's TRUE audio end the blend finishes (so it's
+// silent before the stop). Abrupt/cold endings get more headroom than tails.
+export const AUTO_END_GUARD_S = 0.15;         // natural/decaying outro
+export const AUTO_END_GUARD_ABRUPT_S = 0.4;   // cold stop — clear it earlier
 // EQ "duck" the incoming starts at (the blend ramps these up to flat). Shared by
 // the controller (pre-duck before play) and the engine (ramp start value).
 export const AUTO_MID_DUCK = -0.6;
