@@ -37,6 +37,8 @@ const HP_MAX_HZ = 9000;   // thinnest highpass
 const clamp =(v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 // Exponential map t∈[0,1] → [from,to] (frequencies feel linear to the ear in log space).
 const expMap = (t: number, from: number, to: number) => from * Math.pow(to / from, clamp(t, 0, 1));
+// EQ knob [-1,1] → dB: <0 scales toward kill, >0 toward boost.
+const eqKnobToDb = (k: number) => (k < 0 ? k * -EQ_KILL_DB : k * EQ_BOOST_DB);
 
 // Down-sample a decoded track into `n` normalized peak bars (0..1) for the waveform.
 // One pass over channel 0 — done once per load, so the O(samples) cost is fine.
@@ -192,10 +194,18 @@ export class Deck {
 
   /** EQ knob in [-1,1]: -1 = full kill, 0 = flat, +1 = full boost. */
   setEq(band: EqBand, knob: number): void {
-    const k = clamp(knob, -1, 1);
     const node = band === 'low' ? this.eqLow : band === 'mid' ? this.eqMid : this.eqHigh;
-    // k<0 scales toward EQ_KILL_DB (negative), k>0 toward EQ_BOOST_DB (positive).
-    node.gain.value = k < 0 ? k * -EQ_KILL_DB : k * EQ_BOOST_DB;
+    node.gain.value = eqKnobToDb(clamp(knob, -1, 1));
+  }
+
+  /** Set the low EQ immediately — used to pre-cut the incoming deck's bass for a swap. */
+  setBassNow(knob: number): void { this.eqLow.gain.value = eqKnobToDb(clamp(knob, -1, 1)); }
+
+  /** Ramp the low EQ to `toKnob` between startT and endT (the auto-mix bass swap). Native,
+   *  so it stays smooth and survives the app backgrounding. */
+  rampBass(toKnob: number, startT: number, endT: number): void {
+    this.eqLow.gain.setValueAtTime(this.eqLow.gain.value, startT);
+    this.eqLow.gain.linearRampToValueAtTime(eqKnobToDb(clamp(toKnob, -1, 1)), endT);
   }
 
   /** Filter knob in [-1,1]: <0 lowpass (darker), >0 highpass (thinner), 0 = open. */
@@ -305,8 +315,37 @@ export class DjEngine {
   /** x in [0,1]: 0 = full deck A, 1 = full deck B, equal-power in between. */
   crossfade(x: number): void {
     const t = clamp(x, 0, 1);
+    this.a.crossGain.gain.cancelScheduledValues(this.ctx.currentTime);
+    this.b.crossGain.gain.cancelScheduledValues(this.ctx.currentTime);
     this.a.crossGain.gain.value = Math.cos(t * Math.PI / 2);
     this.b.crossGain.gain.value = Math.cos((1 - t) * Math.PI / 2);
+  }
+
+  /** Schedule a native equal-power crossfade + bass-swap from one deck to the other over
+   *  `durationS`, starting now. The audio thread runs the ramps (smooth + survives the app
+   *  backgrounding). The incoming deck must already be PLAYING when this is called. */
+  scheduleTransition(fromId: DeckId, toId: DeckId, durationS: number): void {
+    const t0 = this.ctx.currentTime;
+    const t1 = t0 + durationS;
+    const from = this.deck(fromId);
+    const to = this.deck(toId);
+    const N = 64;
+    const outCurve = new Float32Array(N);
+    const inCurve = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const x = i / (N - 1);
+      outCurve[i] = Math.cos((x * Math.PI) / 2);       // 1 → 0
+      inCurve[i] = Math.cos(((1 - x) * Math.PI) / 2);  // 0 → 1
+    }
+    from.crossGain.gain.cancelScheduledValues(t0);
+    to.crossGain.gain.cancelScheduledValues(t0);
+    from.crossGain.gain.setValueCurveAtTime(outCurve, t0, durationS);
+    to.crossGain.gain.setValueCurveAtTime(inCurve, t0, durationS);
+    // Only one track owns the sub during the overlap: outgoing bass drops out, incoming's
+    // comes in (it starts pre-cut).
+    to.setBassNow(-1);
+    from.rampBass(-1, t0, t1);
+    to.rampBass(0, t0, t1);
   }
 
   setMasterVolume(v: number): void { this.master.gain.value = clamp(v, 0, 1); }
