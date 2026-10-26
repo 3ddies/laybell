@@ -29,7 +29,6 @@ function ensure(): AutoDjController | null {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod = require('./DjEngine') as typeof import('./DjEngine');
     engine = new mod.DjEngine();
-    engine.init();
     controller = new AutoDjController(engine);
     controller.setListener({
       onTrack: (track, index) => set({ track, index }),
@@ -52,13 +51,26 @@ export async function startAutoDj(
   opts: { pauseMusic?: () => void; handBack?: (remaining: AutoDjTrack[]) => void } = {},
 ): Promise<boolean> {
   const c = ensure();
-  if (!c) return false;
-  queue = tracks;
-  onHandBack = opts.handBack ?? null;
-  try { opts.pauseMusic?.(); } catch {}
-  await c.start(tracks, index, 0);
-  set({ active: true });
-  return true;
+  if (!c || !engine) return false;
+  try {
+    await engine.init();                    // resume the context + claim the session BEFORE playback
+    queue = tracks;
+    onHandBack = opts.handBack ?? null;
+    try { opts.pauseMusic?.(); } catch {}
+    await c.start(tracks, index, 0);
+    set({ active: true });
+    return true;
+  } catch (e) {
+    // Anything failed (decode, session) → tear down so the caller falls back to the normal
+    // player; Listen Mode must always start a song.
+    if (__DEV__) console.log('[auto-dj] start failed → falling back to the normal player', e);
+    try { c.stop(); } catch {}
+    try { void engine?.dispose(); } catch {}
+    engine = null;
+    controller = null;
+    set({ active: false, mixing: false, track: null });
+    return false;
+  }
 }
 
 /** Stop Auto-DJ and tear the engine down (releases the audio session). When `handBack` is
