@@ -65,6 +65,11 @@ export default memo(function DjDeck({ deck, color, track, peaks, loading, waveWi
     if (!wasSet) { const next = [...cues]; next[i] = true; setCues(next); }
     else setPlaying(deck.isPlaying);
   };
+  const clearCue = (i: number) => {
+    if (!cues[i]) return;
+    deck.cues[i] = null; // long-press removes a cue so it can be re-dropped
+    const next = [...cues]; next[i] = false; setCues(next);
+  };
 
   return (
     <View style={[styles.deck, { borderColor: color + '55' }]}>
@@ -102,12 +107,23 @@ export default memo(function DjDeck({ deck, color, track, peaks, loading, waveWi
         <Pressable style={[styles.tBtn, loopOn && { backgroundColor: color }]} onPress={toggleLoop}>
           <Ionicons name="repeat" size={17} color={loopOn ? '#101013' : '#fff'} />
         </Pressable>
-        <View style={styles.cues}>
-          {[0, 1, 2, 3].map((i) => (
-            <Pressable key={i} style={[styles.cue, cues[i] && { backgroundColor: color, borderColor: color }]} onPress={() => cuePad(i)}>
-              <Text style={[styles.cueTxt, cues[i] && { color: '#101013' }]}>{i + 1}</Text>
-            </Pressable>
-          ))}
+        <View style={styles.cuesCol}>
+          <Text style={styles.cuesLabel}>CUES</Text>
+          <View style={styles.cues}>
+            {[0, 1, 2, 3].map((i) => (
+              <Pressable
+                key={i}
+                style={[styles.cue, cues[i] && { backgroundColor: color, borderColor: color }]}
+                onPress={() => cuePad(i)}
+                onLongPress={() => clearCue(i)}
+                delayLongPress={350}
+              >
+                {cues[i]
+                  ? <Text style={[styles.cueTxt, { color: '#101013' }]}>{i + 1}</Text>
+                  : <Ionicons name="add" size={18} color="#6F6F79" />}
+              </Pressable>
+            ))}
+          </View>
         </View>
       </View>
     </View>
@@ -126,7 +142,9 @@ const styles = StyleSheet.create({
   transport: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   tBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#242429', alignItems: 'center', justifyContent: 'center' },
   playBtn: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
-  cues: { flexDirection: 'row', gap: 6, marginLeft: 'auto' },
+  cuesCol: { marginLeft: 'auto', alignItems: 'center', gap: 4 },
+  cuesLabel: { color: '#6F6F79', fontSize: 9, fontWeight: '800', letterSpacing: 1.5 },
+  cues: { flexDirection: 'row', gap: 6 },
   cue: { width: 38, height: 44, borderRadius: 8, borderWidth: 1.5, borderColor: '#2E2E34', backgroundColor: '#1A1A1D', alignItems: 'center', justifyContent: 'center' },
   cueTxt: { color: '#8A8A92', fontSize: 14, fontWeight: '800' },
 });

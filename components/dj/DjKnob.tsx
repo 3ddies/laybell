@@ -4,9 +4,9 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
 
 // A DJ knob you control by dragging UP/DOWN (not twisting — far easier on a phone,
-// per docs/DJ_BOOTH_SPEC.md §6). The dial is just the readout. Double-tap resets to
-// `resetTo`. Drives the engine imperatively via onChange, so the audio graph never
-// waits on a React render.
+// per docs/DJ_BOOTH_SPEC.md §6). The dial is just the readout. A single TAP (no drag)
+// snaps it back to `resetTo`. Drives the engine imperatively via onChange, so the audio
+// graph never waits on a React render.
 type Props = {
   label?: string;
   min?: number;
@@ -39,11 +39,13 @@ export default memo(function DjKnob({
       value.value = v;
       runOnJS(emit)(v);
     });
-  const doubleTap = Gesture.Tap().numberOfTaps(2).onEnd(() => {
+  // A clean tap (no movement) resets; any drag beats the tap, so adjusting never
+  // accidentally snaps to default.
+  const tap = Gesture.Tap().onEnd(() => {
     value.value = resetTo;
     runOnJS(emit)(resetTo);
   });
-  const gesture = Gesture.Exclusive(doubleTap, pan);
+  const gesture = Gesture.Exclusive(tap, pan);
 
   const dialStyle = useAnimatedStyle(() => {
     const t = (value.value - min) / (max - min); // 0..1
