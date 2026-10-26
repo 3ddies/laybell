@@ -116,37 +116,54 @@ export function analyzeBeatGrid(samples: Float32Array, sampleRate: number): Beat
 }
 
 // ── Song ending analysis ─────────────────────────────────────────────────────
-// Where a track's audio TRULY ends (trailing digital silence trimmed) and whether
-// that ending is abrupt (still loud at the stop — a cold ending with no outro, vs.
-// a decaying tail). The Auto-DJ controller anchors the blend to this so the
-// outgoing song is faded out by the time it actually stops — no snap-off.
-const END_SILENCE_PEAK = 0.012;   // |sample| below this ≈ silence
-const END_WINDOW_S = 0.4;         // window before the end we judge loudness over
-const END_ABRUPT_FRACTION = 0.5;  // final window this loud (vs track peak) = abrupt
+// Where a track's MUSIC truly ends — the last moment it's actually loud — not just
+// where digital silence begins. Many tracks keep a quiet reverb/ambience tail above
+// a silence floor after the loud part has already cold-stopped; anchoring the blend
+// to that tail lets the loud part snap off mid-fade. So we detect the end by ENERGY
+// relative to the track's own loudness, which trims both silence and quiet tails and
+// lands on a cold stop. `abrupt` = still loud right at that end (needs more fade
+// headroom to mask the cut) vs. a decaying outro.
+const END_HOP = 1024;
+const END_LOUD_PERCENTILE = 0.75;  // "typical loud" reference = this percentile of frame energy
+const END_PRESENT_FRACTION = 0.12; // music is "present" above this fraction of the loud reference (energy)
+const END_ABRUPT_FRACTION = 0.5;   // still this loud just before the end (energy) = abrupt/cold stop
+const END_ABRUPT_WINDOW_S = 0.3;
 
 export function analyzeEnding(samples: Float32Array, sampleRate: number): { endS: number; abrupt: boolean } {
   const n = samples?.length ?? 0;
   if (!n || !sampleRate) return { endS: 0, abrupt: false };
+  const durS = n / sampleRate;
 
-  let peak = 0;
-  for (let i = 0; i < n; i += 4) { const a = Math.abs(samples[i]); if (a > peak) peak = a; }
-  if (peak <= 0) return { endS: n / sampleRate, abrupt: false };
+  const nFrames = Math.floor(n / END_HOP);
+  if (nFrames < 8) return { endS: durS, abrupt: false };
 
-  const thresh = Math.max(END_SILENCE_PEAK, peak * 0.015);
-  const H = 1024;
-  let endSample = n;
-  for (let end = n; end > H; end -= H) {
-    const s = end - H;
-    let m = 0;
-    for (let i = s; i < end; i++) { const a = Math.abs(samples[i]); if (a > m) { m = a; if (m >= thresh) break; } }
-    if (m >= thresh) { endSample = end; break; }
+  // Frame energy over the WHOLE track (the end can be anywhere).
+  const energy = new Float32Array(nFrames);
+  for (let f = 0; f < nFrames; f++) {
+    const s = f * END_HOP;
+    const e = s + END_HOP;
+    let sum = 0;
+    for (let i = s; i < e; i++) { const v = samples[i]; sum += v * v; }
+    energy[f] = sum / END_HOP;
   }
 
-  // Loud right up to the stop → abrupt (needs more fade headroom to mask the cut).
-  const w = Math.min(endSample, Math.floor(END_WINDOW_S * sampleRate));
-  let winPeak = 0;
-  for (let i = endSample - w; i < endSample; i++) { const a = Math.abs(samples[i]); if (a > winPeak) winPeak = a; }
-  const abrupt = winPeak >= peak * END_ABRUPT_FRACTION;
+  // Robust "typical loud" reference = a high percentile of frame energy.
+  const sorted = Float32Array.from(energy);
+  sorted.sort();
+  const ref = sorted[Math.min(nFrames - 1, Math.floor(nFrames * END_LOUD_PERCENTILE))] || sorted[nFrames - 1] || 0;
+  if (ref <= 0) return { endS: durS, abrupt: false };
 
-  return { endS: endSample / sampleRate, abrupt };
+  // Last frame where music is still present (energy above a fraction of the loud ref).
+  const presentThresh = ref * END_PRESENT_FRACTION;
+  let endFrame = nFrames - 1;
+  for (let f = nFrames - 1; f >= 0; f--) { if (energy[f] >= presentThresh) { endFrame = f; break; } }
+  const endS = Math.min(durS, ((endFrame + 1) * END_HOP) / sampleRate);
+
+  // Abrupt if it's still loud in the last ~0.3s before that end (cold stop, no taper).
+  const abruptThresh = ref * END_ABRUPT_FRACTION;
+  const look = Math.max(1, Math.round((END_ABRUPT_WINDOW_S * sampleRate) / END_HOP));
+  let abrupt = false;
+  for (let f = Math.max(0, endFrame - look); f <= endFrame; f++) { if (energy[f] >= abruptThresh) { abrupt = true; break; } }
+
+  return { endS, abrupt };
 }
