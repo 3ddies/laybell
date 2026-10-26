@@ -23,6 +23,10 @@ export default function DjBoothScreen() {
   const music = usePostMusicActions();
   const engineRef = useRef<DjEngine | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+  // The engine lives in a ref (imperative, no re-render on its internals), but we need
+  // ONE render once it exists — a ref assignment doesn't trigger that, which left the
+  // decks gated on a null ref and the screen blank. This flag flips them on.
+  const [ready, setReady] = useState(false);
 
   const [trackA, setTrackA] = useState<Track>(null);
   const [trackB, setTrackB] = useState<Track>(null);
@@ -44,6 +48,7 @@ export default function DjBoothScreen() {
       const mod = require('../lib/dj/DjEngine') as typeof import('../lib/dj/DjEngine');
       engine = new mod.DjEngine();
       engineRef.current = engine;
+      setReady(true);
     } catch {
       setUnavailable(true);
       return;
@@ -97,7 +102,7 @@ export default function DjBoothScreen() {
     <SafeAreaView style={styles.container}>
       <Header onBack={() => { router.back(); }} />
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {engineRef.current && (
+        {ready && engineRef.current && (
           <>
             <DjDeck
               deck={engineRef.current.a}
