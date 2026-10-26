@@ -48,7 +48,8 @@ const eqKnobToDb = (k: number) => (k < 0 ? k * -EQ_KILL_DB : k * EQ_BOOST_DB);
 const MORPH = {
   // completeFrac: the whole hand-off (volume + EQ) finishes by this fraction of the blend;
   // the outgoing is then SILENT for the rest, so a loud/abrupt ending can't snap through.
-  completeFrac: 0.72,
+  // (Energy-end anchoring does the main abrupt-cut work; this is the safety margin.)
+  completeFrac: 0.8,
   bassOutStart: 0.35, bassOutEnd: 0.52, // outgoing low: flat → kill
   bassInStart: 0.48, bassInEnd: 0.66,   // incoming low: kill → flat (just after)
   midInEnd: 0.55,  midOutStart: 0.45,   // incoming mid rises over [0,.55]; outgoing falls over [.45,1]

@@ -30,7 +30,8 @@ import {
   AUTO_BLEND_MAX_S,
   AUTO_BEAT_MIN_CONFIDENCE,
   AUTO_MAX_STRETCH,
-  AUTO_POST_RESTORE_S,
+  AUTO_MATCH_HOLD_FRAC,
+  AUTO_MATCH_GLIDE_END_FRAC,
   AUTO_END_GUARD_S,
   AUTO_END_GUARD_ABRUPT_S,
   AUTO_MID_DUCK,
@@ -62,7 +63,6 @@ export class AutoDjController {
   private tick: ReturnType<typeof setInterval> | null = null;
   private promoteTimer: ReturnType<typeof setTimeout> | null = null;
   private restoreTimer: ReturnType<typeof setInterval> | null = null;
-  private liveStretched = false;        // the soon-to-be-live deck was tempo-stretched
   private paused = false;
   private listener: Listener = {};
 
@@ -204,7 +204,7 @@ export class AutoDjController {
 
     incDeck.play();
     this.engine.scheduleMorph(this.live, inc, blendS);
-    this.liveStretched = matched;
+    if (matched && matchRatio) this.startMatchGlide(inc, matchRatio, blendS);
     log('mixing', {
       track: this.queue[this.index]?.title ?? '?',
       from: this.live, to: inc, blendS: +blendS.toFixed(1), matched,
@@ -234,8 +234,9 @@ export class AutoDjController {
     liveDeck.resetEqNow();     // the ramps brought it to flat; make sure + cancel schedules
     this.engine.crossfade(this.live === 'a' ? 0 : 1);
 
-    if (this.liveStretched && Math.abs(liveDeck.tempoRate - 1) > 0.001) this.startTempoRestore(this.live);
-    this.liveStretched = false;
+    // The match-glide already eased it back to natural during the blend; make sure it's exact.
+    this.clearRestore();
+    liveDeck.setTempo(1);
 
     this.transitioning = false;
     this.emitMixing(false);
@@ -244,19 +245,24 @@ export class AutoDjController {
     this.preloadNext();
   }
 
-  /** After a beatmatched blend, ease the (now live) deck from its stretched tempo back to 1.0. */
-  private startTempoRestore(id: DeckId) {
+  /** During a beatmatched blend: hold the locked tempo while both songs are prominent, then ease
+   *  the incoming back to its NATURAL tempo over the latter part — while the outgoing is fading, so
+   *  the pitch change is masked. No exposed post-blend slide, and the new track plays at its own
+   *  pitch once it's solo. */
+  private startMatchGlide(id: DeckId, fromRatio: number, blendS: number) {
     this.clearRestore();
+    if (Math.abs(fromRatio - 1) < 0.001) return;
     const deck = this.engine.deck(id);
-    const from = deck.tempoRate;
-    if (Math.abs(from - 1) < 0.001) return;
-    const steps = 24;
-    let i = 0;
+    const t0 = Date.now();
+    const holdS = AUTO_MATCH_HOLD_FRAC * blendS;
+    const glideS = Math.max(0.1, (AUTO_MATCH_GLIDE_END_FRAC - AUTO_MATCH_HOLD_FRAC) * blendS);
     this.restoreTimer = setInterval(() => {
-      i++;
-      deck.setTempo(from + (1 - from) * (i / steps));
-      if (i >= steps) { deck.setTempo(1); this.clearRestore(); }
-    }, (AUTO_POST_RESTORE_S * 1000) / steps);
+      const el = (Date.now() - t0) / 1000;
+      if (el < holdS) return;                              // hold the lock during the prominent overlap
+      const p = Math.min(1, (el - holdS) / glideS);
+      deck.setTempo(fromRatio + (1 - fromRatio) * p);      // ease to natural as the outgoing fades out
+      if (p >= 1) { deck.setTempo(1); this.clearRestore(); }
+    }, 80);
   }
 
   /** The track ended before a blend was ready — advance now (instant via the preloaded deck,

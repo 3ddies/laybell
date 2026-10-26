@@ -11,13 +11,17 @@ export const TEMPO_MAX = 1.08;
 
 // ── Auto-DJ transition tuning (Listen Mode) ──────────────────────────────────
 // These shape the "radio morph". Tune by ear over Metro — no rebuild needed.
-export const AUTO_BLEND_BEATS = 16;           // beatmatched blend length, in beats of the OUTGOING track
-export const AUTO_BLEND_DEFAULT_S = 12;       // blend length when we can't read the beat grid
-export const AUTO_BLEND_MIN_S = 5;            // never blend shorter than this
-export const AUTO_BLEND_MAX_S = 16;           // or longer than this
+export const AUTO_BLEND_BEATS = 24;           // beatmatched blend length, in beats of the OUTGOING track (long = "felt")
+export const AUTO_BLEND_DEFAULT_S = 14;       // blend length when we can't read the beat grid
+export const AUTO_BLEND_MIN_S = 6;            // never blend shorter than this
+export const AUTO_BLEND_MAX_S = 20;           // or longer than this
 export const AUTO_BEAT_MIN_CONFIDENCE = 0.18; // below this, skip beatmatch (fall back to EQ blend)
 export const AUTO_MAX_STRETCH = 0.08;         // only beatmatch within ±8% tempo change (musical + safe)
-export const AUTO_POST_RESTORE_S = 4;         // after the blend, ease the new track back to its natural tempo over this
+// A beatmatched incoming holds the locked tempo for the first part of the blend, then eases back
+// to its natural tempo over the latter part — WHILE the outgoing is fading, so the pitch change is
+// masked (no exposed post-blend slide) and the new track ends up at its own pitch when solo.
+export const AUTO_MATCH_HOLD_FRAC = 0.5;      // hold the lock for this fraction of the blend
+export const AUTO_MATCH_GLIDE_END_FRAC = 0.82; // reach natural tempo by this fraction (as the outgoing goes silent)
 // How far before the outgoing track's TRUE audio end the blend finishes (so it's
 // silent before the stop). Abrupt/cold endings get more headroom than tails.
 export const AUTO_END_GUARD_S = 0.4;          // natural/decaying outro
