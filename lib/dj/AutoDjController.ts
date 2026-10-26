@@ -10,7 +10,7 @@
 import type { DjEngine } from './DjEngine';
 import type { DeckId } from './constants';
 
-export type AutoDjTrack = { id: string; title: string; artist: string; url: string };
+export type AutoDjTrack = { id: string; title: string; artist: string; url: string; cover?: string | null };
 
 type Listener = {
   onTrack?: (track: AutoDjTrack | null, index: number) => void;
