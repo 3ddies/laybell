@@ -604,6 +604,22 @@ export default function NowPlaying() {
   return (
     <Animated.View style={[StyleSheet.absoluteFill, styles.layer, { opacity: fade, transform: [{ translateY: sheetY }, { scale }] }]}>
       <LinearGradient colors={sheetGradient} locations={sheetLocations as any} style={styles.container}>
+        {/* Artwork-tinted background: the cover, blurred, picks up the song's own colors at the top
+            and fades into the theme background so the controls + comments below stay legible. Falls
+            back to the plain themed gradient when there's no art. pointerEvents none → the drag-to-
+            close and all controls keep working. */}
+        {!adState && track?.cover ? (
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <ExpoImage source={{ uri: track.cover }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" blurRadius={70} transition={400} />
+            <LinearGradient
+              colors={mode === 'light'
+                ? ['rgba(255,255,255,0.35)', 'rgba(255,255,255,0.80)', 'rgba(255,255,255,0.96)']
+                : ['rgba(0,0,0,0.35)', 'rgba(0,0,0,0.80)', 'rgba(0,0,0,0.96)']}
+              locations={[0, 0.5, 0.8]}
+              style={StyleSheet.absoluteFill}
+            />
+          </View>
+        ) : null}
         {/* Top drag zone — swipe down to close (native gesture: activates on a
             6px downward move; clearly horizontal or upward moves fail fast so
             the header buttons stay tappable). */}
