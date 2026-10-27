@@ -17,7 +17,7 @@ import { supabase } from '../../lib/supabase';
 import { tabTick } from '../../lib/haptics';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { useNowPlaying, useAudioControls } from '../../contexts/AudioContext';
-import { useAutoDj, startAutoDj, stopAutoDj, skipAutoDj, isAutoDjActive } from '../../lib/dj/autoDjStore';
+import { useAutoDj, startAutoDj, stopAutoDj, skipAutoDj, isAutoDjActive, autoDjPosition } from '../../lib/dj/autoDjStore';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
@@ -114,12 +114,10 @@ export default function MusicScreen() {
   // NOT `playingId` above, which goes null on pause.
   const { id: loadedTrackId } = useNowPlaying();
   const { playQueue, expand, pause } = useAudioControls();
-  // Auto-DJ (Listen Mode): default on. `autoMixRef` so startListenMix (called from an
-  // effect) reads the current choice without being in its deps.
+  // Auto-DJ (Listen Mode): always on — entering Listen mode routes the mix through the DJ engine
+  // so songs blend into each other. No toggle; it "just happens".
   const autoDj = useAutoDj();
-  const [autoMix, setAutoMix] = useState(true);
-  const autoMixRef = useRef(true);
-  autoMixRef.current = autoMix;
+  const [autoPos, setAutoPos] = useState({ pos: 0, dur: 0 });
   const [savedTracks, setSavedTracks] = useState<any[]>([]);
   const [playlistModalPostId, setPlaylistModalPostId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'discover' | 'playlists' | 'saved' | 'liked' | 'community'>('discover');
@@ -889,6 +887,14 @@ export default function MusicScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listenMode]);
 
+  // Drive the Listen-mode now-playing card's progress off the engine while Auto-DJ is active.
+  useEffect(() => {
+    if (!(listenMode && autoDj.active)) return;
+    setAutoPos(autoDjPosition());
+    const t = setInterval(() => setAutoPos(autoDjPosition()), 500);
+    return () => clearInterval(t);
+  }, [listenMode, autoDj.active]);
+
   async function startListenMix() {
     try {
       const { data } = await supabase
@@ -919,33 +925,20 @@ export default function MusicScreen() {
         id: t.id, uri: t.media_url, caption: t.caption,
         artist: t.profiles?.display_name ?? '', cover: t.cover_url,
       }));
-      if (autoMixRef.current) {
-        // Route the Listen mix through the Auto-DJ engine (two-deck crossfades on play-out).
-        const ok = await startAutoDj(
-          tracks.map((t) => ({ id: t.id, title: t.caption || 'Track', artist: t.artist, url: t.uri, cover: t.cover })),
-          0,
-          {
-            pauseMusic: pause,
-            // Turning Auto-mix off hands the rest of the queue back to the normal player.
-            handBack: (rem) => playQueue(rem.map((r) => ({ id: r.id, uri: r.url, caption: r.title, artist: r.artist, cover: r.cover })), 0),
-          },
-        );
-        if (ok) return; // the engine took over
-        // else (engine not in this build) → fall through to the normal player
-      }
-      playQueue(tracks, 0);
+      // Route the Listen mix through the Auto-DJ engine (two-deck crossfades + FX on play-out). If
+      // the native engine isn't in this build, fall back to the normal queued player.
+      const ok = await startAutoDj(
+        tracks.map((t) => ({ id: t.id, title: t.caption || 'Track', artist: t.artist, url: t.uri, cover: t.cover })),
+        0,
+        {
+          pauseMusic: pause,
+          // If Auto-DJ is torn down (e.g. leaving Listen mode), hand the rest to the normal player.
+          handBack: (rem) => playQueue(rem.map((r) => ({ id: r.id, uri: r.url, caption: r.title, artist: r.artist, cover: r.cover })), 0),
+        },
+      );
+      if (ok) return; // the engine took over
+      playQueue(tracks, 0); // engine not in this build → normal player
     } catch {}
-  }
-
-  // Flip Auto-mix. In Listen Mode it applies right away: on → (re)start the mix through the
-  // engine; off → hand the rest back to the normal player. Otherwise it applies next mix.
-  function toggleAutoMix() {
-    const next = !autoMix;
-    setAutoMix(next);
-    autoMixRef.current = next;
-    if (!listenModeRef.current) return;
-    if (next) startListenMix();
-    else if (isAutoDjActive()) stopAutoDj(true);
   }
 
   async function fetchForYouTracks() {
@@ -1191,22 +1184,6 @@ export default function MusicScreen() {
           >
             <Ionicons name="disc" size={22} color={colors.text} />
           </TouchableOpacity>
-          {/* Auto-mix (Listen Mode): route the mix through the DJ engine so songs
-              crossfade into each other on play-out (lib/dj/autoDjStore). */}
-          {listenMode && (
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Auto-mix"
-              onPress={toggleAutoMix}
-              style={[
-                { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1.5, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5 },
-                autoMix && { backgroundColor: colors.primary, borderColor: colors.primary },
-              ]}
-            >
-              <Ionicons name="sparkles" size={13} color={autoMix ? '#fff' : colors.textSecondary} />
-              <Text style={{ fontSize: 12, fontWeight: '800', color: autoMix ? '#fff' : colors.textSecondary }}>Auto-mix</Text>
-            </TouchableOpacity>
-          )}
           {/* Listen mode. Fades the tab bar away, locks tab swiping and silences
               notifications for distraction-free listening; tap again to bring
               everything back. The pill owns its own gradient + sheen — see
@@ -1215,18 +1192,26 @@ export default function MusicScreen() {
         </View>
       </View>
 
-      {/* Auto-DJ now-playing + skip, while the engine is driving the Listen mix. */}
+      {/* Now playing (Listen mode): the current Auto-DJ track — songs blend automatically on play-out. */}
       {listenMode && autoDj.active && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginBottom: 8, padding: 10, borderRadius: 12, backgroundColor: colors.surface }}>
-          <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: autoDj.mixing ? colors.primary : colors.textTertiary }} />
-          <View style={{ flex: 1 }}>
-            <Text numberOfLines={1} style={{ color: colors.text, fontSize: 13.5, fontWeight: '700' }}>{autoDj.track?.title ?? 'Auto-mixing…'}</Text>
-            <Text numberOfLines={1} style={{ color: autoDj.mixing ? colors.primary : colors.textSecondary, fontSize: 11.5, fontWeight: '600', marginTop: 1 }}>
-              {autoDj.mixing ? 'Mixing in the next track…' : (autoDj.track?.artist || 'Auto-DJ')}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginBottom: 10, padding: 10, borderRadius: 16, backgroundColor: colors.surface }}>
+          <ExpoImage
+            source={autoDj.track?.cover ? { uri: autoDj.track.cover } : undefined}
+            style={{ width: 52, height: 52, borderRadius: 10, backgroundColor: colors.surfaceLight }}
+            contentFit="cover"
+            transition={150}
+          />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text numberOfLines={1} style={{ color: colors.text, fontSize: 15, fontWeight: '800' }}>{autoDj.track?.title ?? 'Auto-mixing…'}</Text>
+            <Text numberOfLines={1} style={{ color: colors.textSecondary, fontSize: 12.5, fontWeight: '600', marginTop: 1 }}>
+              {autoDj.mixing ? 'Blending in the next track…' : (autoDj.track?.artist || 'Laybell Auto-DJ')}
             </Text>
+            <View style={{ height: 3, borderRadius: 2, backgroundColor: colors.surfaceLight, marginTop: 7, overflow: 'hidden' }}>
+              <View style={{ height: 3, borderRadius: 2, backgroundColor: autoDj.mixing ? colors.primary : colors.text, width: `${autoPos.dur > 0 ? Math.min(100, Math.max(0, (autoPos.pos / autoPos.dur) * 100)) : 0}%` }} />
+            </View>
           </View>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.nextTrack')} onPress={skipAutoDj} hitSlop={8}
-            style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceLight }}>
+            style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceLight }}>
             <Ionicons name="play-skip-forward" size={18} color={colors.text} />
           </TouchableOpacity>
         </View>
