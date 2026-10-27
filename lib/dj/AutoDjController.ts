@@ -36,6 +36,7 @@ import {
   AUTO_MID_DUCK,
   AUTO_HIGH_DUCK,
   AUTO_MATCH_BASS_DUCK,
+  AUTO_EFFECT_CLEAR_MS,
 } from './constants';
 import { type BeatGrid, type EndType, type StartType } from './beatGrid';
 import { planTransition, type TransitionPlan } from './transitionPlan';
@@ -68,11 +69,18 @@ export class AutoDjController {
   private echoDeck: DeckId | null = null;
   private garnishIdx = 0;               // rotates the fallback garnish so plain transitions vary
   private paused = false;
+  private userActedAt = 0;              // wall-clock of the last user scrub/skip — gates opportunistic effects
+  private adGate: (() => boolean) | null = null; // "an ad is due AND eligible" — hold the transition so the break lands clean
   private listener: Listener = {};
 
   constructor(engine: DjEngine) { this.engine = engine; }
 
   setListener(l: Listener) { this.listener = l; }
+  /** Install a predicate that returns true when an audio-ad break is due AND there's eligible
+   *  inventory. While it's true the opportunistic transition is held back so the song plays out to a
+   *  clean hard-advance (the break then fires on that clean boundary — see AudioContext). Owner's
+   *  rule: "let the full song finish without the effect so the ad can play, or when a user skips". */
+  setAdGate(fn: (() => boolean) | null) { this.adGate = fn; }
   get currentIndex() { return this.index; }
   get isMixing() { return this.transitioning; }
   private idle(): DeckId { return this.live === 'a' ? 'b' : 'a'; }
@@ -178,7 +186,19 @@ export class AutoDjController {
     const minPlay = Math.min(AUTO_MIN_PLAY_S, dur * 0.5); // let a track breathe before mixing out (short-track-safe)
     if (this.preloadedIdx === this.index + 1 && pos >= minPlay) {
       const estBlend = this.blendLenFor(this.planFor(outId, inId), this.gridOf(outId)); // recipe-aware trigger
-      if (remaining <= estBlend && remaining > 1) { this.beginTransition(); return; }
+      if (remaining <= estBlend && remaining > 1) {
+        // The effect is opportunistic — it fires only when BOTH are clear:
+        //   • the run-up was untouched (a recent scrub/skip means the user is in control, so don't
+        //     force a possibly-rushed transition), and
+        //   • no ad break is pending with eligible inventory (the owner's rule: let the song finish
+        //     WITHOUT the effect so the break lands on a clean boundary — the ad fires at the
+        //     hard-advance below, or on a manual skip).
+        // When either fails, the track just plays out to the clean hard-advance (the effect
+        // gracefully doesn't happen — it never fights the user or an incoming ad).
+        const userClear = Date.now() - this.userActedAt >= AUTO_EFFECT_CLEAR_MS;
+        const holdForAd = this.adGate?.() ?? false;
+        if (userClear && !holdForAd) { this.beginTransition(); return; }
+      }
     }
     if (remaining <= 0.4) void this.hardAdvance(); // at the audio end with no blend ready → don't stall
   }
@@ -428,9 +448,23 @@ export class AutoDjController {
 
   /** Manual skip — instant hard-cut (no mix). Mid-blend, finish the blend immediately. */
   async skipNext(): Promise<void> {
+    this.userActedAt = Date.now();
     if (this.transitioning) { this.clearPromote(); this.promote(); return; }
     if (this.index + 1 >= this.queue.length) { this.stop(); return; }
     await this.hardAdvance();
+  }
+
+  /** User scrub of the now-playing track. A core control — always available, never swallowed by the
+   *  mix. Marks a user action so an imminent transition won't fight the scrub (see onTick). Ignored
+   *  only mid-blend: a ≤~20s morph is in flight and seeking its outgoing deck would fight scheduled
+   *  ramps — the scrubber frees up again the instant the blend completes. */
+  seek(sec: number): void {
+    if (this.transitioning) return;
+    this.userActedAt = Date.now();
+    const d = this.engine.deck(this.live);
+    const dur = d.durationS;
+    if (dur <= 0) return;
+    d.seek(clampN(sec, 0, Math.max(0, dur - 0.1)));
   }
 
   pause() {

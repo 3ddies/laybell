@@ -753,6 +753,21 @@ export async function pickAudioAd(viewer: AdViewer): Promise<AudioAd | null> {
   return pick;
 }
 
+// Read-only: is there at least one eligible AUDIO ad for this viewer right now? Mirrors pickAudioAd's
+// eligibility exactly (same fetchEligibleCampaigns + 'audio' creative-with-media test) but does NOT
+// rotate or consume a pick — so a caller can PROBE inventory without burning a rotation or serving an
+// impression. Auto-DJ uses it to decide whether to hold an opportunistic transition so a due break
+// lands on a clean song boundary; the real pickAudioAd still runs at that boundary, so a stale false
+// positive just means a plain hard-advance with no ad (graceful), never a wrong charge.
+export async function hasAudioAd(viewer: AdViewer): Promise<boolean> {
+  const campaigns = await fetchEligibleCampaigns(viewer);
+  for (const c of campaigns) {
+    const cr = creativeFor(c, 'audio');
+    if (cr && cr.media_url) return true;
+  }
+  return false;
+}
+
 // ─── Pure injection helpers ───────────────────────────────────────────────────
 
 // Inject feed ads into the already-ranked organic+spotlight list, spaced by

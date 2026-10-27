@@ -2,8 +2,9 @@ import React, { createContext, useContext, useState, useRef, useEffect, useCallb
 import { AppState } from 'react-native';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import TrackPlayer, { Event as TPEvent, State as TPState } from 'react-native-track-player';
-import { ensurePlayerSetup, setRemoteHandlers, setNowPlayingLiked, updateAutoDjNowPlaying } from '../lib/trackPlayerService';
-import { useAutoDj, autoDjPosition, pauseAutoDj, resumeAutoDj, skipAutoDj, stopAutoDj } from '../lib/dj/autoDjStore';
+import { ensurePlayerSetup, setRemoteHandlers, setNowPlayingLiked, updateAutoDjNowPlaying, clearAutoDjNowPlaying } from '../lib/trackPlayerService';
+import { PlaybackNotificationManager } from 'react-native-audio-api';
+import { useAutoDj, autoDjPosition, pauseAutoDj, resumeAutoDj, skipAutoDj, seekAutoDj, stopAutoDj, pauseAutoDjForAd, resumeAutoDjForAd, setAutoDjAdGate, type AutoDjTrack } from '../lib/dj/autoDjStore';
 import { fetchSongLiked, setSongLike, publishSongLike, subscribeSongLike } from '../lib/songLike';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
@@ -16,7 +17,7 @@ import { recordStream as recordStreamDurable } from '../lib/streamOutbox';
 import { meterPlayback, flushMeter } from '../lib/listenMeter';
 import { handoffPositionMs } from '../lib/postSong';
 import {
-  pickAudioAd, recordAdImpression, recordAdComplete, recordAdSkip,
+  pickAudioAd, hasAudioAd, recordAdImpression, recordAdComplete, recordAdSkip,
   firstAudioGateMs, nextAudioGateMs, adSkipAfterMs,
   type AdViewer, type AudioAd,
 } from '../lib/ads';
@@ -31,6 +32,11 @@ const STREAM_WINDOW_MS = 24 * 60 * 60 * 1000;
 // 10 minutes of listen time toward badge progress, no matter how long it's looped.
 // Once a song hits the cap it stops counting until a DIFFERENT song is streamed.
 const BADGE_SONG_CAP_MS = 10 * 60 * 1000;
+
+// How often (at most) the Auto-DJ ad clock re-probes for eligible audio-ad inventory while a break is
+// due. Breaks are minutes apart and campaigns are long-lived, so a slow refresh is plenty; this just
+// keeps the engine tick (every 300ms) from hitting Supabase on every pass.
+const AD_ELIGIBLE_PROBE_MS = 15000;
 
 // expo-audio AudioMode (migrated from the old expo-av keys): play through the iOS
 // silent switch, keep playing in the background, and duck other apps' audio.
@@ -456,6 +462,19 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // One-shot guard: the canSkip unlock is the only per-ad setAdState after start
   // (elapsed/duration ticks flow through the position channel instead).
   const adCanSkipFiredRef = useRef(false);
+  // Live mirrors of Auto-DJ state for the (non-React) ad functions below, which must route the
+  // ad's pause/resume + card to the DJ engine when Listen Mode is driving. Assigned after `dj`.
+  const djActiveRef = useRef(false);
+  const djTrackRef = useRef<AutoDjTrack | null>(null);
+  // Auto-DJ ad clock: last engine position seen (to accrue genuine forward playback) and the last
+  // DJ track id (to fire a due ad only on a real advance, not the initial load).
+  const lastAdPosRef = useRef(0);
+  const prevDjTrackIdRef = useRef<string | null>(null);
+  // Cached "is there eligible audio-ad inventory right now", read SYNCHRONOUSLY by the Auto-DJ
+  // transition gate (pickAudioAd is async + rotates, so it can't be called from the engine tick).
+  // Refreshed by a read-only probe while a break is due; throttled so the tick never spams Supabase.
+  const adEligibleRef = useRef(false);
+  const adProbeAtRef = useRef(0);
 
   // Release an abandoned expo-audio player safely: pause now (sync — stops audio
   // immediately, no overlap) and defer remove() to the next tick, so we never call
@@ -503,7 +522,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       // is waiting on the ad), there's nothing to resume — proceed to the next
       // track. If it was an ad-first song move (the fresh track is loaded but
       // deliberately unstarted), start it now. Otherwise music is mid-play.
-      if (pendingFinishRef.current) maybeRunDeferredFinish();
+      if (djActiveRef.current) resumeAutoDjForAd();     // Listen Mode: unquiet the engine
+      else if (pendingFinishRef.current) maybeRunDeferredFinish();
       else if (mainLoadedRef.current) {
         // Boundary ads only ever pause a song at ~0:00 — restart it cleanly.
         TrackPlayer.seekTo(0).then(() => TrackPlayer.play()).catch(() => {});
@@ -512,7 +532,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     adMetaRef.current = ad;
-    TrackPlayer.pause().catch(() => {});
+    if (djActiveRef.current) pauseAutoDjForAd();         // Listen Mode: quiet the engine for the ad
+    else TrackPlayer.pause().catch(() => {});
     setIsPlaying(false);
     flushBadgeMs();
     try {
@@ -596,7 +617,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     adPlayingRef.current = false;
     // Next break randomized 3-5 min out (first-ever gate stays 1 min).
     adNextThresholdRef.current = adListenMsRef.current + nextAudioGateMs();
-    if (pendingFinishRef.current) {
+    if (djActiveRef.current) {
+      // Listen Mode: resume the live DJ track where the ad interrupted it (~0:00 of the new song)
+      // and repaint the engine's lock-screen card back to the song (the ad had overwritten it).
+      resumeAutoDjForAd();
+      repaintAutoDjCard();
+    } else if (pendingFinishRef.current) {
       // The track ended WHILE the ad played (handleTrackFinished deferred it) —
       // advance/close now instead of resuming a finished track.
       maybeRunDeferredFinish();
@@ -625,13 +651,42 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // elapsedTime so the scrubber advances in step with the ad.
   function pushAdNowPlaying(ad: AudioAd, elapsedMs: number, durMs: number) {
     const sponsored = tg('ad.sponsored');
-    TrackPlayer.updateNowPlayingMetadata({
-      title: (ad.headline && ad.headline.trim()) || ad.advertiserName || sponsored,
-      artist: ad.advertiserName ? `${sponsored} · ${ad.advertiserName}` : sponsored,
-      artwork: ad.cover ?? ad.avatarUrl ?? undefined,
-      duration: durMs > 0 ? durMs / 1000 : undefined,
-      elapsedTime: Math.max(0, elapsedMs / 1000),
-    }).catch(() => {});
+    const title = (ad.headline && ad.headline.trim()) || ad.advertiserName || sponsored;
+    const artist = ad.advertiserName ? `${sponsored} · ${ad.advertiserName}` : sponsored;
+    const artwork = ad.cover ?? ad.avatarUrl ?? undefined;
+    const duration = durMs > 0 ? durMs / 1000 : undefined;
+    const elapsedTime = Math.max(0, elapsedMs / 1000);
+    // Listen Mode: track-player is idle, so paint the ad onto the ENGINE's lock-screen card instead.
+    if (djActiveRef.current) {
+      void updateAutoDjNowPlaying({ title, artist, artwork: artwork ?? null, state: 'playing', duration, elapsedTime });
+      return;
+    }
+    TrackPlayer.updateNowPlayingMetadata({ title, artist, artwork, duration, elapsedTime }).catch(() => {});
+  }
+
+  // Repaint the ENGINE's lock-screen card back to the current Auto-DJ song after a Listen Mode ad
+  // (the ad overwrote the card, and resuming the engine doesn't re-trigger the repaint effect).
+  function repaintAutoDjCard() {
+    const t = djTrackRef.current;
+    if (!t) return;
+    const p = autoDjPosition();
+    void updateAutoDjNowPlaying({
+      title: t.title, artist: t.artist, artwork: t.cover ?? null, state: 'playing',
+      duration: p.dur > 0 ? p.dur : undefined, elapsedTime: p.pos >= 0 ? p.pos : undefined,
+    });
+  }
+
+  // Tear down a Listen Mode ad WITHOUT resuming anything — used when Listen Mode itself is ending,
+  // so the ad sound doesn't orphan. The impression was already recorded at fire; we don't record a
+  // complete/skip (the ad was neither — the user left). Idempotent with stop()'s own ad teardown.
+  function teardownAudioAdSilently() {
+    if (!adPlayingRef.current) return;
+    adPlayingRef.current = false;
+    adMetaRef.current = null;
+    if (adWatchdogRef.current) { clearTimeout(adWatchdogRef.current); adWatchdogRef.current = null; }
+    adStatusSubRef.current?.remove(); adStatusSubRef.current = null;
+    releaseSound(adSoundRef.current); adSoundRef.current = null;
+    setAdState(null);
   }
 
   // Restore the card to the current music track after an ad ends — resuming the
@@ -690,6 +745,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // handlers stable while always calling the latest closures.
   // Auto-DJ (Listen Mode) state — drives the display/control routing below AND the lock screen.
   const dj = useAutoDj();
+  djActiveRef.current = dj.active;   // mirrors for the non-React ad functions above
+  djTrackRef.current = dj.track;
   const remoteRef = useRef({ resume, pause, next, previous, seekTo });
   // Lock-screen / Control Center buttons: route to the DJ engine while it's driving, else the
   // normal track-player path. (resume/pause/seekTo are Promise-returning to match the ref's type.)
@@ -699,7 +756,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         pause: async () => { pauseAutoDj(); },
         next: () => { skipAutoDj(); },
         previous: () => { /* a forward DJ mix has no previous */ },
-        seekTo: async (_ms: number) => { /* seeking a live mix is disabled */ },
+        seekTo: async (ms: number) => { seekAutoDj(ms); },
       }
     : { resume, pause, next, previous, seekTo };
   // Lock-screen heart state for the CURRENT track. Held in a ref, not state:
@@ -1605,37 +1662,141 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // player UIs would otherwise show a stale song. An Auto-DJ track's id IS a real
   // post, so EXPOSE it as the now-playing (the mini-player, the full Spotify view,
   // its comments/likes/cover + artwork colour all become correct) and ROUTE the
-  // transport to the engine. Everything is gated on `dj.active`, so when Auto-DJ is
-  // off the context is byte-identical. (Audio already plays in the background; the lock-screen
-  // buttons are routed above, and the card's metadata is repainted below.)
+  // transport to the engine — scrub and skip included, because they're core controls, never
+  // disabled by the mix (the transition is what yields to the user, not the other way around).
+  // Everything is gated on `dj.active`, so when Auto-DJ is off the context is byte-identical.
+  // (Audio plays in the background; the lock-screen card + its buttons are driven below.)
   const djTrack: Track | null = dj.active && dj.track
     ? { id: dj.track.id, uri: dj.track.url, caption: dj.track.title, artist: dj.track.artist, cover: dj.track.cover ?? null }
     : null;
   const njTrack = djTrack ?? currentTrack;
   const njPlaying = dj.active ? !dj.paused : isPlaying;
-  const njPause = dj.active ? (async () => { pauseAutoDj(); }) : pause;
-  const njResume = dj.active ? (async () => { resumeAutoDj(); }) : resume;
-  const njNext = dj.active ? (() => skipAutoDj()) : next;
+  // During a Listen Mode ad break the transport is locked (mirrors the normal player — controls are
+  // inert under an ad), so a stray press can't play the song UNDER the ad or skip past it. Stop is
+  // never locked (the user can always leave). Skip is debounced in the store.
+  const njPause = dj.active ? (async () => { if (adPlayingRef.current) return; pauseAutoDj(); }) : pause;
+  const njResume = dj.active ? (async () => { if (adPlayingRef.current) return; resumeAutoDj(); }) : resume;
+  const njNext = dj.active ? (() => { if (adPlayingRef.current) return; skipAutoDj(); }) : next;
   const njPrevious = dj.active ? (() => { /* a forward DJ mix has no "previous" */ }) : previous;
-  const njSeek = dj.active ? (async () => { /* seeking a live mix is disabled */ }) : seekTo;
+  const njSeek = dj.active
+    ? (async (ms: number) => {
+        if (adPlayingRef.current) return;
+        seekAutoDj(ms);
+        // Re-anchor the lock-screen scrubber to the new spot (iOS extrapolates from the last push,
+        // so an in-app scrub would otherwise leave it stale until the next track change).
+        if (dj.track) {
+          const p = autoDjPosition();
+          void updateAutoDjNowPlaying({
+            title: dj.track.title, artist: dj.track.artist, artwork: dj.track.cover,
+            state: dj.paused ? 'paused' : 'playing',
+            duration: p.dur > 0 ? p.dur : undefined,
+            elapsedTime: Math.max(0, ms / 1000),
+          });
+        }
+      })
+    : seekTo;
   const njStop = dj.active ? (async () => { stopAutoDj(); await stop(); }) : stop;
 
-  // Auto-DJ position → the scrubber / time labels (the paused track-player emits none).
+  // Auto-DJ position → the scrubber / time labels (the paused track-player emits none) AND the
+  // audio-ad clock (the normal clock lives in track-player's progress handler, which is silent
+  // during Listen Mode). Both pause while an ad plays — the ad owns the position channel then.
   useEffect(() => {
-    if (!dj.active) return;
-    const tick = () => { const p = autoDjPosition(); emitPosition(Math.round(p.pos * 1000), Math.round(p.dur * 1000)); };
+    if (!dj.active) { lastAdPosRef.current = 0; return; }
+    const tick = () => {
+      const p = autoDjPosition();
+      if (!adPlayingRef.current) emitPosition(Math.round(p.pos * 1000), Math.round(p.dur * 1000));
+      // Accrue GENUINE forward playback only: a seek or track change makes the delta negative or
+      // large, and a pause/ad makes it ~0 — all excluded, so the gate matches the normal clock.
+      const delta = p.pos - lastAdPosRef.current;
+      lastAdPosRef.current = p.pos;
+      if (delta > 0 && delta < 1 && !adPlayingRef.current) {
+        adListenMsRef.current += delta * 1000;
+        if (adListenMsRef.current >= adNextThresholdRef.current) adDueRef.current = true;
+      }
+      // Once a break is due, keep the "eligible inventory?" flag fresh (throttled) so the controller's
+      // transition gate can read it synchronously. The first due tick probes immediately (probeAt
+      // starts at 0); breaks are minutes apart, so by a song's end this is well-settled. With no
+      // inventory it just stays false → the gate never holds a transition → identical to no-ads.
+      if (adDueRef.current && !adPlayingRef.current && Date.now() - adProbeAtRef.current > AD_ELIGIBLE_PROBE_MS) {
+        adProbeAtRef.current = Date.now();
+        const viewer = adViewerRef.current ?? { id: uidRef.current, profile: null, affinity: EMPTY_PROFILE };
+        hasAudioAd(viewer).then((ok) => { adEligibleRef.current = ok; }).catch(() => {});
+      }
+    };
     tick();
     const id = setInterval(tick, 300);
     return () => clearInterval(id);
   }, [dj.active]);
 
-  // Repaint the lock-screen / Control Center card to the current Auto-DJ track (metadata only; the
-  // engine owns the audio). No-op when there's no card up.
+  // Paint the lock-screen / Control Center card to the current Auto-DJ track via the engine's own
+  // notification (see updateAutoDjNowPlaying — it's the only card that can show the engine's live,
+  // draggable scrubber while track-player sits paused). Re-fires on pause/resume so the play/pause
+  // button + scrubber speed track the engine. The position seeds iOS's own scrubber extrapolation.
   useEffect(() => {
     if (dj.active && dj.track) {
-      void updateAutoDjNowPlaying({ title: dj.track.title, artist: dj.track.artist, artwork: dj.track.cover });
+      const p = autoDjPosition();
+      void updateAutoDjNowPlaying({
+        title: dj.track.title,
+        artist: dj.track.artist,
+        artwork: dj.track.cover,
+        state: dj.paused ? 'paused' : 'playing',
+        duration: p.dur > 0 ? p.dur : undefined,
+        elapsedTime: p.pos >= 0 ? p.pos : undefined,
+      });
+    }
+  }, [dj.active, dj.track?.id, dj.paused]);
+
+  // The engine's lock-screen card delivers its button presses through react-native-audio-api's
+  // notification events. Route them to the same engine controls as the in-app buttons. (When
+  // track-player is also set up its remote commands fire into these same controls too — both land on
+  // one press — so skipAutoDj is debounced in the store; pause/resume/seek are idempotent.) All are
+  // inert while an ad plays — the break owns the floor, same as the in-app transport.
+  useEffect(() => {
+    if (!dj.active) return;
+    const subs = [
+      PlaybackNotificationManager.addEventListener('playbackNotificationPlay', () => { if (adPlayingRef.current) return; resumeAutoDj(); }),
+      PlaybackNotificationManager.addEventListener('playbackNotificationPause', () => { if (adPlayingRef.current) return; pauseAutoDj(); }),
+      PlaybackNotificationManager.addEventListener('playbackNotificationNextTrack', () => { if (adPlayingRef.current) return; skipAutoDj(); }),
+      // Scrubber drag on the lock screen — value is the target position in SECONDS.
+      PlaybackNotificationManager.addEventListener('playbackNotificationSeekTo', (e) => { if (adPlayingRef.current) return; seekAutoDj((e?.value ?? 0) * 1000); }),
+    ];
+    return () => { subs.forEach((s) => { try { s?.remove?.(); } catch {} }); };
+  }, [dj.active]);
+
+  // Install the Auto-DJ transition gate: hold the opportunistic mix out ONLY when a break is due AND
+  // there's eligible inventory, so the song finishes clean and the ad lands on that boundary (owner's
+  // rule). The closure reads stable refs; set once and cleared on unmount. The store keeps it across
+  // controller rebuilds, so a Listen-Mode session started later still picks it up. With no inventory
+  // adEligibleRef never flips true → the gate never holds → transitions behave exactly as before.
+  useEffect(() => {
+    setAutoDjAdGate(() => adDueRef.current && adEligibleRef.current && !adPlayingRef.current);
+    return () => setAutoDjAdGate(null);
+  }, []);
+
+  // Audio-ad break during Listen Mode: when the DJ engine ADVANCES to a new song (a real boundary,
+  // not the initial load or an ad-resume) and a break came due, play it between the songs — mirrors
+  // the normal player's boundary ad. fireAudioAd quiets the engine ONLY if an ad is actually picked
+  // (it pauses after the pick), so with no inventory this is a seamless no-op: the flag resets, the
+  // break reschedules, and the mix plays on untouched. Because the gate above suppresses the mix
+  // whenever a break is due + eligible, the boundary the ad lands on is always a clean hard-advance
+  // (or a manual skip) — never mid-morph.
+  useEffect(() => {
+    if (!dj.active) { prevDjTrackIdRef.current = null; return; }
+    const id = dj.track?.id ?? null;
+    const prev = prevDjTrackIdRef.current;
+    prevDjTrackIdRef.current = id;
+    if (prev && id && id !== prev && adDueRef.current && !adPlayingRef.current) {
+      adDueRef.current = false;
+      void fireAudioAd();
     }
   }, [dj.active, dj.track?.id]);
+
+  // Leaving Listen Mode: tear down any in-flight break (so the ad sound doesn't orphan), drop the
+  // engine's notification, and restore the shared remote commands it trimmed — so no orphan card
+  // lingers and the normal player's lock screen comes back whole.
+  useEffect(() => {
+    if (!dj.active) { teardownAudioAdSilently(); void clearAutoDjNowPlaying(); }
+  }, [dj.active]);
 
   return (
     <AudioContext.Provider value={{ currentTrack: njTrack, isPlaying: njPlaying, isBuffering, play, playFrom, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause: njPause, resume: njResume, stop: njStop, seekTo: njSeek, expanded, expand, collapse, next: njNext, previous: njPrevious, queueIndex, queueLength, hasMore, videoMuted, toggleVideoMuted, adState, skipAudioAd }}>

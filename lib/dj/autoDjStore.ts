@@ -20,6 +20,11 @@ let engine: DjEngine | null = null;
 let controller: AutoDjController | null = null;
 let queue: AutoDjTrack[] = [];
 let onHandBack: ((remaining: AutoDjTrack[]) => void) | null = null;
+// "An ad is due AND there's eligible inventory" — owned by AudioContext (it has the ad clock +
+// inventory probe), consulted by the controller to hold an opportunistic transition so the break
+// lands on a clean boundary. Kept at module scope so it survives the controller being torn down and
+// rebuilt between Listen-Mode sessions; re-applied in ensure().
+let adGate: (() => boolean) | null = null;
 
 const log = (...a: unknown[]) => { if (__DEV__) console.log('[auto-dj]', ...a); };
 
@@ -36,6 +41,7 @@ function ensure(): AutoDjController | null {
       onTrack: (track, index) => set({ track, index }),
       onMixing: (mixing) => set({ mixing }),
     });
+    controller.setAdGate(adGate); // re-apply across teardown/rebuild
     return controller;
   } catch (e) {
     log('ensure() FAILED to construct the native engine', e);
@@ -93,9 +99,30 @@ export function stopAutoDj(handBack = false): void {
   queue = [];
 }
 
-export function skipAutoDj(): void { void controller?.skipNext(); }
+// The lock-screen next button fires through BOTH remote-command centers at once (track-player's and
+// the audio-api engine's — see contexts/AudioContext), so one press can call this twice. Debounce to
+// a single skip. (pause/resume/seek are idempotent, so only skip needs it.)
+let lastSkipAt = 0;
+export function skipAutoDj(): void {
+  const now = Date.now();
+  if (now - lastSkipAt < 350) return; // dedupe the one-press double-fire; still allows brisk manual skipping
+  lastSkipAt = now;
+  void controller?.skipNext();
+}
 export function pauseAutoDj(): void { controller?.pause(); set({ paused: true }); }
 export function resumeAutoDj(): void { controller?.resume(); set({ paused: false }); }
+export function seekAutoDj(ms: number): void { controller?.seek(ms / 1000); }
+
+// Install the "ad due + eligible" gate (see the module note above). Stored so a controller created
+// later (or rebuilt for the next session) picks it up in ensure(); forwarded immediately if one
+// already exists. AudioContext sets it once at app start and the closure reads stable refs.
+export function setAutoDjAdGate(fn: (() => boolean) | null): void { adGate = fn; controller?.setAdGate(fn); }
+
+// Pause/resume the decks for an AD BREAK — distinct from the user pause above: it does NOT set the
+// user-facing `paused` state (the ad UI covers the player), it only quiets the engine so the ad has
+// the floor, then resumes the live track exactly where the ad interrupted it.
+export function pauseAutoDjForAd(): void { controller?.pause(); }
+export function resumeAutoDjForAd(): void { controller?.resume(); }
 export function autoDjPosition(): { pos: number; dur: number } { return controller?.position() ?? { pos: 0, dur: 0 }; }
 export function isAutoDjActive(): boolean { return state.active; }
 

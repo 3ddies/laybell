@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import TrackPlayer, { AppKilledPlaybackBehavior, Capability, Event } from 'react-native-track-player';
+import { PlaybackNotificationManager } from 'react-native-audio-api';
 
 // Lock-screen / Control Center bridge for the MAIN player (contexts/AudioContext).
 // react-native-track-player is the playback ENGINE for main-player songs ONLY —
@@ -139,20 +140,76 @@ export async function setNowPlayingLiked(active: boolean): Promise<void> {
   try { await TrackPlayer.updateOptions(playerOptions()); } catch {}
 }
 
+// Engine-notification lifecycle for the Auto-DJ lock-screen card.
+let djEngineCardShown = false;
+let djControlsConfigured = false;
+
 /**
- * Repaint the lock-screen / Control Center card to an Auto-DJ track while the DJ engine (not
- * track-player) is producing the audio. Updates metadata only — it doesn't touch track-player's
- * queue/playback. No-op until the player's been set up (so it only lands when a card exists).
+ * Paint the lock-screen / Control Center card to the current Auto-DJ track while the DJ engine (not
+ * track-player) is producing the audio.
+ *
+ * The card is react-native-audio-api's OWN notification (PlaybackNotificationManager) — NOT
+ * track-player's — for ONE reason that matters: during Listen Mode track-player is paused, so its
+ * card can only ever show a frozen scrubber at track-player's position. The engine notification lets
+ * us set elapsedTime / duration / state directly, so the lock-screen scrubber tracks the DJ engine
+ * and stays DRAGGABLE (seekTo) and SKIPPABLE — the core controls the owner needs. It writes the same
+ * iOS MPNowPlayingInfoCenter, so it fills the card whether or not track-player was ever set up
+ * (cold Listen Mode included). Its buttons are wired to the engine in contexts/AudioContext.
+ *
+ * On the first paint of a session we trim the controls to the forward-mix set: play / pause / next /
+ * scrubber stay (enabled by the native default); previous + the 15s skips are disabled for a clean
+ * music layout. Those live on the SHARED command center, so clearAutoDjNowPlaying restores them.
+ *
+ * If the native notification method is unavailable the call throws and is swallowed — the card just
+ * stays as iOS drew it, never worse.
  */
-export async function updateAutoDjNowPlaying(meta: { title: string; artist: string; artwork?: string | null }): Promise<void> {
-  if (!setupDone) return;
+export async function updateAutoDjNowPlaying(meta: {
+  title: string;
+  artist: string;
+  artwork?: string | null;
+  state?: 'playing' | 'paused';
+  duration?: number;
+  elapsedTime?: number;
+}): Promise<void> {
   try {
-    await TrackPlayer.updateNowPlayingMetadata({
+    // Passing elapsedTime + duration + speed lets iOS animate the lock-screen scrubber on its own.
+    await PlaybackNotificationManager.show({
       title: meta.title,
       artist: meta.artist,
       artwork: meta.artwork ?? undefined,
+      state: meta.state ?? 'playing',
+      speed: meta.state === 'paused' ? 0 : 1,
+      ...(typeof meta.duration === 'number' ? { duration: meta.duration } : {}),
+      ...(typeof meta.elapsedTime === 'number' ? { elapsedTime: meta.elapsedTime } : {}),
     });
-  } catch { /* no current item to repaint — card isn't up */ }
+    djEngineCardShown = true;
+    if (!djControlsConfigured) {
+      djControlsConfigured = true;
+      // Forward radio mix → no "previous", no 15s jog. (play/pause/next/seekTo are on by default.)
+      try { await PlaybackNotificationManager.enableControl('previousTrack', false); } catch {}
+      try { await PlaybackNotificationManager.enableControl('skipForward', false); } catch {}
+      try { await PlaybackNotificationManager.enableControl('skipBackward', false); } catch {}
+    }
+  } catch { /* native notification unavailable — leave the card as-is */ }
+}
+
+/**
+ * End the engine's Auto-DJ card when Listen Mode stops. Restores the shared remote commands we
+ * disabled (previous + the 15s skips) BEFORE hiding, so the NORMAL player's track-player card isn't
+ * left with dead buttons, then clears the card.
+ */
+export async function clearAutoDjNowPlaying(): Promise<void> {
+  const wasConfigured = djControlsConfigured;
+  const wasShown = djEngineCardShown;
+  djControlsConfigured = false;
+  djEngineCardShown = false;
+  if (!wasShown && !wasConfigured) return;
+  if (wasConfigured) {
+    try { await PlaybackNotificationManager.enableControl('previousTrack', true); } catch {}
+    try { await PlaybackNotificationManager.enableControl('skipForward', true); } catch {}
+    try { await PlaybackNotificationManager.enableControl('skipBackward', true); } catch {}
+  }
+  try { await PlaybackNotificationManager.hide(); } catch {}
 }
 
 let setupDone = false;
