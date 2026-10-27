@@ -10,8 +10,8 @@ import type { DjEngine } from './DjEngine';
 
 export type { AutoDjTrack } from './AutoDjController';
 
-type State = { active: boolean; mixing: boolean; track: AutoDjTrack | null; index: number };
-let state: State = { active: false, mixing: false, track: null, index: 0 };
+type State = { active: boolean; mixing: boolean; paused: boolean; track: AutoDjTrack | null; index: number };
+let state: State = { active: false, mixing: false, paused: false, track: null, index: 0 };
 const subs = new Set<() => void>();
 const emit = () => { for (const cb of subs) cb(); };
 const set = (p: Partial<State>) => { state = { ...state, ...p }; emit(); };
@@ -63,7 +63,7 @@ export async function startAutoDj(
     onHandBack = opts.handBack ?? null;
     try { opts.pauseMusic?.(); } catch {}
     await c.start(tracks, index, 0);
-    set({ active: true });
+    set({ active: true, paused: false });
     return true;
   } catch (e) {
     // Anything failed (decode, session) → tear down so the caller falls back to the normal
@@ -87,15 +87,15 @@ export function stopAutoDj(handBack = false): void {
   void engine?.dispose();
   engine = null;
   controller = null;
-  set({ active: false, mixing: false, track: null });
+  set({ active: false, mixing: false, paused: false, track: null });
   if (handBack && onHandBack && queue.length) onHandBack(queue.slice(idx));
   onHandBack = null;
   queue = [];
 }
 
 export function skipAutoDj(): void { void controller?.skipNext(); }
-export function pauseAutoDj(): void { controller?.pause(); }
-export function resumeAutoDj(): void { controller?.resume(); }
+export function pauseAutoDj(): void { controller?.pause(); set({ paused: true }); }
+export function resumeAutoDj(): void { controller?.resume(); set({ paused: false }); }
 export function autoDjPosition(): { pos: number; dur: number } { return controller?.position() ?? { pos: 0, dur: 0 }; }
 export function isAutoDjActive(): boolean { return state.active; }
 

@@ -17,7 +17,7 @@ import { supabase } from '../../lib/supabase';
 import { tabTick } from '../../lib/haptics';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { useNowPlaying, useAudioControls } from '../../contexts/AudioContext';
-import { useAutoDj, startAutoDj, stopAutoDj, skipAutoDj, isAutoDjActive, autoDjPosition } from '../../lib/dj/autoDjStore';
+import { startAutoDj, stopAutoDj, isAutoDjActive } from '../../lib/dj/autoDjStore';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
@@ -114,10 +114,9 @@ export default function MusicScreen() {
   // NOT `playingId` above, which goes null on pause.
   const { id: loadedTrackId } = useNowPlaying();
   const { playQueue, expand, pause } = useAudioControls();
-  // Auto-DJ (Listen Mode): always on — entering Listen mode routes the mix through the DJ engine
-  // so songs blend into each other. No toggle; it "just happens".
-  const autoDj = useAutoDj();
-  const [autoPos, setAutoPos] = useState({ pos: 0, dur: 0 });
+  // Auto-DJ (Listen Mode): always on — entering Listen mode routes the mix through the DJ engine so
+  // songs blend into each other. No toggle; it "just happens". The bottom MiniPlayer shows the
+  // current Auto-DJ track (it reads the autoDj store directly).
   const [savedTracks, setSavedTracks] = useState<any[]>([]);
   const [playlistModalPostId, setPlaylistModalPostId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'discover' | 'playlists' | 'saved' | 'liked' | 'community'>('discover');
@@ -887,14 +886,6 @@ export default function MusicScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listenMode]);
 
-  // Drive the Listen-mode now-playing card's progress off the engine while Auto-DJ is active.
-  useEffect(() => {
-    if (!(listenMode && autoDj.active)) return;
-    setAutoPos(autoDjPosition());
-    const t = setInterval(() => setAutoPos(autoDjPosition()), 500);
-    return () => clearInterval(t);
-  }, [listenMode, autoDj.active]);
-
   async function startListenMix() {
     try {
       const { data } = await supabase
@@ -1191,31 +1182,6 @@ export default function MusicScreen() {
           <ListenButton active={listenMode} onPress={() => setListenMode(!listenMode)} />
         </View>
       </View>
-
-      {/* Now playing (Listen mode): the current Auto-DJ track — songs blend automatically on play-out. */}
-      {listenMode && autoDj.active && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginBottom: 10, padding: 10, borderRadius: 16, backgroundColor: colors.surface }}>
-          <ExpoImage
-            source={autoDj.track?.cover ? { uri: autoDj.track.cover } : undefined}
-            style={{ width: 52, height: 52, borderRadius: 10, backgroundColor: colors.surfaceLight }}
-            contentFit="cover"
-            transition={150}
-          />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={1} style={{ color: colors.text, fontSize: 15, fontWeight: '800' }}>{autoDj.track?.title ?? 'Auto-mixing…'}</Text>
-            <Text numberOfLines={1} style={{ color: colors.textSecondary, fontSize: 12.5, fontWeight: '600', marginTop: 1 }}>
-              {autoDj.mixing ? 'Blending in the next track…' : (autoDj.track?.artist || 'Laybell Auto-DJ')}
-            </Text>
-            <View style={{ height: 3, borderRadius: 2, backgroundColor: colors.surfaceLight, marginTop: 7, overflow: 'hidden' }}>
-              <View style={{ height: 3, borderRadius: 2, backgroundColor: autoDj.mixing ? colors.primary : colors.text, width: `${autoPos.dur > 0 ? Math.min(100, Math.max(0, (autoPos.pos / autoPos.dur) * 100)) : 0}%` }} />
-            </View>
-          </View>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.nextTrack')} onPress={skipAutoDj} hitSlop={8}
-            style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceLight }}>
-            <Ionicons name="play-skip-forward" size={18} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-      )}
 
       {/* Search bar — find songs by name, username, or display name */}
       <View style={styles.searchRow}>
