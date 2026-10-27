@@ -440,6 +440,7 @@ export class DjEngine {
   private readonly echoDelay: DelayNode;
   private readonly echoFeedback: GainNode;
   private readonly echoReturn: GainNode;
+  private noiseBuf: AudioBuffer | null = null; // lazily-created white noise for the uplifter
   private ready = false;
 
   constructor() {
@@ -496,6 +497,60 @@ export class DjEngine {
     r.cancelScheduledValues(t + 0.08);
     r.setValueAtTime(ECHO_RETURN, t + 0.08);
     r.linearRampToValueAtTime(0, t + ECHO_TAIL_S);
+  }
+
+  /** FX: white-noise UPLIFTER — a rising filtered-noise "whoosh" that swells over durS and cuts at
+   *  the drop. A self-contained one-shot into master (doesn't touch the decks). Best-effort. */
+  uplift(startT: number, durS: number): void {
+    try {
+      if (!this.noiseBuf) {
+        const len = Math.floor(this.ctx.sampleRate * 2);
+        const b = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+        const d = b.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        this.noiseBuf = b;
+      }
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noiseBuf;
+      src.loop = true;
+      const hp = this.ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      const N = 48;
+      const a = 400;
+      const b2 = 6000;
+      const curve = new Float32Array(N);
+      for (let i = 0; i < N; i++) curve[i] = a * Math.pow(b2 / a, i / (N - 1));
+      hp.frequency.setValueCurveAtTime(curve, startT, durS); // sweep up = rising whoosh
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0, startT);
+      g.gain.linearRampToValueAtTime(0.35, startT + durS); // swell up
+      g.gain.linearRampToValueAtTime(0, startT + durS + 0.12); // cut at the drop
+      src.connect(hp);
+      hp.connect(g);
+      g.connect(this.master);
+      src.start(startT);
+      src.stop(startT + durS + 0.25);
+      setTimeout(() => { try { src.disconnect(); hp.disconnect(); g.disconnect(); } catch { /* noop */ } }, (durS + 0.6) * 1000);
+    } catch { /* uplifter is best-effort */ }
+  }
+
+  /** FX: reverb BLOOM on a deck — a short dense wash that blooms up then pulls back over durS, so an
+   *  incoming track makes a lush entrance and then tightens. Self-scheduled (no timers). */
+  washBloom(deckId: DeckId, startT: number, durS: number): void {
+    this.echoFeedback.gain.cancelScheduledValues(startT);
+    this.echoFeedback.gain.setValueAtTime(WASH_FEEDBACK, startT);
+    this.echoDelay.delayTime.cancelScheduledValues(startT);
+    this.echoDelay.delayTime.setValueAtTime(WASH_DELAY_S, startT);
+    const r = this.echoReturn.gain;
+    r.cancelScheduledValues(startT);
+    r.setValueAtTime(Math.max(0, r.value), startT);
+    r.linearRampToValueAtTime(WASH_RETURN, startT + 0.3); // bloom up
+    r.linearRampToValueAtTime(0, startT + durS);          // pull back as it establishes
+    const s = this.deck(deckId).echoSend.gain;
+    s.cancelScheduledValues(startT);
+    s.setValueAtTime(0, startT);
+    s.linearRampToValueAtTime(WASH_SEND, startT + 0.3);
+    s.linearRampToValueAtTime(0, startT + durS * 0.8);
   }
 
   /** Immediately silence the echo bus (hard cut / teardown). */

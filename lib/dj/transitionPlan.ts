@@ -23,6 +23,8 @@ export type TransitionPlan = {
   tapeStop?: boolean;    // FX: tape-stop (spin-down) the OUTGOING into the drop
   stutter?: boolean;     // FX: beat-stutter the OUTGOING's last beat (beat-locked drops)
   riser?: boolean;       // FX: highpass riser on the OUTGOING, building into the drop
+  uplift?: boolean;      // FX: white-noise uplifter "whoosh" building into the drop
+  bloom?: boolean;       // FX: reverb bloom on the INCOMING — a lush entrance that tightens
 };
 
 const STANDARD_COMPLETE_FRAC = 0.8;
@@ -54,17 +56,17 @@ export function planTransition(end: EndType, start: StartType, matched: boolean)
   if (end === 'fade') {
     return { name: 'fade-out', blendBeats: 28, blendDefaultS: 16, completeFrac: 0.9, outFilter: true, washOut: true };
   }
-  // Soft, building intro on the incoming → start it early, let it build under the outgoing, and open
-  // it up through a lowpass (a filter-up build into full).
+  // Soft, building intro on the incoming → start it early, let it build under the outgoing, open it
+  // up through a lowpass AND let it bloom in with a touch of reverb (a lush entrance that tightens).
   if (start === 'soft') {
-    return { name: 'soft-intro', blendBeats: 28, blendDefaultS: 16, completeFrac: 0.85, inFilter: true };
+    return { name: 'soft-intro', blendBeats: 28, blendDefaultS: 16, completeFrac: 0.85, inFilter: true, bloom: true };
   }
   // A beat/drop intro into a normal ending → make the drop LAND. Beat-locked pairs get a tight
   // beat-stutter on the outgoing's last beat; otherwise a highpass riser builds the tension.
   if (start === 'drop') {
     return matched
       ? { name: 'drop-stutter', blendBeats: 16, blendDefaultS: 11, completeFrac: 0.7, stutter: true }
-      : { name: 'drop-riser', blendBeats: 20, blendDefaultS: 12, completeFrac: 0.78, riser: true };
+      : { name: 'drop-riser', blendBeats: 20, blendDefaultS: 12, completeFrac: 0.78, riser: true, uplift: true };
   }
   // Bread and butter.
   return {

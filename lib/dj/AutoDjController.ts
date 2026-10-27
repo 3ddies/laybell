@@ -231,6 +231,8 @@ export class AutoDjController {
       const beatS = gOut && gOut.bpm > 0 ? 60 / gOut.bpm : 0.5;
       liveDeck.stutter(fxT0 + 0.08, beatS / 4, 4);                         // one beat of 1/16 chops, beat-synced
     }
+    if (plan.uplift) this.engine.uplift(fxT0 + 0.2 * wS, 0.6 * wS);        // white-noise whoosh building into the drop
+    if (plan.bloom) this.engine.washBloom(inc, fxT0, 0.6 * blendS);        // incoming blooms in lush, then tightens
     if (plan.echoOut) {
       const delayS = gOut && gOut.bpm > 0 ? Math.min(0.6, 30 / gOut.bpm) : 0.35; // ~eighth note (60/bpm/2)
       this.engine.echoBegin(this.live, delayS, fxT0 + 0.5 * blendS);            // feed the last bars into the delay
@@ -246,7 +248,8 @@ export class AutoDjController {
       track: this.queue[this.index]?.title ?? '?',
       recipe: plan.name, outEnd: aOut?.endType ?? '?', inStart: aIn?.startType ?? '?',
       fx: [plan.outFilter && 'out-dark', plan.inFilter && 'in-open', plan.echoOut && 'echo', plan.washOut && 'wash',
-        plan.tapeStop && 'tape-stop', plan.stutter && 'stutter', plan.riser && 'riser'].filter(Boolean),
+        plan.tapeStop && 'tape-stop', plan.stutter && 'stutter', plan.riser && 'riser', plan.uplift && 'uplift',
+        plan.bloom && 'bloom'].filter(Boolean),
       from: this.live, to: inc, blendS: +blendS.toFixed(1), matched,
       ratio: matchRatio ? +matchRatio.toFixed(3) : null,
       outBpm: gOut ? +gOut.bpm.toFixed(1) : null, inBpm: gIn ? +gIn.bpm.toFixed(1) : null,
