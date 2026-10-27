@@ -18,6 +18,7 @@ export type TransitionPlan = {
   completeFrac: number;  // front-load: hand-off finishes by this fraction of the blend, then outgoing is silent
   outFilter?: boolean;   // FX: lowpass-sweep the OUTGOING dark as it leaves (sinks into the distance)
   inFilter?: boolean;    // FX: lowpass-sweep the INCOMING open as it arrives (a filter-up build)
+  echoOut?: boolean;     // FX: echo/delay tail on the OUTGOING — its last bars repeat & decay out
 };
 
 const STANDARD_COMPLETE_FRAC = 0.8;
@@ -33,6 +34,11 @@ export function planTransition(end: EndType, start: StartType, matched: boolean)
   // front-loaded enough that the outgoing is clean, not a raw cut.
   if (end === 'cold' && start === 'drop') {
     return { name: 'cold→drop (slam)', blendBeats: 12, blendDefaultS: 8, completeFrac: 0.62 };
+  }
+  // Cold ending into anything that isn't a drop or a soft build → echo the last bars OUT (delay tail
+  // repeats + decays) while the next one comes in. A produced, distinctive exit.
+  if (end === 'cold' && start !== 'soft') {
+    return { name: 'cold-echo', blendBeats: 16, blendDefaultS: 11, completeFrac: 0.72, echoOut: true };
   }
   // Ending thin (vocals/ambience) → bring the next track IN UNDER the tail. Long overlap so the new
   // groove establishes while the old vocal finishes. Classic radio move.

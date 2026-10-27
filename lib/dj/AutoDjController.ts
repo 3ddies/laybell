@@ -63,6 +63,8 @@ export class AutoDjController {
   private tick: ReturnType<typeof setInterval> | null = null;
   private promoteTimer: ReturnType<typeof setTimeout> | null = null;
   private restoreTimer: ReturnType<typeof setInterval> | null = null;
+  private echoActive = false;           // an echo-out tail is engaged on `echoDeck`
+  private echoDeck: DeckId | null = null;
   private paused = false;
   private listener: Listener = {};
 
@@ -223,11 +225,17 @@ export class AutoDjController {
     const wS = plan.completeFrac * blendS;
     if (plan.outFilter) liveDeck.sweepOutDark(fxT0 + 0.4 * wS, 0.55 * wS); // darken the outgoing as it leaves
     if (plan.inFilter) incDeck.sweepInOpen(fxT0, 0.7 * wS);                // open the incoming up as it arrives
+    if (plan.echoOut) {
+      const delayS = gOut && gOut.bpm > 0 ? Math.min(0.6, 30 / gOut.bpm) : 0.35; // ~eighth note (60/bpm/2)
+      this.engine.echoBegin(this.live, delayS, fxT0 + 0.5 * blendS);            // feed the last bars into the delay
+      this.echoActive = true;
+      this.echoDeck = this.live;
+    }
 
     log('mixing', {
       track: this.queue[this.index]?.title ?? '?',
       recipe: plan.name, outEnd: aOut?.endType ?? '?', inStart: aIn?.startType ?? '?',
-      fx: plan.outFilter ? 'out-dark' : plan.inFilter ? 'in-open' : null,
+      fx: [plan.outFilter && 'out-dark', plan.inFilter && 'in-open', plan.echoOut && 'echo'].filter(Boolean),
       from: this.live, to: inc, blendS: +blendS.toFixed(1), matched,
       ratio: matchRatio ? +matchRatio.toFixed(3) : null,
       outBpm: gOut ? +gOut.bpm.toFixed(1) : null, inBpm: gIn ? +gIn.bpm.toFixed(1) : null,
@@ -246,6 +254,8 @@ export class AutoDjController {
 
     const oldDeck = this.engine.deck(old);
     oldDeck.pause();           // the outgoing track has played out
+    // Echo-out: the dry stops, but its captured tail keeps repeating + decaying on the delay bus.
+    if (this.echoActive && this.echoDeck) { this.engine.echoRelease(this.echoDeck); this.echoActive = false; this.echoDeck = null; }
     oldDeck.resetEqNow();      // flatten for reuse (cancels any in-flight ramps)
     oldDeck.setFilter(0);
     oldDeck.setTempo(1);
@@ -292,6 +302,7 @@ export class AutoDjController {
     if (this.index + 1 >= this.queue.length) { this.stop(); return; }
     this.clearPromote();
     this.clearRestore();
+    if (this.echoActive) { this.engine.echoReset(); this.echoActive = false; this.echoDeck = null; }
     this.transitioning = false;
     this.emitMixing(false);
     const inc = this.idle();
@@ -379,6 +390,7 @@ export class AutoDjController {
     this.clearPromote();
     this.clearRestore();
     this.stopTick();
+    if (this.echoActive) { this.engine.echoReset(); this.echoActive = false; this.echoDeck = null; }
     if (this.transitioning) { this.transitioning = false; this.emitMixing(false); }
     this.engine.a.pause();
     this.engine.b.pause();

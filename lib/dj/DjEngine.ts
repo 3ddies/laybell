@@ -20,6 +20,8 @@ import {
   type AudioBufferSourceNode,
   type GainNode,
   type BiquadFilterNode,
+  type DelayNode,
+  type AudioNode,
 } from 'react-native-audio-api';
 import {
   TEMPO_MIN, TEMPO_MAX, AUTO_MID_DUCK, AUTO_HIGH_DUCK, AUTO_MATCH_BASS_DUCK, AUTO_MATCH_BASS_SHARE,
@@ -48,6 +50,12 @@ const eqKnobToDb = (k: number) => (k < 0 ? k * -EQ_KILL_DB : k * EQ_BOOST_DB);
 // off quickly around the midpoint (only one track owns the sub at a time → no mud);
 // mids/highs cross-blend across the whole phrase (incoming rises early, outgoing
 // leaves late), highs slightly ahead of mids. Tune by ear.
+// Echo-out FX (shared delay bus). Feedback < 1 so it always decays (no runaway).
+const ECHO_SEND = 0.5;      // how much of the deck feeds the delay
+const ECHO_FEEDBACK = 0.45; // delay repeat decay (~5 audible repeats)
+const ECHO_RETURN = 0.85;   // delay bus → master level when engaged
+const ECHO_TAIL_S = 2.5;    // ring-out before the bus turns fully off
+
 const MORPH = {
   // completeFrac: the whole hand-off (volume + EQ) finishes by this fraction of the blend;
   // the outgoing is then SILENT for the rest, so a loud/abrupt ending can't snap through.
@@ -99,6 +107,7 @@ export class Deck {
   private readonly filter: BiquadFilterNode;
   private readonly channelGain: GainNode; // the up-fader (per-deck volume)
   readonly crossGain: GainNode;           // driven by the engine's crossfader
+  readonly echoSend: GainNode;            // tap into the shared echo bus (0 = off)
 
   // Transport state.
   private playing = false;
@@ -115,7 +124,7 @@ export class Deck {
 
   durationS = 0;
 
-  constructor(id: DeckId, ctx: AudioContext, master: GainNode) {
+  constructor(id: DeckId, ctx: AudioContext, master: GainNode, echoBus: AudioNode) {
     this.id = id;
     this.ctx = ctx;
 
@@ -136,6 +145,8 @@ export class Deck {
 
     this.channelGain = ctx.createGain();
     this.crossGain = ctx.createGain();
+    this.echoSend = ctx.createGain();
+    this.echoSend.gain.value = 0; // echo off until a transition engages it
 
     // Wire the permanent chain once.
     this.eqLow.connect(this.eqMid);
@@ -144,6 +155,9 @@ export class Deck {
     this.filter.connect(this.channelGain);
     this.channelGain.connect(this.crossGain);
     this.crossGain.connect(master);
+    // Parallel tap into the shared echo bus (pre-crossfade, so the echo stays strong as the dry fades).
+    this.channelGain.connect(this.echoSend);
+    this.echoSend.connect(echoBus);
   }
 
   get isPlaying() { return this.playing; }
@@ -374,15 +388,66 @@ export class DjEngine {
   readonly master: GainNode;
   readonly a: Deck;
   readonly b: Deck;
+  private readonly echoDelay: DelayNode;
+  private readonly echoFeedback: GainNode;
+  private readonly echoReturn: GainNode;
   private ready = false;
 
   constructor() {
     this.ctx = new AudioContext();
     this.master = this.ctx.createGain();
     this.master.connect(this.ctx.destination);
-    this.a = new Deck('a', this.ctx, this.master);
-    this.b = new Deck('b', this.ctx, this.master);
+
+    // Shared echo bus (off until a transition engages it): send → delay → return → master, with a
+    // capped feedback loop so it always decays.
+    this.echoDelay = this.ctx.createDelay(1.0);
+    this.echoFeedback = this.ctx.createGain();
+    this.echoFeedback.gain.value = ECHO_FEEDBACK;
+    this.echoReturn = this.ctx.createGain();
+    this.echoReturn.gain.value = 0;
+    this.echoDelay.connect(this.echoFeedback);
+    this.echoFeedback.connect(this.echoDelay);
+    this.echoDelay.connect(this.echoReturn);
+    this.echoReturn.connect(this.master);
+
+    this.a = new Deck('a', this.ctx, this.master, this.echoDelay);
+    this.b = new Deck('b', this.ctx, this.master, this.echoDelay);
     this.crossfade(0.5);
+  }
+
+  /** Engage the echo bus on a deck from startT: feed its signal into the delay (with feedback). */
+  echoBegin(deckId: DeckId, delayS: number, startT: number): void {
+    this.echoDelay.delayTime.cancelScheduledValues(startT);
+    this.echoDelay.delayTime.setValueAtTime(clamp(delayS, 0.05, 0.9), startT);
+    const r = this.echoReturn.gain;
+    r.cancelScheduledValues(startT);
+    r.setValueAtTime(Math.max(0, r.value), startT);
+    r.linearRampToValueAtTime(ECHO_RETURN, startT + 0.1);
+    const s = this.deck(deckId).echoSend.gain;
+    s.cancelScheduledValues(startT);
+    s.setValueAtTime(0, startT);
+    s.linearRampToValueAtTime(ECHO_SEND, startT + 0.15);
+  }
+
+  /** Stop feeding the echo and let the tail ring out (feedback decay), then turn the bus off. */
+  echoRelease(deckId: DeckId): void {
+    const t = this.ctx.currentTime;
+    const s = this.deck(deckId).echoSend.gain;
+    s.cancelScheduledValues(t);
+    s.setValueAtTime(Math.max(0, s.value), t);
+    s.linearRampToValueAtTime(0, t + 0.08);
+    const r = this.echoReturn.gain;
+    r.cancelScheduledValues(t + 0.08);
+    r.setValueAtTime(ECHO_RETURN, t + 0.08);
+    r.linearRampToValueAtTime(0, t + ECHO_TAIL_S);
+  }
+
+  /** Immediately silence the echo bus (hard cut / teardown). */
+  echoReset(): void {
+    const t = this.ctx.currentTime;
+    this.echoReturn.gain.cancelScheduledValues(t); this.echoReturn.gain.value = 0;
+    this.a.echoSend.gain.cancelScheduledValues(t); this.a.echoSend.gain.value = 0;
+    this.b.echoSend.gain.cancelScheduledValues(t); this.b.echoSend.gain.value = 0;
   }
 
   deck(id: DeckId): Deck { return id === 'a' ? this.a : this.b; }
