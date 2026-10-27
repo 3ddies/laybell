@@ -342,6 +342,7 @@ export class AutoDjController {
           endS: +a.endS.toFixed(1), end: a.endType, start: a.startType,
           bpm: a.grid ? +a.grid.bpm.toFixed(1) : null,
           conf: a.grid ? +a.grid.confidence.toFixed(2) : null,
+          m: a.dbg, // raw measures (endLow/endCrest/startLoud/startLow/startCrest) for tuning
         });
       }
     } catch (e) { log('analysis FAILED', e); }

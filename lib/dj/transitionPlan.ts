@@ -22,6 +22,11 @@ const STANDARD_COMPLETE_FRAC = 0.8;
 
 /** Choose the recipe for this pair. `matched` = the pair will beat-lock (lets a recipe lean longer). */
 export function planTransition(end: EndType, start: StartType, matched: boolean): TransitionPlan {
+  // NEVER mush two vocals (owner rule): the outgoing ends on vocals/thin AND the next starts with a
+  // vocal/lyric → short, quick handoff so the two vocal lines barely overlap (a cut, not a long blend).
+  if (end === 'sparse' && start === 'vocal') {
+    return { name: 'vocal-clash (quick)', blendBeats: 8, blendDefaultS: 6, completeFrac: 0.5 };
+  }
   // Cold hard stop into a beat drop → a punchy "slam": shorter, the incoming drops in sooner. Still
   // front-loaded enough that the outgoing is clean, not a raw cut.
   if (end === 'cold' && start === 'drop') {

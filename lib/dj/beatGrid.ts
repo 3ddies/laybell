@@ -168,16 +168,44 @@ function lowFraction(samples: Float32Array, s: number, e: number, sampleRate: nu
   return tot > 0 ? low / tot : 0;
 }
 
-const SPARSE_LOW_FRACTION = 0.28;  // below this low-fraction near the end = thin/sparse ending
-const FADE_DECAY_RATIO = 0.45;     // tail's late energy below this × its early energy = a fade
+// "Percussiveness" of a region = crest of its energy-flux (peak ÷ mean positive flux). Drums/beats
+// are spiky (sharp onsets → HIGH crest); sustained vocals/pads are smooth (LOW crest). This is what
+// lets us tell a beat intro from a vocal/lyrical intro — the key to not mushing two vocals.
+function percussiveness(samples: Float32Array, s: number, e: number, sampleRate: number): number {
+  const H = 512;
+  const start = Math.max(0, s);
+  const end = Math.min(e, samples.length);
+  const nF = Math.floor((end - start) / H);
+  if (nF < 4) return 0;
+  let prev = 0;
+  let fluxSum = 0;
+  let fluxMax = 0;
+  let cnt = 0;
+  for (let f = 0; f < nF; f++) {
+    const b = start + f * H;
+    let en = 0;
+    for (let i = b; i < b + H; i++) { const v = samples[i]; en += v * v; }
+    en /= H;
+    if (f > 0) { const flux = en > prev ? en - prev : 0; fluxSum += flux; if (flux > fluxMax) fluxMax = flux; cnt++; }
+    prev = en;
+  }
+  const mean = cnt ? fluxSum / cnt : 0;
+  return mean > 0 ? fluxMax / mean : 0;
+}
 
-export function analyzeEnding(samples: Float32Array, sampleRate: number): { endS: number; abrupt: boolean; endType: EndType } {
+const SPARSE_LOW_FRACTION = 0.45;  // outro low-fraction below this (with low crest) = vocal/thin ending
+const FADE_DECAY_RATIO = 0.45;     // tail's late energy below this × its early energy = a fade
+const VOCAL_CREST_MAX = 3.2;       // crest below this = sustained (vocal/pad), not percussive
+const BEAT_CREST_MIN = 4.5;        // crest above this = percussive (drums/beat)
+
+export function analyzeEnding(samples: Float32Array, sampleRate: number):
+  { endS: number; abrupt: boolean; endType: EndType; outroLow: number; outroCrest: number } {
   const n = samples?.length ?? 0;
-  if (!n || !sampleRate) return { endS: 0, abrupt: false, endType: 'standard' };
+  if (!n || !sampleRate) return { endS: 0, abrupt: false, endType: 'standard', outroLow: 0, outroCrest: 0 };
   const durS = n / sampleRate;
 
   const nFrames = Math.floor(n / END_HOP);
-  if (nFrames < 8) return { endS: durS, abrupt: false, endType: 'standard' };
+  if (nFrames < 8) return { endS: durS, abrupt: false, endType: 'standard', outroLow: 0, outroCrest: 0 };
 
   // Frame energy over the WHOLE track (the end can be anywhere).
   const energy = new Float32Array(nFrames);
@@ -193,7 +221,7 @@ export function analyzeEnding(samples: Float32Array, sampleRate: number): { endS
   const sorted = Float32Array.from(energy);
   sorted.sort();
   const ref = sorted[Math.min(nFrames - 1, Math.floor(nFrames * END_LOUD_PERCENTILE))] || sorted[nFrames - 1] || 0;
-  if (ref <= 0) return { endS: durS, abrupt: false, endType: 'standard' };
+  if (ref <= 0) return { endS: durS, abrupt: false, endType: 'standard', outroLow: 0, outroCrest: 0 };
 
   // Last frame where music is still present (energy above a fraction of the loud ref).
   const presentThresh = ref * END_PRESENT_FRACTION;
@@ -207,38 +235,42 @@ export function analyzeEnding(samples: Float32Array, sampleRate: number): { endS
   let abrupt = false;
   for (let f = Math.max(0, endFrame - look); f <= endFrame; f++) { if (energy[f] >= abruptThresh) { abrupt = true; break; } }
 
-  // Classify the ending.
+  // Classify the ending. Measure the OUTRO the blend will overlap — skip the last ~1s so a final
+  // drum-jingle/tail can't mask a lyrical outro before it (the Laybell→Spike Lee mush case).
   const fps = sampleRate / END_HOP;
-  let endType: EndType;
-  if (abrupt) {
-    endType = 'cold';
-  } else {
-    // Energy trend across the last ~5s before the end: a big decline = a fade.
-    const win = Math.round(5 * fps);
-    const e0 = Math.max(0, endFrame - win);
-    const midF = Math.floor((e0 + endFrame) / 2);
-    let earlyE = 0; let earlyN = 0; let lateE = 0; let lateN = 0;
-    for (let f = e0; f <= endFrame; f++) { if (f < midF) { earlyE += energy[f]; earlyN++; } else { lateE += energy[f]; lateN++; } }
-    earlyE = earlyN ? earlyE / earlyN : 0;
-    lateE = lateN ? lateE / lateN : 0;
-    if (earlyE > 0 && lateE < FADE_DECAY_RATIO * earlyE) {
-      endType = 'fade';
-    } else {
-      // Thin ending (vocals/ambience, little low end)?
-      const lr = lowFraction(samples, (endFrame + 1) * END_HOP - Math.floor(3 * sampleRate), (endFrame + 1) * END_HOP, sampleRate);
-      endType = lr < SPARSE_LOW_FRACTION ? 'sparse' : 'standard';
-    }
-  }
+  const endSample = (endFrame + 1) * END_HOP;
+  const outroA = Math.max(0, endSample - Math.floor(9 * sampleRate));
+  const outroB = Math.max(outroA + 1, endSample - Math.floor(1 * sampleRate));
+  const outroLow = lowFraction(samples, outroA, outroB, sampleRate);
+  const outroCrest = percussiveness(samples, outroA, outroB, sampleRate);
 
-  return { endS, abrupt, endType };
+  // Energy trend across the last ~5s before the end: a big decline = a fade.
+  const win = Math.round(5 * fps);
+  const e0 = Math.max(0, endFrame - win);
+  const midF = Math.floor((e0 + endFrame) / 2);
+  let earlyE = 0; let earlyN = 0; let lateE = 0; let lateN = 0;
+  for (let f = e0; f <= endFrame; f++) { if (f < midF) { earlyE += energy[f]; earlyN++; } else { lateE += energy[f]; lateN++; } }
+  earlyE = earlyN ? earlyE / earlyN : 0;
+  lateE = lateN ? lateE / lateN : 0;
+  const decays = earlyE > 0 && lateE < FADE_DECAY_RATIO * earlyE;
+
+  let endType: EndType;
+  if (abrupt) endType = 'cold';
+  else if (outroCrest < VOCAL_CREST_MAX && outroLow < SPARSE_LOW_FRACTION) endType = 'sparse'; // sustained + mid-dominant = vocal/thin
+  else if (decays) endType = 'fade';
+  else endType = 'standard';
+
+  return { endS, abrupt, endType, outroLow: +outroLow.toFixed(3), outroCrest: +outroCrest.toFixed(1) };
 }
 
 // How a track STARTS, from its first few seconds. Conservative — defaults to 'standard' unless
 // a type is clear. See StartType.
 const START_HOP = 1024;
-export function analyzeStart(samples: Float32Array, sampleRate: number): StartType {
+export function analyzeStart(samples: Float32Array, sampleRate: number):
+  { startType: StartType; loud: number; low: number; crest: number } {
   const n = samples?.length ?? 0;
-  if (!n || !sampleRate) return 'standard';
+  const none = { startType: 'standard' as StartType, loud: 0, low: 0, crest: 0 };
+  if (!n || !sampleRate) return none;
 
   // Reference loudness = loudest frame in the first ~20s.
   const refLen = Math.min(n, 20 * sampleRate);
@@ -249,18 +281,22 @@ export function analyzeStart(samples: Float32Array, sampleRate: number): StartTy
     e /= START_HOP;
     if (e > maxFrameE) maxFrameE = e;
   }
-  if (maxFrameE <= 0) return 'standard';
+  if (maxFrameE <= 0) return none;
 
-  // Mean energy of the first ~1s, relative to that reference.
+  // Mean energy of the first ~1s (how loud the top is), low-band fraction + percussiveness of the top.
   const first1 = Math.min(n, sampleRate);
   let e1 = 0;
   for (let i = 0; i < first1; i++) { const v = samples[i]; e1 += v * v; }
   e1 /= first1;
-  const startLoud = e1 / maxFrameE;
-  const lr = lowFraction(samples, 0, Math.min(n, 2 * sampleRate), sampleRate);
+  const loud = e1 / maxFrameE;
+  const low = lowFraction(samples, 0, Math.min(n, 2 * sampleRate), sampleRate);
+  const crest = percussiveness(samples, 0, Math.min(n, 3 * sampleRate), sampleRate);
 
-  if (startLoud > 0.35 && lr > 0.3) return 'drop';   // loud + bass-heavy from the top = a beat/drop
-  if (startLoud > 0.2 && lr < 0.2) return 'vocal';   // present but thin = a vocal/yell, no beat yet
-  if (startLoud < 0.12) return 'soft';               // quiet intro that builds
-  return 'standard';
+  let startType: StartType;
+  if (loud < 0.12) startType = 'soft';                                        // quiet intro that builds
+  else if (loud > 0.3 && (crest > BEAT_CREST_MIN || low > 0.3)) startType = 'drop';   // percussive/bassy = a beat/drop
+  else if (loud > 0.18 && crest < VOCAL_CREST_MAX && low < 0.3) startType = 'vocal';  // present + sustained + thin = a vocal/lyric intro
+  else startType = 'standard';
+
+  return { startType, loud: +loud.toFixed(2), low: +low.toFixed(2), crest: +crest.toFixed(1) };
 }

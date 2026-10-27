@@ -256,15 +256,23 @@ export class Deck {
   /** Analyse this track once: beat grid (BPM + phase), where its audio truly ends (trailing
    *  silence trimmed) + whether that end is abrupt, and how it ends/starts (for the transition
    *  recipe). Null if nothing loaded. */
-  analyze(): { grid: BeatGrid | null; endS: number; abrupt: boolean; endType: EndType; startType: StartType } | null {
+  analyze(): {
+    grid: BeatGrid | null; endS: number; abrupt: boolean; endType: EndType; startType: StartType;
+    dbg: { endLow: number; endCrest: number; startLoud: number; startLow: number; startCrest: number };
+  } | null {
     if (!this.buffer) return null;
     try {
       const data = this.buffer.getChannelData(0);
       const sr = (this.buffer as unknown as { sampleRate?: number }).sampleRate ?? this.ctx.sampleRate;
       const grid = analyzeBeatGrid(data, sr);
-      const { endS, abrupt, endType } = analyzeEnding(data, sr);
-      const startType = analyzeStart(data, sr);
-      return { grid, endS: endS > 0 ? Math.min(endS, this.durationS) : this.durationS, abrupt, endType, startType };
+      const end = analyzeEnding(data, sr);
+      const start = analyzeStart(data, sr);
+      return {
+        grid,
+        endS: end.endS > 0 ? Math.min(end.endS, this.durationS) : this.durationS,
+        abrupt: end.abrupt, endType: end.endType, startType: start.startType,
+        dbg: { endLow: end.outroLow, endCrest: end.outroCrest, startLoud: start.loud, startLow: start.low, startCrest: start.crest },
+      };
     } catch {
       return null;
     }
