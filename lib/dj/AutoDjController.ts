@@ -26,6 +26,7 @@ import type { DeckId } from './constants';
 import {
   AUTO_BLEND_MIN_S,
   AUTO_BLEND_MAX_S,
+  AUTO_MIN_PLAY_S,
   AUTO_BEAT_MIN_CONFIDENCE,
   AUTO_MAX_STRETCH,
   AUTO_MATCH_HOLD_FRAC,
@@ -65,6 +66,7 @@ export class AutoDjController {
   private restoreTimer: ReturnType<typeof setInterval> | null = null;
   private echoActive = false;           // an echo-out tail is engaged on `echoDeck`
   private echoDeck: DeckId | null = null;
+  private garnishIdx = 0;               // rotates the fallback garnish so plain transitions vary
   private paused = false;
   private listener: Listener = {};
 
@@ -91,9 +93,8 @@ export class AutoDjController {
     this.index = clampIdx(index, queue.length);
     this.live = 'a';
     this.paused = false;
+    this.resetDecksAndFx(); // clean slate — no leftover EQ/filter/tempo/echo from a prior run
     this.engine.crossfade(0);
-    this.engine.a.resetEqNow();
-    this.engine.b.resetEqNow();
     const t = this.queue[this.index];
     if (!t) return;
     await this.engine.a.load(t.url);
@@ -110,6 +111,24 @@ export class AutoDjController {
   private stopTick() { if (this.tick) { clearInterval(this.tick); this.tick = null; } }
   private clearPromote() { if (this.promoteTimer) { clearTimeout(this.promoteTimer); this.promoteTimer = null; } }
   private clearRestore() { if (this.restoreTimer) { clearInterval(this.restoreTimer); this.restoreTimer = null; } }
+
+  /** Fully reset both decks + the echo bus + timers to a neutral state. The single source of truth
+   *  for "no stuck EQ/filter/tempo/gate/echo", used on start and stop so no prior state can leak into
+   *  a new session or linger after one — robustness for any song or interaction. */
+  private resetDecksAndFx() {
+    this.clearPromote();
+    this.clearRestore();
+    for (const id of ['a', 'b'] as DeckId[]) {
+      const d = this.engine.deck(id);
+      d.resetEqNow();
+      d.setFilter(0);
+      d.setVolume(1);
+      d.setTempo(1);
+    }
+    this.engine.echoReset();
+    this.echoActive = false;
+    this.echoDeck = null;
+  }
 
   /** Can these two tracks beat-lock? Returns the chosen incoming tempo (octave-folded) + ratio,
    *  or null (→ EQ-blend fallback). Shared by the trigger and the transition so they agree. */
@@ -156,7 +175,8 @@ export class AutoDjController {
     const outId = this.queue[this.index]?.id;
     const inId = this.queue[this.index + 1]?.id;
     const remaining = this.effectiveEnd(this.live, outId) - pos; // time to the TRUE audio end
-    if (this.preloadedIdx === this.index + 1) {
+    const minPlay = Math.min(AUTO_MIN_PLAY_S, dur * 0.5); // let a track breathe before mixing out (short-track-safe)
+    if (this.preloadedIdx === this.index + 1 && pos >= minPlay) {
       const estBlend = this.blendLenFor(this.planFor(outId, inId), this.gridOf(outId)); // recipe-aware trigger
       if (remaining <= estBlend && remaining > 1) { this.beginTransition(); return; }
     }
@@ -189,6 +209,11 @@ export class AutoDjController {
     const best = this.bestMatch(gOut, gIn);
     const matched = !!best;
     const plan = planTransition(aOut?.endType ?? 'standard', aIn?.startType ?? 'standard', matched);
+    // WOW insurance + variety: an unclassified 'standard' pair (common with brand-new songs) still gets
+    // a light, ROTATING garnish — so it's never a bare crossfade and consecutive plains differ.
+    const garnish: 'dark' | 'wash' | null = plan.name === 'standard'
+      ? (['dark', null, 'wash'] as const)[this.garnishIdx++ % 3]
+      : null;
     let blendS = this.blendLenFor(plan, gOut);
     let matchRatio: number | null = null;
 
@@ -233,6 +258,12 @@ export class AutoDjController {
     }
     if (plan.uplift) this.engine.uplift(fxT0 + 0.2 * wS, 0.6 * wS);        // white-noise whoosh building into the drop
     if (plan.bloom) this.engine.washBloom(inc, fxT0, 0.6 * blendS);        // incoming blooms in lush, then tightens
+    if (garnish === 'dark') liveDeck.sweepOutDark(fxT0 + 0.45 * wS, 0.5 * wS, 1200); // gentle fallback darkening
+    else if (garnish === 'wash' && !this.echoActive) {                     // or a subtle fallback wash tail
+      this.engine.echoBegin(this.live, 0.09, fxT0 + 0.45 * blendS, true);
+      this.echoActive = true;
+      this.echoDeck = this.live;
+    }
     if (plan.echoOut) {
       const delayS = gOut && gOut.bpm > 0 ? Math.min(0.6, 30 / gOut.bpm) : 0.35; // ~eighth note (60/bpm/2)
       this.engine.echoBegin(this.live, delayS, fxT0 + 0.5 * blendS);            // feed the last bars into the delay
@@ -249,7 +280,7 @@ export class AutoDjController {
       recipe: plan.name, outEnd: aOut?.endType ?? '?', inStart: aIn?.startType ?? '?',
       fx: [plan.outFilter && 'out-dark', plan.inFilter && 'in-open', plan.echoOut && 'echo', plan.washOut && 'wash',
         plan.tapeStop && 'tape-stop', plan.stutter && 'stutter', plan.riser && 'riser', plan.uplift && 'uplift',
-        plan.bloom && 'bloom'].filter(Boolean),
+        plan.bloom && 'bloom', garnish && `garnish-${garnish}`].filter(Boolean),
       from: this.live, to: inc, blendS: +blendS.toFixed(1), matched,
       ratio: matchRatio ? +matchRatio.toFixed(3) : null,
       outBpm: gOut ? +gOut.bpm.toFixed(1) : null, inBpm: gIn ? +gIn.bpm.toFixed(1) : null,
@@ -340,9 +371,16 @@ export class AutoDjController {
       const d = this.engine.deck(this.live);
       d.resetEqNow();
       d.setTempo(1);
-      await d.load(this.queue[this.index].url);
-      d.play();
-      this.computeAnalysis(this.live, this.queue[this.index].id);
+      try {
+        await d.load(this.queue[this.index].url);
+        d.play();
+        this.computeAnalysis(this.live, this.queue[this.index].id);
+      } catch (e) {
+        // Bad URL / undecodable track → skip it rather than stalling in silence.
+        log('hard-advance load FAILED — skipping track', this.index, e);
+        void this.hardAdvance(); // advances past it, or stops if it was the last
+        return;
+      }
     }
     this.emitTrack();
     this.preloadNext();
@@ -407,13 +445,11 @@ export class AutoDjController {
   }
 
   stop() {
-    this.clearPromote();
-    this.clearRestore();
     this.stopTick();
-    if (this.echoActive) { this.engine.echoReset(); this.echoActive = false; this.echoDeck = null; }
     if (this.transitioning) { this.transitioning = false; this.emitMixing(false); }
     this.engine.a.pause();
     this.engine.b.pause();
+    this.resetDecksAndFx(); // clears timers, EQ/filter/tempo/gate, and the echo bus
   }
 
   /** Live position + duration, for a now-playing scrubber. */

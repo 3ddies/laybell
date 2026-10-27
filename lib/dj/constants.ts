@@ -15,6 +15,8 @@ export const AUTO_BLEND_BEATS = 24;           // beatmatched blend length, in be
 export const AUTO_BLEND_DEFAULT_S = 14;       // blend length when we can't read the beat grid
 export const AUTO_BLEND_MIN_S = 6;            // never blend shorter than this
 export const AUTO_BLEND_MAX_S = 20;           // or longer than this
+export const AUTO_MIN_PLAY_S = 10;            // let a track play at least this long before transitioning out
+                                              // (clamped to half its duration, so short tracks still mix)
 export const AUTO_BEAT_MIN_CONFIDENCE = 0.18; // below this, skip beatmatch (fall back to EQ blend)
 export const AUTO_MAX_STRETCH = 0.08;         // only beatmatch within ±8% tempo change (musical + safe)
 // A beatmatched incoming holds the locked tempo for the first part of the blend, then eases back

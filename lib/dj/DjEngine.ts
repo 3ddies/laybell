@@ -244,13 +244,6 @@ export class Deck {
   /** Set the low EQ immediately — used to pre-cut the incoming deck's bass for a swap. */
   setBassNow(knob: number): void { this.eqLow.gain.value = eqKnobToDb(clamp(knob, -1, 1)); }
 
-  /** Ramp the low EQ to `toKnob` between startT and endT (the auto-mix bass swap). Native,
-   *  so it stays smooth and survives the app backgrounding. */
-  rampBass(toKnob: number, startT: number, endT: number): void {
-    this.eqLow.gain.setValueAtTime(this.eqLow.gain.value, startT);
-    this.eqLow.gain.linearRampToValueAtTime(eqKnobToDb(clamp(toKnob, -1, 1)), endT);
-  }
-
   private eqNode(band: EqBand): BiquadFilterNode {
     return band === 'low' ? this.eqLow : band === 'mid' ? this.eqMid : this.eqHigh;
   }
@@ -310,8 +303,9 @@ export class Deck {
     this.filter.frequency.cancelScheduledValues(startT);
     this.filter.frequency.setValueCurveAtTime(curve, startT, durS);
   }
-  /** FX: muffle this deck away (open → dark lowpass) as it exits — "sinking into the distance". */
-  sweepOutDark(startT: number, durS: number): void { this.rampFilterLowpass(LP_OPEN_HZ, 350, startT, durS); }
+  /** FX: muffle this deck away (open → `toHz` lowpass) as it exits — "sinking into the distance".
+   *  A higher toHz (e.g. ~1200) is a gentler darkening, for a subtle garnish. */
+  sweepOutDark(startT: number, durS: number, toHz = 350): void { this.rampFilterLowpass(LP_OPEN_HZ, toHz, startT, durS); }
   /** FX: open this deck up (dark lowpass → open) as it arrives — a filter-up build. */
   sweepInOpen(startT: number, durS: number): void { this.rampFilterLowpass(450, LP_OPEN_HZ, startT, durS); }
 
