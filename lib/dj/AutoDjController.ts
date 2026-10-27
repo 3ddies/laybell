@@ -24,8 +24,6 @@
 import type { DjEngine } from './DjEngine';
 import type { DeckId } from './constants';
 import {
-  AUTO_BLEND_BEATS,
-  AUTO_BLEND_DEFAULT_S,
   AUTO_BLEND_MIN_S,
   AUTO_BLEND_MAX_S,
   AUTO_BEAT_MIN_CONFIDENCE,
@@ -38,10 +36,11 @@ import {
   AUTO_HIGH_DUCK,
   AUTO_MATCH_BASS_DUCK,
 } from './constants';
-import { type BeatGrid } from './beatGrid';
+import { type BeatGrid, type EndType, type StartType } from './beatGrid';
+import { planTransition, type TransitionPlan } from './transitionPlan';
 
 export type AutoDjTrack = { id: string; title: string; artist: string; url: string; cover?: string | null };
-type TrackAnalysis = { grid: BeatGrid | null; endS: number; abrupt: boolean };
+type TrackAnalysis = { grid: BeatGrid | null; endS: number; abrupt: boolean; endType: EndType; startType: StartType };
 
 type Listener = {
   onTrack?: (track: AutoDjTrack | null, index: number) => void;
@@ -110,12 +109,38 @@ export class AutoDjController {
   private clearPromote() { if (this.promoteTimer) { clearTimeout(this.promoteTimer); this.promoteTimer = null; } }
   private clearRestore() { if (this.restoreTimer) { clearInterval(this.restoreTimer); this.restoreTimer = null; } }
 
-  /** Blend length for the given outgoing grid: 16 beats, clamped; default if unknown. */
-  private estimateBlendS(gOut?: BeatGrid): number {
-    if (gOut && gOut.confidence >= AUTO_BEAT_MIN_CONFIDENCE && gOut.bpm > 0) {
-      return clampN(AUTO_BLEND_BEATS * (60 / gOut.bpm), AUTO_BLEND_MIN_S, AUTO_BLEND_MAX_S);
+  /** Can these two tracks beat-lock? Returns the chosen incoming tempo (octave-folded) + ratio,
+   *  or null (→ EQ-blend fallback). Shared by the trigger and the transition so they agree. */
+  private bestMatch(gOut?: BeatGrid, gIn?: BeatGrid): { bpm: number; ratio: number } | null {
+    if (!gOut || !gIn || gOut.confidence < AUTO_BEAT_MIN_CONFIDENCE || gIn.confidence < AUTO_BEAT_MIN_CONFIDENCE) return null;
+    const target = gOut.bpm;
+    const cands = [gIn.bpm * 0.5, gIn.bpm, gIn.bpm * 2];
+    let best: { bpm: number; ratio: number } | null = null;
+    let bestErr = Infinity;
+    for (const b of cands) {
+      if (b <= 0) continue;
+      const ratio = target / b;
+      const err = Math.abs(1 - ratio);
+      if (ratio >= 1 - AUTO_MAX_STRETCH && ratio <= 1 + AUTO_MAX_STRETCH && err < bestErr) { best = { bpm: b, ratio }; bestErr = err; }
     }
-    return AUTO_BLEND_DEFAULT_S;
+    return best;
+  }
+
+  /** The recipe for the current outgoing→incoming pair (how it ends / how the next one starts). */
+  private planFor(outId?: string, inId?: string, matched?: boolean): TransitionPlan {
+    const aOut = outId ? this.analysis.get(outId) : undefined;
+    const aIn = inId ? this.analysis.get(inId) : undefined;
+    const m = matched ?? !!this.bestMatch(aOut?.grid ?? undefined, aIn?.grid ?? undefined);
+    return planTransition(aOut?.endType ?? 'standard', aIn?.startType ?? 'standard', m);
+  }
+
+  /** The recipe's blend length in seconds: beats × tempo when the outgoing grid is known, else the
+   *  recipe's second-based default. Clamped. */
+  private blendLenFor(plan: TransitionPlan, gOut?: BeatGrid): number {
+    if (gOut && gOut.confidence >= AUTO_BEAT_MIN_CONFIDENCE && gOut.bpm > 0) {
+      return clampN(plan.blendBeats * (60 / gOut.bpm), AUTO_BLEND_MIN_S, AUTO_BLEND_MAX_S);
+    }
+    return plan.blendDefaultS;
   }
 
   private onTick() {
@@ -127,10 +152,11 @@ export class AutoDjController {
     const hasNext = this.index + 1 < this.queue.length;
     if (!hasNext) { if (dur - pos <= 0.2) this.stop(); return; }
     const outId = this.queue[this.index]?.id;
+    const inId = this.queue[this.index + 1]?.id;
     const remaining = this.effectiveEnd(this.live, outId) - pos; // time to the TRUE audio end
-    if (this.preloadedIdx === this.index + 1 && remaining <= this.estimateBlendS(this.gridOf(outId)) && remaining > 1) {
-      this.beginTransition();
-      return;
+    if (this.preloadedIdx === this.index + 1) {
+      const estBlend = this.blendLenFor(this.planFor(outId, inId), this.gridOf(outId)); // recipe-aware trigger
+      if (remaining <= estBlend && remaining > 1) { this.beginTransition(); return; }
     }
     if (remaining <= 0.4) void this.hardAdvance(); // at the audio end with no blend ready → don't stall
   }
@@ -142,8 +168,9 @@ export class AutoDjController {
     const outId = this.queue[this.index]?.id;
     const inId = this.queue[this.index + 1]?.id;
     const aOut = outId ? this.analysis.get(outId) : undefined;
+    const aIn = inId ? this.analysis.get(inId) : undefined;
     const gOut = aOut?.grid ?? undefined;
-    const gIn = this.gridOf(inId);
+    const gIn = aIn?.grid ?? undefined;
 
     this.clearRestore();
     this.transitioning = true;
@@ -156,44 +183,26 @@ export class AutoDjController {
     incDeck.setFilter(0);
     incDeck.setTempo(1);
 
-    let blendS = this.estimateBlendS(gOut);
-    let matched = false;
+    // Beat-lock? And which recipe fits how this song ENDS / how the next STARTS.
+    const best = this.bestMatch(gOut, gIn);
+    const matched = !!best;
+    const plan = planTransition(aOut?.endType ?? 'standard', aIn?.startType ?? 'standard', matched);
+    let blendS = this.blendLenFor(plan, gOut);
     let matchRatio: number | null = null;
 
-    if (
-      gOut && gIn &&
-      gOut.confidence >= AUTO_BEAT_MIN_CONFIDENCE &&
-      gIn.confidence >= AUTO_BEAT_MIN_CONFIDENCE
-    ) {
-      // Pick the incoming octave (½/1/2×) whose tempo best matches the outgoing within range.
-      const target = gOut.bpm;
-      const cands = [gIn.bpm * 0.5, gIn.bpm, gIn.bpm * 2];
-      let best: { bpm: number; ratio: number } | null = null;
-      let bestErr = Infinity;
-      for (const b of cands) {
-        if (b <= 0) continue;
-        const ratio = target / b;
-        const err = Math.abs(1 - ratio);
-        if (ratio >= 1 - AUTO_MAX_STRETCH && ratio <= 1 + AUTO_MAX_STRETCH && err < bestErr) {
-          best = { bpm: b, ratio };
-          bestErr = err;
-        }
-      }
-      if (best) {
-        matchRatio = best.ratio;
-        incDeck.setTempo(best.ratio); // incoming's REAL bpm now equals the outgoing's
-        const periodOut = 60 / gOut.bpm;
-        const sinceGrid = liveDeck.position() - gOut.firstBeatS;
-        const phaseFrac = ((sinceGrid % periodOut) + periodOut) % periodOut / periodOut;
-        const periodIn = 60 / best.bpm;
-        let off = gIn.firstBeatS + phaseFrac * periodIn; // first strong beat + matching phase
-        if (!(off >= 0)) off = phaseFrac * periodIn;
-        incDeck.seek(off);
-        blendS = clampN(AUTO_BLEND_BEATS * periodOut, AUTO_BLEND_MIN_S, AUTO_BLEND_MAX_S);
-        matched = true;
-      }
+    if (best && gOut && gIn) {
+      matchRatio = best.ratio;
+      incDeck.setTempo(best.ratio); // incoming's REAL bpm now equals the outgoing's
+      const periodOut = 60 / gOut.bpm;
+      const sinceGrid = liveDeck.position() - gOut.firstBeatS;
+      const phaseFrac = ((sinceGrid % periodOut) + periodOut) % periodOut / periodOut;
+      const periodIn = 60 / best.bpm;
+      let off = gIn.firstBeatS + phaseFrac * periodIn; // first strong beat + matching phase
+      if (!(off >= 0)) off = phaseFrac * periodIn;
+      incDeck.seek(off);
+    } else {
+      incDeck.seek(gIn?.firstBeatS ?? 0);
     }
-    if (!matched) incDeck.seek(gIn?.firstBeatS ?? 0);
 
     // Anchor the blend to the outgoing's TRUE audio end, with headroom so the fade is
     // complete before the song stops (more for cold/abrupt endings).
@@ -206,14 +215,14 @@ export class AutoDjController {
     // Matched → tuck the incoming kick (both locked kicks layer); unmatched → kill it (clean swap).
     incDeck.setBassNow(matched ? AUTO_MATCH_BASS_DUCK : -1);
     incDeck.play();
-    this.engine.scheduleMorph(this.live, inc, blendS, matched);
+    this.engine.scheduleMorph(this.live, inc, blendS, matched, plan.completeFrac);
     if (matched && matchRatio) this.startMatchGlide(inc, matchRatio, blendS);
     log('mixing', {
       track: this.queue[this.index]?.title ?? '?',
+      recipe: plan.name, outEnd: aOut?.endType ?? '?', inStart: aIn?.startType ?? '?',
       from: this.live, to: inc, blendS: +blendS.toFixed(1), matched,
-      ratio: matchRatio ? +matchRatio.toFixed(3) : null, abrupt: !!aOut?.abrupt,
-      outBpm: gOut ? +gOut.bpm.toFixed(1) : null, outConf: gOut ? +gOut.confidence.toFixed(2) : null,
-      inBpm: gIn ? +gIn.bpm.toFixed(1) : null, inConf: gIn ? +gIn.confidence.toFixed(2) : null,
+      ratio: matchRatio ? +matchRatio.toFixed(3) : null,
+      outBpm: gOut ? +gOut.bpm.toFixed(1) : null, inBpm: gIn ? +gIn.bpm.toFixed(1) : null,
     });
 
     this.clearPromote();
@@ -330,7 +339,7 @@ export class AutoDjController {
         log('analysis', {
           track: this.queue.find((t) => t.id === trackId)?.title ?? '?',
           dur: +this.engine.deck(id).durationS.toFixed(1),
-          endS: +a.endS.toFixed(1), abrupt: a.abrupt,
+          endS: +a.endS.toFixed(1), end: a.endType, start: a.startType,
           bpm: a.grid ? +a.grid.bpm.toFixed(1) : null,
           conf: a.grid ? +a.grid.confidence.toFixed(2) : null,
         });

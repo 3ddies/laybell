@@ -144,13 +144,40 @@ const END_PRESENT_FRACTION = 0.18; // music is "present" above this fraction of 
 const END_ABRUPT_FRACTION = 0.5;   // still this loud just before the end (energy) = abrupt/cold stop
 const END_ABRUPT_WINDOW_S = 0.3;
 
-export function analyzeEnding(samples: Float32Array, sampleRate: number): { endS: number; abrupt: boolean } {
+// How a track ENDS / STARTS — drives the per-pair transition recipe (see transitionPlan.ts).
+export type EndType = 'cold' | 'fade' | 'sparse' | 'standard';
+//   cold   = loud right up to a hard stop (abrupt)
+//   fade   = energy decays to the end (fade-out outro)
+//   sparse = ends thin — little bass/drums, e.g. vocals or ambience only
+//   standard = none of the above
+export type StartType = 'drop' | 'vocal' | 'soft' | 'standard';
+//   drop  = comes in loud and bass-heavy from the top (a beat/drop)
+//   vocal = present but thin from the top (a vocal/yell, no beat yet)
+//   soft  = quiet intro that builds
+//   standard = none of the above
+
+// Fraction of a region's energy that sits below ~200Hz (a one-pole low-pass). High = bass/drums
+// present; low = thin/vocal. Cheap, mono, one pass. Used to tell a beat from a vocal.
+function lowFraction(samples: Float32Array, s: number, e: number, sampleRate: number): number {
+  const a = (1 / sampleRate) / (1 / (2 * Math.PI * 200) + 1 / sampleRate);
+  let y = 0;
+  let low = 0;
+  let tot = 0;
+  const end = Math.min(e, samples.length);
+  for (let i = Math.max(0, s); i < end; i++) { const x = samples[i]; y += a * (x - y); low += y * y; tot += x * x; }
+  return tot > 0 ? low / tot : 0;
+}
+
+const SPARSE_LOW_FRACTION = 0.28;  // below this low-fraction near the end = thin/sparse ending
+const FADE_DECAY_RATIO = 0.45;     // tail's late energy below this × its early energy = a fade
+
+export function analyzeEnding(samples: Float32Array, sampleRate: number): { endS: number; abrupt: boolean; endType: EndType } {
   const n = samples?.length ?? 0;
-  if (!n || !sampleRate) return { endS: 0, abrupt: false };
+  if (!n || !sampleRate) return { endS: 0, abrupt: false, endType: 'standard' };
   const durS = n / sampleRate;
 
   const nFrames = Math.floor(n / END_HOP);
-  if (nFrames < 8) return { endS: durS, abrupt: false };
+  if (nFrames < 8) return { endS: durS, abrupt: false, endType: 'standard' };
 
   // Frame energy over the WHOLE track (the end can be anywhere).
   const energy = new Float32Array(nFrames);
@@ -166,7 +193,7 @@ export function analyzeEnding(samples: Float32Array, sampleRate: number): { endS
   const sorted = Float32Array.from(energy);
   sorted.sort();
   const ref = sorted[Math.min(nFrames - 1, Math.floor(nFrames * END_LOUD_PERCENTILE))] || sorted[nFrames - 1] || 0;
-  if (ref <= 0) return { endS: durS, abrupt: false };
+  if (ref <= 0) return { endS: durS, abrupt: false, endType: 'standard' };
 
   // Last frame where music is still present (energy above a fraction of the loud ref).
   const presentThresh = ref * END_PRESENT_FRACTION;
@@ -180,5 +207,60 @@ export function analyzeEnding(samples: Float32Array, sampleRate: number): { endS
   let abrupt = false;
   for (let f = Math.max(0, endFrame - look); f <= endFrame; f++) { if (energy[f] >= abruptThresh) { abrupt = true; break; } }
 
-  return { endS, abrupt };
+  // Classify the ending.
+  const fps = sampleRate / END_HOP;
+  let endType: EndType;
+  if (abrupt) {
+    endType = 'cold';
+  } else {
+    // Energy trend across the last ~5s before the end: a big decline = a fade.
+    const win = Math.round(5 * fps);
+    const e0 = Math.max(0, endFrame - win);
+    const midF = Math.floor((e0 + endFrame) / 2);
+    let earlyE = 0; let earlyN = 0; let lateE = 0; let lateN = 0;
+    for (let f = e0; f <= endFrame; f++) { if (f < midF) { earlyE += energy[f]; earlyN++; } else { lateE += energy[f]; lateN++; } }
+    earlyE = earlyN ? earlyE / earlyN : 0;
+    lateE = lateN ? lateE / lateN : 0;
+    if (earlyE > 0 && lateE < FADE_DECAY_RATIO * earlyE) {
+      endType = 'fade';
+    } else {
+      // Thin ending (vocals/ambience, little low end)?
+      const lr = lowFraction(samples, (endFrame + 1) * END_HOP - Math.floor(3 * sampleRate), (endFrame + 1) * END_HOP, sampleRate);
+      endType = lr < SPARSE_LOW_FRACTION ? 'sparse' : 'standard';
+    }
+  }
+
+  return { endS, abrupt, endType };
+}
+
+// How a track STARTS, from its first few seconds. Conservative — defaults to 'standard' unless
+// a type is clear. See StartType.
+const START_HOP = 1024;
+export function analyzeStart(samples: Float32Array, sampleRate: number): StartType {
+  const n = samples?.length ?? 0;
+  if (!n || !sampleRate) return 'standard';
+
+  // Reference loudness = loudest frame in the first ~20s.
+  const refLen = Math.min(n, 20 * sampleRate);
+  let maxFrameE = 0;
+  for (let s = 0; s + START_HOP <= refLen; s += START_HOP) {
+    let e = 0;
+    for (let i = s; i < s + START_HOP; i++) { const v = samples[i]; e += v * v; }
+    e /= START_HOP;
+    if (e > maxFrameE) maxFrameE = e;
+  }
+  if (maxFrameE <= 0) return 'standard';
+
+  // Mean energy of the first ~1s, relative to that reference.
+  const first1 = Math.min(n, sampleRate);
+  let e1 = 0;
+  for (let i = 0; i < first1; i++) { const v = samples[i]; e1 += v * v; }
+  e1 /= first1;
+  const startLoud = e1 / maxFrameE;
+  const lr = lowFraction(samples, 0, Math.min(n, 2 * sampleRate), sampleRate);
+
+  if (startLoud > 0.35 && lr > 0.3) return 'drop';   // loud + bass-heavy from the top = a beat/drop
+  if (startLoud > 0.2 && lr < 0.2) return 'vocal';   // present but thin = a vocal/yell, no beat yet
+  if (startLoud < 0.12) return 'soft';               // quiet intro that builds
+  return 'standard';
 }

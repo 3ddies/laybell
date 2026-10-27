@@ -32,4 +32,6 @@ export const AUTO_MID_DUCK = -0.6;
 export const AUTO_HIGH_DUCK = -0.4;
 // Beat-LOCKED blends only: the incoming kick starts only mildly tucked (not killed) and layers in
 // under the outgoing's sub, so the two locked kicks reinforce ("the drums belong to each other").
-export const AUTO_MATCH_BASS_DUCK = -0.35;
+export const AUTO_MATCH_BASS_DUCK = -0.35;   // incoming kick's starting tuck
+export const AUTO_MATCH_BASS_SHARE = -0.12;  // …and the level it holds UNDER the outgoing anchor during the
+                                             // shared window (not full flat → two locked kicks can't double into boom)

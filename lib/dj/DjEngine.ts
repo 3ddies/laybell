@@ -21,8 +21,11 @@ import {
   type GainNode,
   type BiquadFilterNode,
 } from 'react-native-audio-api';
-import { TEMPO_MIN, TEMPO_MAX, AUTO_MID_DUCK, AUTO_HIGH_DUCK, AUTO_MATCH_BASS_DUCK, type EqBand, type DeckId } from './constants';
-import { analyzeBeatGrid, analyzeEnding, type BeatGrid } from './beatGrid';
+import {
+  TEMPO_MIN, TEMPO_MAX, AUTO_MID_DUCK, AUTO_HIGH_DUCK, AUTO_MATCH_BASS_DUCK, AUTO_MATCH_BASS_SHARE,
+  type EqBand, type DeckId,
+} from './constants';
+import { analyzeBeatGrid, analyzeEnding, analyzeStart, type BeatGrid, type EndType, type StartType } from './beatGrid';
 
 // EQ knob travel: full kill at the bottom, a modest boost at the top (DJ mixers
 // boost less than they cut — a +6 is already loud, a -26 is effectively "off").
@@ -250,16 +253,18 @@ export class Deck {
     }
   }
 
-  /** Analyse this track once: beat grid (BPM + phase) AND where its audio truly ends
-   *  (trailing silence trimmed) + whether that end is abrupt. Null if nothing loaded. */
-  analyze(): { grid: BeatGrid | null; endS: number; abrupt: boolean } | null {
+  /** Analyse this track once: beat grid (BPM + phase), where its audio truly ends (trailing
+   *  silence trimmed) + whether that end is abrupt, and how it ends/starts (for the transition
+   *  recipe). Null if nothing loaded. */
+  analyze(): { grid: BeatGrid | null; endS: number; abrupt: boolean; endType: EndType; startType: StartType } | null {
     if (!this.buffer) return null;
     try {
       const data = this.buffer.getChannelData(0);
       const sr = (this.buffer as unknown as { sampleRate?: number }).sampleRate ?? this.ctx.sampleRate;
       const grid = analyzeBeatGrid(data, sr);
-      const { endS, abrupt } = analyzeEnding(data, sr);
-      return { grid, endS: endS > 0 ? Math.min(endS, this.durationS) : this.durationS, abrupt };
+      const { endS, abrupt, endType } = analyzeEnding(data, sr);
+      const startType = analyzeStart(data, sr);
+      return { grid, endS: endS > 0 ? Math.min(endS, this.durationS) : this.durationS, abrupt, endType, startType };
     } catch {
       return null;
     }
@@ -404,20 +409,21 @@ export class DjEngine {
    *  across AND hand off the frequency bands (see MORPH) so one song melts into the next
    *  instead of merely overlapping. The incoming deck must already be PLAYING, pre-ducked
    *  (bass killed, mid/high at AUTO_*_DUCK). All ramps run on the audio thread. */
-  scheduleMorph(fromId: DeckId, toId: DeckId, blendS: number, matched = false): void {
+  scheduleMorph(fromId: DeckId, toId: DeckId, blendS: number, matched = false, completeFrac: number = MORPH.completeFrac): void {
     const t0 = this.ctx.currentTime;
     const from = this.deck(fromId);
     const to = this.deck(toId);
-    const wS = MORPH.completeFrac * blendS;     // the whole hand-off happens within this window;
+    const wS = completeFrac * blendS;           // the whole hand-off happens within this window;
     const at = (frac: number) => t0 + frac * wS; // EQ fractions are relative to it (then the outgoing is silent)
 
-    this.scheduleCross(fromId, toId, t0, blendS, MORPH.completeFrac);
+    this.scheduleCross(fromId, toId, t0, blendS, completeFrac);
 
     // Low — the "drums belong together" lever.
     if (matched) {
       // Locked kicks reinforce: the outgoing anchors the sub through a long shared window, the
-      // incoming kick layers in (tucked, rising), then the outgoing bows out late.
-      to.rampEq('low', AUTO_MATCH_BASS_DUCK, 0, t0, at(MORPH.mBassOutEnd));
+      // incoming kick layers in — tucked UNDER the anchor (to AUTO_MATCH_BASS_SHARE, not full flat,
+      // so two locked kicks can't double into boom) — then the outgoing bows out late.
+      to.rampEq('low', AUTO_MATCH_BASS_DUCK, AUTO_MATCH_BASS_SHARE, t0, at(MORPH.mBassOutEnd));
       from.rampEq('low', 0, -1, at(MORPH.mBassOutStart), at(MORPH.mBassOutEnd));
     } else {
       // Unmatched: quick swap around the midpoint — only one track holds the sub at a time.
