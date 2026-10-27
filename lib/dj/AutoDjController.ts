@@ -217,9 +217,17 @@ export class AutoDjController {
     incDeck.play();
     this.engine.scheduleMorph(this.live, inc, blendS, matched, plan.completeFrac);
     if (matched && matchRatio) this.startMatchGlide(inc, matchRatio, blendS);
+
+    // FX sweeps (recipe-driven). Timed off the hand-off window wS = completeFrac × blend.
+    const fxT0 = this.engine.ctx.currentTime;
+    const wS = plan.completeFrac * blendS;
+    if (plan.outFilter) liveDeck.sweepOutDark(fxT0 + 0.4 * wS, 0.55 * wS); // darken the outgoing as it leaves
+    if (plan.inFilter) incDeck.sweepInOpen(fxT0, 0.7 * wS);                // open the incoming up as it arrives
+
     log('mixing', {
       track: this.queue[this.index]?.title ?? '?',
       recipe: plan.name, outEnd: aOut?.endType ?? '?', inStart: aIn?.startType ?? '?',
+      fx: plan.outFilter ? 'out-dark' : plan.inFilter ? 'in-open' : null,
       from: this.live, to: inc, blendS: +blendS.toFixed(1), matched,
       ratio: matchRatio ? +matchRatio.toFixed(3) : null,
       outBpm: gOut ? +gOut.bpm.toFixed(1) : null, inBpm: gIn ? +gIn.bpm.toFixed(1) : null,
@@ -244,6 +252,7 @@ export class AutoDjController {
 
     const liveDeck = this.engine.deck(this.live);
     liveDeck.resetEqNow();     // the ramps brought it to flat; make sure + cancel schedules
+    liveDeck.setFilter(0);     // open (clears any in-flight FX sweep)
     this.engine.crossfade(this.live === 'a' ? 0 : 1);
 
     // The match-glide already eased it back to natural during the blend; make sure it's exact.

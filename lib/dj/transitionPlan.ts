@@ -16,6 +16,8 @@ export type TransitionPlan = {
   blendBeats: number;    // blend length in beats when beatmatched
   blendDefaultS: number; // blend length in seconds when not
   completeFrac: number;  // front-load: hand-off finishes by this fraction of the blend, then outgoing is silent
+  outFilter?: boolean;   // FX: lowpass-sweep the OUTGOING dark as it leaves (sinks into the distance)
+  inFilter?: boolean;    // FX: lowpass-sweep the INCOMING open as it arrives (a filter-up build)
 };
 
 const STANDARD_COMPLETE_FRAC = 0.8;
@@ -37,13 +39,15 @@ export function planTransition(end: EndType, start: StartType, matched: boolean)
   if (end === 'sparse') {
     return { name: 'beat-under-vocal', blendBeats: 28, blendDefaultS: 16, completeFrac: 0.85 };
   }
-  // Fade-out outro → don't fight it: a long, gentle blend that lets the outgoing ring through its fade.
+  // Fade-out outro → don't fight it: a long, gentle blend, and sweep the outgoing DARK as it fades
+  // so it sinks into the distance (a produced exit).
   if (end === 'fade') {
-    return { name: 'fade-out', blendBeats: 28, blendDefaultS: 16, completeFrac: 0.9 };
+    return { name: 'fade-out', blendBeats: 28, blendDefaultS: 16, completeFrac: 0.9, outFilter: true };
   }
-  // Soft, building intro on the incoming → start it early and let it build under the outgoing.
+  // Soft, building intro on the incoming → start it early, let it build under the outgoing, and open
+  // it up through a lowpass (a filter-up build into full).
   if (start === 'soft') {
-    return { name: 'soft-intro', blendBeats: 28, blendDefaultS: 16, completeFrac: 0.85 };
+    return { name: 'soft-intro', blendBeats: 28, blendDefaultS: 16, completeFrac: 0.85, inFilter: true };
   }
   // A beat/drop intro into a normal ending → keep it a touch tighter so the drop lands with impact.
   if (start === 'drop') {

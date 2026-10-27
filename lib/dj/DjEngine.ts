@@ -278,8 +278,26 @@ export class Deck {
     }
   }
 
+  /** Exponential lowpass-frequency sweep over [startT, startT+durS] (natural to the ear). Used for
+   *  the transition FX: darken the outgoing as it leaves, or open the incoming up as it arrives. */
+  rampFilterLowpass(fromHz: number, toHz: number, startT: number, durS: number): void {
+    this.filter.type = 'lowpass';
+    const a = clamp(fromHz, 50, LP_OPEN_HZ);
+    const b = clamp(toHz, 50, LP_OPEN_HZ);
+    const N = 64;
+    const curve = new Float32Array(N);
+    for (let i = 0; i < N; i++) curve[i] = a * Math.pow(b / a, i / (N - 1));
+    this.filter.frequency.cancelScheduledValues(startT);
+    this.filter.frequency.setValueCurveAtTime(curve, startT, durS);
+  }
+  /** FX: muffle this deck away (open → dark lowpass) as it exits — "sinking into the distance". */
+  sweepOutDark(startT: number, durS: number): void { this.rampFilterLowpass(LP_OPEN_HZ, 350, startT, durS); }
+  /** FX: open this deck up (dark lowpass → open) as it arrives — a filter-up build. */
+  sweepInOpen(startT: number, durS: number): void { this.rampFilterLowpass(450, LP_OPEN_HZ, startT, durS); }
+
   /** Filter knob in [-1,1]: <0 lowpass (darker), >0 highpass (thinner), 0 = open. */
   setFilter(knob: number): void {
+    this.filter.frequency.cancelScheduledValues(this.ctx.currentTime); // clear any FX sweep
     const k = clamp(knob, -1, 1);
     if (k < 0) {
       this.filter.type = 'lowpass';
