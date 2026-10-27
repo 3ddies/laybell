@@ -19,6 +19,7 @@ export type TransitionPlan = {
   outFilter?: boolean;   // FX: lowpass-sweep the OUTGOING dark as it leaves (sinks into the distance)
   inFilter?: boolean;    // FX: lowpass-sweep the INCOMING open as it arrives (a filter-up build)
   echoOut?: boolean;     // FX: echo/delay tail on the OUTGOING — its last bars repeat & decay out
+  washOut?: boolean;     // FX: subtle reverb-wash ambience on the OUTGOING as it leaves
 };
 
 const STANDARD_COMPLETE_FRAC = 0.8;
@@ -41,14 +42,14 @@ export function planTransition(end: EndType, start: StartType, matched: boolean)
     return { name: 'cold-echo', blendBeats: 16, blendDefaultS: 11, completeFrac: 0.72, echoOut: true };
   }
   // Ending thin (vocals/ambience) → bring the next track IN UNDER the tail. Long overlap so the new
-  // groove establishes while the old vocal finishes. Classic radio move.
+  // groove establishes while the old vocal finishes, washed in ambience. Classic radio move.
   if (end === 'sparse') {
-    return { name: 'beat-under-vocal', blendBeats: 28, blendDefaultS: 16, completeFrac: 0.85 };
+    return { name: 'beat-under-vocal', blendBeats: 28, blendDefaultS: 16, completeFrac: 0.85, washOut: true };
   }
-  // Fade-out outro → don't fight it: a long, gentle blend, and sweep the outgoing DARK as it fades
-  // so it sinks into the distance (a produced exit).
+  // Fade-out outro → don't fight it: a long, gentle blend; sweep the outgoing DARK and wash it in
+  // ambience as it fades, so it sinks into the distance (a produced exit).
   if (end === 'fade') {
-    return { name: 'fade-out', blendBeats: 28, blendDefaultS: 16, completeFrac: 0.9, outFilter: true };
+    return { name: 'fade-out', blendBeats: 28, blendDefaultS: 16, completeFrac: 0.9, outFilter: true, washOut: true };
   }
   // Soft, building intro on the incoming → start it early, let it build under the outgoing, and open
   // it up through a lowpass (a filter-up build into full).

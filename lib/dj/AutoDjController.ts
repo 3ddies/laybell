@@ -230,12 +230,16 @@ export class AutoDjController {
       this.engine.echoBegin(this.live, delayS, fxT0 + 0.5 * blendS);            // feed the last bars into the delay
       this.echoActive = true;
       this.echoDeck = this.live;
+    } else if (plan.washOut) {
+      this.engine.echoBegin(this.live, 0.09, fxT0 + 0.4 * blendS, true); // wash mode picks its own delay; lush ambience as it leaves
+      this.echoActive = true;
+      this.echoDeck = this.live;
     }
 
     log('mixing', {
       track: this.queue[this.index]?.title ?? '?',
       recipe: plan.name, outEnd: aOut?.endType ?? '?', inStart: aIn?.startType ?? '?',
-      fx: [plan.outFilter && 'out-dark', plan.inFilter && 'in-open', plan.echoOut && 'echo'].filter(Boolean),
+      fx: [plan.outFilter && 'out-dark', plan.inFilter && 'in-open', plan.echoOut && 'echo', plan.washOut && 'wash'].filter(Boolean),
       from: this.live, to: inc, blendS: +blendS.toFixed(1), matched,
       ratio: matchRatio ? +matchRatio.toFixed(3) : null,
       outBpm: gOut ? +gOut.bpm.toFixed(1) : null, inBpm: gIn ? +gIn.bpm.toFixed(1) : null,
@@ -348,24 +352,29 @@ export class AutoDjController {
     } catch (e) { this.preloadedIdx = -1; log('preload FAILED', nextIdx, e); }
   }
 
-  /** Analyse + cache a loaded deck's beat grid + true audio end (once per track id).
-   *  Synchronous CPU (~100-200ms), run with plenty of headroom before the transition. */
+  /** Analyse + cache a loaded deck's beat grid, true audio end, and end/start types (once per track
+   *  id). The work is ~100-200ms of synchronous CPU, so it's DEFERRED off the load/render path — it's
+   *  not needed until the transition (a whole song away), and this keeps entering Listen mode and
+   *  preloading from blocking a frame. */
   private computeAnalysis(id: DeckId, trackId: string) {
     if (!trackId || this.analysis.has(trackId)) return;
-    try {
-      const a = this.engine.deck(id).analyze();
-      if (a) {
-        this.analysis.set(trackId, a);
-        log('analysis', {
-          track: this.queue.find((t) => t.id === trackId)?.title ?? '?',
-          dur: +this.engine.deck(id).durationS.toFixed(1),
-          endS: +a.endS.toFixed(1), end: a.endType, start: a.startType,
-          bpm: a.grid ? +a.grid.bpm.toFixed(1) : null,
-          conf: a.grid ? +a.grid.confidence.toFixed(2) : null,
-          m: a.dbg, // raw measures (endLow/endCrest/startLoud/startLow/startCrest) for tuning
-        });
-      }
-    } catch (e) { log('analysis FAILED', e); }
+    setTimeout(() => {
+      if (this.analysis.has(trackId)) return;
+      try {
+        const a = this.engine.deck(id).analyze();
+        if (a) {
+          this.analysis.set(trackId, a);
+          log('analysis', {
+            track: this.queue.find((t) => t.id === trackId)?.title ?? '?',
+            dur: +this.engine.deck(id).durationS.toFixed(1),
+            endS: +a.endS.toFixed(1), end: a.endType, start: a.startType,
+            bpm: a.grid ? +a.grid.bpm.toFixed(1) : null,
+            conf: a.grid ? +a.grid.confidence.toFixed(2) : null,
+            m: a.dbg, // raw measures (endLow/endCrest/startLoud/startLow/startCrest) for tuning
+          });
+        }
+      } catch (e) { log('analysis FAILED', e); }
+    }, 0);
   }
 
   /** Manual skip — instant hard-cut (no mix). Mid-blend, finish the blend immediately. */

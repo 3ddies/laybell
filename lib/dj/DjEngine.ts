@@ -55,6 +55,12 @@ const ECHO_SEND = 0.5;      // how much of the deck feeds the delay
 const ECHO_FEEDBACK = 0.45; // delay repeat decay (~5 audible repeats)
 const ECHO_RETURN = 0.85;   // delay bus → master level when engaged
 const ECHO_TAIL_S = 2.5;    // ring-out before the bus turns fully off
+// Reverb-WASH variant of the same bus: a short delay + high (still <1) feedback is a dense, lush
+// ambience tail. Kept subtle so it sits UNDER the mix (won't muddy).
+const WASH_DELAY_S = 0.09;
+const WASH_FEEDBACK = 0.7;
+const WASH_RETURN = 0.32;
+const WASH_SEND = 0.4;
 
 const MORPH = {
   // completeFrac: the whole hand-off (volume + EQ) finishes by this fraction of the blend;
@@ -415,18 +421,25 @@ export class DjEngine {
     this.crossfade(0.5);
   }
 
-  /** Engage the echo bus on a deck from startT: feed its signal into the delay (with feedback). */
-  echoBegin(deckId: DeckId, delayS: number, startT: number): void {
+  /** Engage the echo bus on a deck from startT: feed its signal into the delay (with feedback).
+   *  `wash` = a short-delay, high-feedback reverb-ish ambience instead of discrete repeats. */
+  echoBegin(deckId: DeckId, delayS: number, startT: number, wash = false): void {
+    const fb = wash ? WASH_FEEDBACK : ECHO_FEEDBACK;
+    const ret = wash ? WASH_RETURN : ECHO_RETURN;
+    const snd = wash ? WASH_SEND : ECHO_SEND;
+    const dly = wash ? WASH_DELAY_S : clamp(delayS, 0.05, 0.9);
+    this.echoFeedback.gain.cancelScheduledValues(startT);
+    this.echoFeedback.gain.setValueAtTime(fb, startT);
     this.echoDelay.delayTime.cancelScheduledValues(startT);
-    this.echoDelay.delayTime.setValueAtTime(clamp(delayS, 0.05, 0.9), startT);
+    this.echoDelay.delayTime.setValueAtTime(dly, startT);
     const r = this.echoReturn.gain;
     r.cancelScheduledValues(startT);
     r.setValueAtTime(Math.max(0, r.value), startT);
-    r.linearRampToValueAtTime(ECHO_RETURN, startT + 0.1);
+    r.linearRampToValueAtTime(ret, startT + (wash ? 0.3 : 0.1));
     const s = this.deck(deckId).echoSend.gain;
     s.cancelScheduledValues(startT);
     s.setValueAtTime(0, startT);
-    s.linearRampToValueAtTime(ECHO_SEND, startT + 0.15);
+    s.linearRampToValueAtTime(snd, startT + (wash ? 0.4 : 0.15));
   }
 
   /** Stop feeding the echo and let the tail ring out (feedback decay), then turn the bus off. */
@@ -446,6 +459,7 @@ export class DjEngine {
   echoReset(): void {
     const t = this.ctx.currentTime;
     this.echoReturn.gain.cancelScheduledValues(t); this.echoReturn.gain.value = 0;
+    this.echoFeedback.gain.cancelScheduledValues(t); this.echoFeedback.gain.value = ECHO_FEEDBACK; // restore (wash changes it)
     this.a.echoSend.gain.cancelScheduledValues(t); this.a.echoSend.gain.value = 0;
     this.b.echoSend.gain.cancelScheduledValues(t); this.b.echoSend.gain.value = 0;
   }
