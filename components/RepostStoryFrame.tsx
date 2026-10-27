@@ -1,22 +1,19 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { aspectToNumber } from '../lib/aspectRatio';
-import { GRADIENTS, RADIUS, SPACING, type ThemePalette } from '../constants/theme';
+import { SPACING, type ThemePalette } from '../constants/theme';
 import { useThemedStyles } from '../contexts/ThemeContext';
+import RepostCard from './RepostCard';
 
-// The Instagram-style frame for a post reshared to a story: the post's still sits
-// blurred edge-to-edge behind, and the post itself (the `children` — a playing
-// video or a still) fills a rounded card sized to the POST'S OWN aspect (so a
-// horizontal post reads horizontal, a vertical one fills), with a small author chip
-// that opens the original on tap.
-//
-// The whole frame is pointer-transparent EXCEPT the chip, so it can be layered ABOVE
-// the story viewer's tap surface: taps on the media still advance/pause the story,
-// only the chip captures.
+// The Instagram-style frame for a post reshared to a story WITHOUT the full editor (no saved post
+// layer): the post's still sits blurred edge-to-edge behind, and the post itself (the `children` —
+// a playing video or a still) fills the SHARED RepostCard (same rounded card + @handle below as the
+// editor and the composed viewer, so every reshared post looks the same). Tapping the card opens the
+// original; taps outside it still advance/pause the story (the frame is otherwise pointer-transparent).
 
 type RepostPost = {
   type: string;
@@ -30,12 +27,14 @@ type RepostPost = {
 
 const cache = new Map<string, RepostPost | null>();
 
-export default function RepostStoryFrame({ postId, aspectRatio, onOpenPost, children }: {
+export default function RepostStoryFrame({ postId, aspectRatio, onCardPress, revealed, onViewPost, children }: {
   postId: string;
   // The story already carries the post's aspect, so the card is sized right on the
   // first frame without waiting for the fetch.
   aspectRatio?: string | null;
-  onOpenPost?: () => void;
+  onCardPress?: () => void;   // tap the card → reveal / dismiss the "View Post" button
+  revealed?: boolean;         // show the "View Post" button
+  onViewPost?: () => void;    // tap the button → open the original post
   children: React.ReactNode;
 }) {
   const styles = useThemedStyles(makeStyles);
@@ -81,17 +80,16 @@ export default function RepostStoryFrame({ postId, aspectRatio, onOpenPost, chil
       )}
       <View style={styles.scrim} pointerEvents="none" />
       <View style={styles.center} pointerEvents="box-none">
-        <View style={[styles.card, { width: cardW, height: cardH }]} pointerEvents="box-none">
-          <View style={StyleSheet.absoluteFill} pointerEvents="none">{children}</View>
-          <TouchableOpacity style={styles.chip} activeOpacity={0.85} hitSlop={8} onPress={onOpenPost}>
-            {post?.avatar_url ? (
-              <ExpoImage source={{ uri: post.avatar_url }} style={styles.chipAvatar} contentFit="cover" cachePolicy="memory-disk" />
-            ) : (
-              <LinearGradient colors={GRADIENTS.avatar} style={styles.chipAvatar} />
-            )}
-            <Text style={styles.chipName} numberOfLines={1}>@{post?.username ?? 'laybell'}</Text>
-          </TouchableOpacity>
-        </View>
+        <RepostCard
+          cardW={cardW}
+          cardH={cardH}
+          username={post?.username}
+          onPress={onCardPress}
+          revealed={revealed}
+          onViewPost={onViewPost}
+        >
+          {children}
+        </RepostCard>
       </View>
     </View>
   );
@@ -100,16 +98,4 @@ export default function RepostStoryFrame({ postId, aspectRatio, onOpenPost, chil
 const makeStyles = (_c: ThemePalette) => StyleSheet.create({
   scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
   center: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
-  card: {
-    borderRadius: RADIUS.xl, overflow: 'hidden', backgroundColor: '#000',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
-    shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 8 },
-  },
-  chip: {
-    position: 'absolute', top: SPACING.sm, left: SPACING.sm,
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 999, padding: 4, paddingRight: 10,
-  },
-  chipAvatar: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#333' },
-  chipName: { color: '#fff', fontSize: 13, fontWeight: '700', maxWidth: 160 },
 });

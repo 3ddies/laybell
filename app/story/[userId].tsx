@@ -30,7 +30,7 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 import StoryThumb from '../../components/StoryThumb';
 import RepostStoryFrame from '../../components/RepostStoryFrame';
 import RepostPostMedia, { repostCardSize } from '../../components/RepostPostMedia';
-import RepostAuthorChip from '../../components/RepostAuthorChip';
+import RepostCard from '../../components/RepostCard';
 import { StoryBackground, type StoryBg } from '../../components/StoryBackgroundLayer';
 import { StoryDrawRenderer, type DrawStroke } from '../../components/StoryDrawLayer';
 import StoryCollage from '../../components/StoryCollage';
@@ -175,6 +175,11 @@ export default function StoryViewerScreen() {
   // Did we open from seeded tray data? If so the background fetch must not re-position us.
   const didSeedRef = useRef(groups.length > 0);
   const [paused, setPaused] = useState(false);
+  // Reshared post "View Post" reveal (Instagram two-step): tapping the post shows the button + pauses
+  // the story; tapping the button opens the post, tapping elsewhere dismisses.
+  const [viewPostRevealed, setViewPostRevealed] = useState(false);
+  const viewPostRevealedRef = useRef(false);
+  viewPostRevealedRef.current = viewPostRevealed;
   const [viewerCount, setViewerCount] = useState<number | null>(null);
   // The CURRENT story's like effect — total count (scales the hearts) + a few likers
   // (avatar + optional public comment, the pics/bubbles that flash by). Drives the fun
@@ -788,6 +793,24 @@ export default function StoryViewerScreen() {
       progressAnim.stopAnimation((v: number) => startImageProgress(typeof v === 'number' ? v : 0));
     }
   }
+
+  // Reshared post → "View Post" tag. The first tap reveals it and pauses the story; further taps just
+  // MOVE the tag to the new spot (RepostCard re-reads the tap) and keep the story paused — tapping the
+  // post is never a play/pause toggle. Dismiss happens only via the button (opens the post) or a tap
+  // OUTSIDE the card (the dismiss layer below), which resumes.
+  function revealViewPost() { setViewPostRevealed(true); pause(); }
+  function dismissViewPost() { setViewPostRevealed(false); resume(); }
+  function openSharedPost() {
+    setViewPostRevealed(false);
+    resume(); // so returning from the post doesn't leave the story frozen (the embedded media is focus-gated)
+    if (story?.shared_post_id) router.push(`/post/${story.shared_post_id}` as any);
+  }
+  // A new story became visible → drop any View Post reveal, and unfreeze if the reveal had paused us
+  // (e.g. the user swiped to another person while the button was up).
+  useEffect(() => {
+    if (viewPostRevealedRef.current) { setViewPostRevealed(false); resume(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [story?.id]);
 
   function onPressIn(e: any) {
     pressInfo.current = { t: Date.now(), x: e.nativeEvent.locationX, y: e.nativeEvent.locationY };
@@ -1473,25 +1496,37 @@ export default function StoryViewerScreen() {
             {/* Tap surface (advance / pause) */}
             <Pressable style={StyleSheet.absoluteFill} onPressIn={onPressIn} onPressOut={onPressOut} />
 
+            {/* "View Post" dismiss layer — only while the button is up. Above the tap surface, below
+                the card, so a tap OUTSIDE the card dismisses the button + resumes (instead of
+                advancing the story). Taps on the card/button are handled by the card itself. */}
+            {viewPostRevealed && story.shared_post_id ? (
+              <Pressable style={StyleSheet.absoluteFill} onPress={dismissViewPost} />
+            ) : null}
+
             {/* Reshared post (Instagram-style): the post in a card at its OWN aspect
                 over a blurred backdrop — a video PLAYS (≤20s, with audio), an image
-                shows — plus an author chip that opens the original. Layered above the
-                tap surface but pointer-transparent except the chip, so taps on the
-                media still advance/pause. */}
+                shows — with the author handle below. Layered above the tap surface;
+                tapping the card reveals a "View Post" button (then tap it to open the
+                original post), while taps outside it still advance/pause the story. */}
             {story.shared_post_id ? (
               composed ? (
-                // EDITED repost — background + the post placed/resized on it, drawn
-                // above the tap surface but pointer-transparent (except the chip) so
-                // taps still advance/pause; drawing + text render further up.
+                // EDITED repost — the background + the post placed/resized on it, drawn above the
+                // tap surface. The card is rendered through the SHARED RepostCard, so the published
+                // story looks exactly like the editor preview (radius, shadow, @handle below).
+                // Tapping it reveals the "View Post" button (Instagram two-step); the saved
+                // x/y/scale/rotation place it just as the editor's draggable sticker did. Drawing +
+                // text render further up.
                 <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
                   <StoryBackground bg={composed.bg} backdropUri={story.thumbnail_url ?? (story.media_type === 'image' ? story.media_url : null)} />
                   <View style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="box-none">
-                    <View
-                      pointerEvents="box-none"
+                    <RepostCard
+                      cardW={composed.cardW}
+                      cardH={composed.cardH}
+                      postId={story.shared_post_id}
+                      onPress={revealViewPost}
+                      revealed={viewPostRevealed}
+                      onViewPost={openSharedPost}
                       style={{
-                        width: composed.cardW, height: composed.cardH,
-                        borderRadius: RADIUS.xl, overflow: 'hidden', backgroundColor: '#000',
-                        borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
                         transform: [
                           { translateX: (composed.post.x - 0.5) * SCREEN_W },
                           { translateY: (composed.post.y - 0.5) * SCREEN_H },
@@ -1500,33 +1535,32 @@ export default function StoryViewerScreen() {
                         ],
                       }}
                     >
-                      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-                        <RepostPostMedia
-                          post={{ type: story.media_type, media_url: story.media_url, thumbnail_url: story.thumbnail_url }}
-                          active={!paused}
-                          reloadKey={`${story.id}:${reloadTick}`}
-                          progressIntervalMs={VIDEO_PROGRESS_INTERVAL_MS}
-                          onReady={() => setReadyId(story.id)}
-                          onProgressFrac={(frac) => { if (!pausedRef.current) animateProgressTo(frac, VIDEO_PROGRESS_INTERVAL_MS); }}
-                          onReachedCap={() => { if (!pausedRef.current) goNext(); }}
-                          onEnd={goNext}
-                          onImageError={() => {
-                            const n = (imgErrorsRef.current[story.id] ?? 0) + 1;
-                            imgErrorsRef.current[story.id] = n;
-                            if (n <= 3) setTimeout(() => setReloadTick((t) => t + 1), 500 * n);
-                            else setReadyId(story.id);
-                          }}
-                        />
-                      </View>
-                      <RepostAuthorChip postId={story.shared_post_id} onPress={() => router.push(`/post/${story.shared_post_id}` as any)} />
-                    </View>
+                      <RepostPostMedia
+                        post={{ type: story.media_type, media_url: story.media_url, thumbnail_url: story.thumbnail_url }}
+                        active={!paused && isFocused}
+                        reloadKey={`${story.id}:${reloadTick}`}
+                        progressIntervalMs={VIDEO_PROGRESS_INTERVAL_MS}
+                        onReady={() => setReadyId(story.id)}
+                        onProgressFrac={(frac) => { if (!pausedRef.current) animateProgressTo(frac, VIDEO_PROGRESS_INTERVAL_MS); }}
+                        onReachedCap={() => { if (!pausedRef.current) goNext(); }}
+                        onEnd={goNext}
+                        onImageError={() => {
+                          const n = (imgErrorsRef.current[story.id] ?? 0) + 1;
+                          imgErrorsRef.current[story.id] = n;
+                          if (n <= 3) setTimeout(() => setReloadTick((t) => t + 1), 500 * n);
+                          else setReadyId(story.id);
+                        }}
+                      />
+                    </RepostCard>
                   </View>
                 </View>
               ) : (
                 <RepostStoryFrame
                   postId={story.shared_post_id}
                   aspectRatio={story.aspect_ratio}
-                  onOpenPost={() => router.push(`/post/${story.shared_post_id}` as any)}
+                  onCardPress={revealViewPost}
+                  revealed={viewPostRevealed}
+                  onViewPost={openSharedPost}
                 >
                   {story.media_type === 'video' ? (
                     <AppVideo
@@ -1534,7 +1568,7 @@ export default function StoryViewerScreen() {
                       source={{ uri: story.media_url }}
                       style={StyleSheet.absoluteFill}
                       contentFit="cover"
-                      active={!paused}
+                      active={!paused && isFocused}
                       ownsAudio
                       showStallIndicator
                       poster={story.thumbnail_url}

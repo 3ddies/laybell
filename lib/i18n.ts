@@ -375,6 +375,7 @@ const en: Record<string, string> = {
   'story.close': 'Close',
   'story.replyTo': 'Reply to {name}…',
   'story.fallbackName': 'story',
+  'story.viewPost': 'View Post',
   'story.sent': 'Sent',
   'story.addLikeComment': 'Add a comment',
   'story.editLikeComment': 'Edit comment',

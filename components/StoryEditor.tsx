@@ -29,6 +29,7 @@ import { InfoStickerContent } from './InfoSticker';
 import { CountdownStickerContent } from './CountdownSticker';
 import GifPickerModal from './GifPickerModal';
 import RepostPostMedia, { repostCardSize } from './RepostPostMedia';
+import RepostCard from './RepostCard';
 import StoryCollage from './StoryCollage';
 import StoryBoomerang from './StoryBoomerang';
 import EffectsTray from './EffectsTray';
@@ -649,15 +650,13 @@ export default function StoryEditor({
   const renderKind = useCallback((s: Sticker): ReactNode => {
     if (s.kind === 'post') {
       if (!post) return null;
-      // The author handle sits BELOW the card, outside it, bottom-left — plain bold white
-      // text (no avatar, no pill). The whole unit (card + handle) is the draggable sticker.
+      // The reshared-post card + the author handle BELOW it. Shared with the story VIEWER via
+      // RepostCard so the published story looks identical to this editor preview. The whole unit
+      // (card + handle) is the draggable sticker; no onPress here (dragging, not tapping).
       return (
-        <View style={styles.postWrap}>
-          <View style={[styles.card, { width: cardW, height: cardH }]}>
-            <RepostPostMedia post={post} active={isFocused} loop />
-          </View>
-          <Text style={[styles.chipName, { maxWidth: cardW }]} numberOfLines={1} pointerEvents="none">@{post.username ?? 'laybell'}</Text>
-        </View>
+        <RepostCard cardW={cardW} cardH={cardH} username={post.username}>
+          <RepostPostMedia post={post} active={isFocused} loop />
+        </RepostCard>
       );
     }
     if (s.kind === 'link') return <LinkStickerContent url={s.url ?? ''} title={s.text} />;
@@ -1470,19 +1469,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   iconGlyph: { textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 5 },
 
-  // Reshared post card + its author handle (below the card, outside, bottom-left).
-  postWrap: { alignItems: 'flex-start' },
-  card: {
-    borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: '#000',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
-    shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 8 },
-  },
-  // Author handle below the card: plain bold white text, no avatar/pill, with a soft
-  // shadow so it stays legible over a light background.
-  chipName: {
-    color: '#fff', fontSize: 16, fontWeight: '700', marginTop: SPACING.xs, marginLeft: 2,
-    textShadowColor: 'rgba(0,0,0,0.55)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
-  },
+  // (Reshared-post card + author handle now live in the shared RepostCard component.)
 
   addMusicWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   addMusicBtn: {
