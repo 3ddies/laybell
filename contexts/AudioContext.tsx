@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useRef, useEffect, useCallb
 import { AppState } from 'react-native';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import TrackPlayer, { Event as TPEvent, State as TPState } from 'react-native-track-player';
-import { ensurePlayerSetup, setRemoteHandlers, setNowPlayingLiked } from '../lib/trackPlayerService';
+import { ensurePlayerSetup, setRemoteHandlers, setNowPlayingLiked, updateAutoDjNowPlaying } from '../lib/trackPlayerService';
 import { useAutoDj, autoDjPosition, pauseAutoDj, resumeAutoDj, skipAutoDj, stopAutoDj } from '../lib/dj/autoDjStore';
 import { fetchSongLiked, setSongLike, publishSongLike, subscribeSongLike } from '../lib/songLike';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -688,8 +688,20 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // in-app buttons (lib/trackPlayerService routes them here) — the two
   // surfaces can never drift. The ref indirection keeps the registered
   // handlers stable while always calling the latest closures.
+  // Auto-DJ (Listen Mode) state — drives the display/control routing below AND the lock screen.
+  const dj = useAutoDj();
   const remoteRef = useRef({ resume, pause, next, previous, seekTo });
-  remoteRef.current = { resume, pause, next, previous, seekTo };
+  // Lock-screen / Control Center buttons: route to the DJ engine while it's driving, else the
+  // normal track-player path. (resume/pause/seekTo are Promise-returning to match the ref's type.)
+  remoteRef.current = dj.active
+    ? {
+        resume: async () => { resumeAutoDj(); },
+        pause: async () => { pauseAutoDj(); },
+        next: () => { skipAutoDj(); },
+        previous: () => { /* a forward DJ mix has no previous */ },
+        seekTo: async (_ms: number) => { /* seeking a live mix is disabled */ },
+      }
+    : { resume, pause, next, previous, seekTo };
   // Lock-screen heart state for the CURRENT track. Held in a ref, not state:
   // nothing in the app renders from it (the in-app heart lives in NowPlaying
   // with its own stats cache), so putting it in state would re-render every
@@ -1594,9 +1606,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // post, so EXPOSE it as the now-playing (the mini-player, the full Spotify view,
   // its comments/likes/cover + artwork colour all become correct) and ROUTE the
   // transport to the engine. Everything is gated on `dj.active`, so when Auto-DJ is
-  // off the context is byte-identical. (Audio already plays in the background;
-  // lock-screen controls are a later step.)
-  const dj = useAutoDj();
+  // off the context is byte-identical. (Audio already plays in the background; the lock-screen
+  // buttons are routed above, and the card's metadata is repainted below.)
   const djTrack: Track | null = dj.active && dj.track
     ? { id: dj.track.id, uri: dj.track.url, caption: dj.track.title, artist: dj.track.artist, cover: dj.track.cover ?? null }
     : null;
@@ -1617,6 +1628,14 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const id = setInterval(tick, 300);
     return () => clearInterval(id);
   }, [dj.active]);
+
+  // Repaint the lock-screen / Control Center card to the current Auto-DJ track (metadata only; the
+  // engine owns the audio). No-op when there's no card up.
+  useEffect(() => {
+    if (dj.active && dj.track) {
+      void updateAutoDjNowPlaying({ title: dj.track.title, artist: dj.track.artist, artwork: dj.track.cover });
+    }
+  }, [dj.active, dj.track?.id]);
 
   return (
     <AudioContext.Provider value={{ currentTrack: njTrack, isPlaying: njPlaying, isBuffering, play, playFrom, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause: njPause, resume: njResume, stop: njStop, seekTo: njSeek, expanded, expand, collapse, next: njNext, previous: njPrevious, queueIndex, queueLength, hasMore, videoMuted, toggleVideoMuted, adState, skipAudioAd }}>
