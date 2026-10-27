@@ -43,6 +43,7 @@ export type CurrentProfile = {
   display_name?: string | null;
   username?: string | null;
   bio?: string | null;
+  title?: string | null;
   avatar_url?: string | null;
   badge_tier?: string | null;
   badge_show?: boolean | null;

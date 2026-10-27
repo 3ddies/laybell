@@ -57,7 +57,7 @@ import { createScreenCache } from '../../lib/screenCache';
 type Profile = {
   id: string; username: string; display_name: string;
   bio: string | null; avatar_url: string | null; badge_tier: string;
-  link?: string | null;
+  link?: string | null; title?: string | null;
 };
 type Stats = { followers: number; following: number; posts: number };
 
@@ -929,6 +929,7 @@ export default function PublicProfileScreen() {
           <Text style={styles.displayName}>{profile?.display_name}</Text>
           <BadgeEmblem profile={profile} size={17} />
         </View>
+        {profile?.title ? <Text style={styles.titleText} numberOfLines={2}>{profile.title}</Text> : null}
         {profile?.bio
           ? <TranslatableText text={profile.bio} style={styles.bio} />
           : <Text style={styles.bioEmpty}>{t('profile.noBio')}</Text>
@@ -1077,6 +1078,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   infoSection: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: 4 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   displayName: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  titleText: { color: colors.text, fontSize: 13.5, fontWeight: '700' },
   bio: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
   bioEmpty: { color: colors.textTertiary, fontSize: 14, fontStyle: 'italic' },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },

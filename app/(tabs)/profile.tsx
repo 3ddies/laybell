@@ -63,7 +63,7 @@ import { ProfileSkeleton } from '../../components/Skeleton';
 type Profile = {
   id: string; username: string; display_name: string;
   bio: string | null; avatar_url: string | null; badge_tier: string; created_at: string;
-  link?: string | null;
+  link?: string | null; title?: string | null;
 };
 type Stats = { followers: number; following: number; posts: number };
 
@@ -1159,6 +1159,7 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
               )}
             </View>
+            {profile?.title ? <Text style={styles.titleText} numberOfLines={2}>{profile.title}</Text> : null}
             {profile?.bio
               ? <TranslatableText text={profile.bio} style={styles.bio} />
               : <Text style={styles.bioEmpty}>{t('profile.noBio')}</Text>
@@ -1357,6 +1358,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   shopAlertText: { color: '#fff', fontSize: 9, fontWeight: '800' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   displayName: { color: colors.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
+  titleText: { color: colors.text, fontSize: 13.5, fontWeight: '700' },
   badgeOutline: {
     width: 19, height: 19, borderRadius: RADIUS.full,
     borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed',

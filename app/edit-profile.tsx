@@ -39,6 +39,7 @@ export default function EditProfileScreen() {
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
+  const [title, setTitle] = useState('');
   const [link, setLink] = useState('');
   const [gender, setGender] = useState<string | null>(null);
   const [phone, setPhone] = useState(''); // device-only plaintext; only a hash is uploaded
@@ -71,6 +72,7 @@ export default function EditProfileScreen() {
     const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
     if (data) {
       setDisplayName(data.display_name || ''); setUsername(data.username || ''); setBio(data.bio || '');
+      setTitle(data.title || '');
       setAvatarUrl(data.avatar_url || null); setLink(data.link || ''); setGender(data.gender || null);
       // Age is read-only here — recomputed from the date of birth captured at
       // onboarding (falls back to the stored age column for older accounts).
@@ -86,6 +88,7 @@ export default function EditProfileScreen() {
       displayName: data?.display_name || '',
       username: data?.username || '',
       bio: data?.bio || '',
+      title: data?.title || '',
       link: data?.link || '',
       gender: data?.gender || '',
       phone: loadedPhone,
@@ -136,6 +139,7 @@ export default function EditProfileScreen() {
       displayName !== i.displayName ||
       username !== i.username ||
       bio !== i.bio ||
+      title !== i.title ||
       link !== i.link ||
       (gender || '') !== i.gender ||
       phone !== i.phone
@@ -182,7 +186,7 @@ export default function EditProfileScreen() {
     }
     // Link + gender go in a separate update so a pre-migration column gap can't
     // fail the whole save — best-effort, persists once profile_fields.sql is applied.
-    const extra = { link: link.trim() || null, gender: gender || null };
+    const extra = { link: link.trim() || null, gender: gender || null, title: title.trim() || null };
     const { error: extraErr } = await supabase.from('profiles').update(extra).eq('id', userId);
     update({ ...core, ...(extraErr ? {} : extra) }); // keep the global profile in sync
     // Phone: plaintext stays on this device; only a salted hash is uploaded so
@@ -380,6 +384,19 @@ export default function EditProfileScreen() {
               maxLength={30}
             />
           </View>
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>{t('editProfile.title')}</Text>
+          <TextInput
+            style={styles.input}
+            value={title}
+            onChangeText={setTitle}
+            placeholder={t('editProfile.titlePlaceholder')}
+            placeholderTextColor={colors.textTertiary}
+            maxLength={40}
+          />
+          <Text style={styles.fieldHint}>{t('editProfile.titleHint')}</Text>
         </View>
 
         <View style={styles.field}>
