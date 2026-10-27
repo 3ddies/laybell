@@ -225,6 +225,12 @@ export class AutoDjController {
     const wS = plan.completeFrac * blendS;
     if (plan.outFilter) liveDeck.sweepOutDark(fxT0 + 0.4 * wS, 0.55 * wS); // darken the outgoing as it leaves
     if (plan.inFilter) incDeck.sweepInOpen(fxT0, 0.7 * wS);                // open the incoming up as it arrives
+    if (plan.riser) liveDeck.sweepOutThin(fxT0 + 0.2 * wS, 0.7 * wS);      // highpass riser building into the drop
+    if (plan.tapeStop) liveDeck.brake(fxT0 + 0.05, 0.5);                   // spin the outgoing down into the drop
+    if (plan.stutter) {
+      const beatS = gOut && gOut.bpm > 0 ? 60 / gOut.bpm : 0.5;
+      liveDeck.stutter(fxT0 + 0.08, beatS / 4, 4);                         // one beat of 1/16 chops, beat-synced
+    }
     if (plan.echoOut) {
       const delayS = gOut && gOut.bpm > 0 ? Math.min(0.6, 30 / gOut.bpm) : 0.35; // ~eighth note (60/bpm/2)
       this.engine.echoBegin(this.live, delayS, fxT0 + 0.5 * blendS);            // feed the last bars into the delay
@@ -239,7 +245,8 @@ export class AutoDjController {
     log('mixing', {
       track: this.queue[this.index]?.title ?? '?',
       recipe: plan.name, outEnd: aOut?.endType ?? '?', inStart: aIn?.startType ?? '?',
-      fx: [plan.outFilter && 'out-dark', plan.inFilter && 'in-open', plan.echoOut && 'echo', plan.washOut && 'wash'].filter(Boolean),
+      fx: [plan.outFilter && 'out-dark', plan.inFilter && 'in-open', plan.echoOut && 'echo', plan.washOut && 'wash',
+        plan.tapeStop && 'tape-stop', plan.stutter && 'stutter', plan.riser && 'riser'].filter(Boolean),
       from: this.live, to: inc, blendS: +blendS.toFixed(1), matched,
       ratio: matchRatio ? +matchRatio.toFixed(3) : null,
       outBpm: gOut ? +gOut.bpm.toFixed(1) : null, inBpm: gIn ? +gIn.bpm.toFixed(1) : null,
@@ -261,8 +268,9 @@ export class AutoDjController {
     // Echo-out: the dry stops, but its captured tail keeps repeating + decaying on the delay bus.
     if (this.echoActive && this.echoDeck) { this.engine.echoRelease(this.echoDeck); this.echoActive = false; this.echoDeck = null; }
     oldDeck.resetEqNow();      // flatten for reuse (cancels any in-flight ramps)
-    oldDeck.setFilter(0);
-    oldDeck.setTempo(1);
+    oldDeck.setFilter(0);      // lowpass open (clears a riser's highpass too)
+    oldDeck.setVolume(1);      // clears any stutter gating
+    oldDeck.setTempo(1);       // clears a tape-stop (next spawn plays at 1×)
 
     const liveDeck = this.engine.deck(this.live);
     liveDeck.resetEqNow();     // the ramps brought it to flat; make sure + cancel schedules

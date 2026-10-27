@@ -20,6 +20,9 @@ export type TransitionPlan = {
   inFilter?: boolean;    // FX: lowpass-sweep the INCOMING open as it arrives (a filter-up build)
   echoOut?: boolean;     // FX: echo/delay tail on the OUTGOING — its last bars repeat & decay out
   washOut?: boolean;     // FX: subtle reverb-wash ambience on the OUTGOING as it leaves
+  tapeStop?: boolean;    // FX: tape-stop (spin-down) the OUTGOING into the drop
+  stutter?: boolean;     // FX: beat-stutter the OUTGOING's last beat (beat-locked drops)
+  riser?: boolean;       // FX: highpass riser on the OUTGOING, building into the drop
 };
 
 const STANDARD_COMPLETE_FRAC = 0.8;
@@ -31,10 +34,10 @@ export function planTransition(end: EndType, start: StartType, matched: boolean)
   if (end === 'sparse' && start === 'vocal') {
     return { name: 'vocal-clash (quick)', blendBeats: 8, blendDefaultS: 6, completeFrac: 0.5 };
   }
-  // Cold hard stop into a beat drop → a punchy "slam": shorter, the incoming drops in sooner. Still
-  // front-loaded enough that the outgoing is clean, not a raw cut.
+  // Cold hard stop into a beat drop → a punchy "slam" with a TAPE-STOP: the outgoing spins down and
+  // the incoming drops in. Iconic.
   if (end === 'cold' && start === 'drop') {
-    return { name: 'cold→drop (slam)', blendBeats: 12, blendDefaultS: 8, completeFrac: 0.62 };
+    return { name: 'tape-drop', blendBeats: 12, blendDefaultS: 8, completeFrac: 0.62, tapeStop: true };
   }
   // Cold ending into anything that isn't a drop or a soft build → echo the last bars OUT (delay tail
   // repeats + decays) while the next one comes in. A produced, distinctive exit.
@@ -56,9 +59,12 @@ export function planTransition(end: EndType, start: StartType, matched: boolean)
   if (start === 'soft') {
     return { name: 'soft-intro', blendBeats: 28, blendDefaultS: 16, completeFrac: 0.85, inFilter: true };
   }
-  // A beat/drop intro into a normal ending → keep it a touch tighter so the drop lands with impact.
+  // A beat/drop intro into a normal ending → make the drop LAND. Beat-locked pairs get a tight
+  // beat-stutter on the outgoing's last beat; otherwise a highpass riser builds the tension.
   if (start === 'drop') {
-    return { name: 'drop-align', blendBeats: 20, blendDefaultS: 11, completeFrac: 0.78 };
+    return matched
+      ? { name: 'drop-stutter', blendBeats: 16, blendDefaultS: 11, completeFrac: 0.7, stutter: true }
+      : { name: 'drop-riser', blendBeats: 20, blendDefaultS: 12, completeFrac: 0.78, riser: true };
   }
   // Bread and butter.
   return {

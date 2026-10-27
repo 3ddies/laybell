@@ -315,6 +315,46 @@ export class Deck {
   /** FX: open this deck up (dark lowpass → open) as it arrives — a filter-up build. */
   sweepInOpen(startT: number, durS: number): void { this.rampFilterLowpass(450, LP_OPEN_HZ, startT, durS); }
 
+  /** FX: highpass "riser" — thin the deck out (open → 2.5kHz HP) as it leaves, building tension
+   *  into the next drop. */
+  sweepOutThin(startT: number, durS: number): void {
+    this.filter.type = 'highpass';
+    const f = this.filter.frequency;
+    const now = this.ctx.currentTime;
+    f.cancelScheduledValues(now);
+    f.setValueAtTime(20, now); // open HP (no effect) until the sweep starts
+    const N = 64;
+    const a = 20;
+    const b = 2500;
+    const curve = new Float32Array(N);
+    for (let i = 0; i < N; i++) curve[i] = a * Math.pow(b / a, i / (N - 1));
+    f.setValueCurveAtTime(curve, startT, durS);
+  }
+
+  /** FX: tape-stop — spin this deck's playback rate down to a near-halt over durS (the classic
+   *  "powering down" pitch drop). The deck is paused shortly after by promote. */
+  brake(startT: number, durS: number): void {
+    if (!this.source) return;
+    const p = this.source.playbackRate;
+    p.cancelScheduledValues(startT);
+    p.setValueAtTime(Math.max(0.05, this.tempo), startT);
+    p.linearRampToValueAtTime(0.04, startT + durS);
+  }
+
+  /** FX: beat-stutter — rhythmically gate this deck's level on/off `count` times at `periodS` each
+   *  (a glitchy chop), then restore. Beat-synced when the caller passes a beat-fraction period. */
+  stutter(startT: number, periodS: number, count: number): void {
+    const per = 6;
+    const N = Math.max(2, count * per);
+    const curve = new Float32Array(N);
+    for (let i = 0; i < N; i++) curve[i] = (i % per) / per < 0.5 ? 1 : 0; // on half, off half each slice
+    const dur = count * periodS;
+    const g = this.channelGain.gain;
+    g.cancelScheduledValues(startT);
+    g.setValueCurveAtTime(curve, startT, dur);
+    g.setValueAtTime(1, startT + dur + 0.001); // restore full after the chop
+  }
+
   /** Filter knob in [-1,1]: <0 lowpass (darker), >0 highpass (thinner), 0 = open. */
   setFilter(knob: number): void {
     this.filter.frequency.cancelScheduledValues(this.ctx.currentTime); // clear any FX sweep
@@ -332,7 +372,10 @@ export class Deck {
   }
 
   /** Channel (up-fader) volume 0..1. */
-  setVolume(v: number): void { this.channelGain.gain.value = clamp(v, 0, 1); }
+  setVolume(v: number): void {
+    this.channelGain.gain.cancelScheduledValues(this.ctx.currentTime); // clear any stutter gating
+    this.channelGain.gain.value = clamp(v, 0, 1);
+  }
 
   setLoop(startS: number, lengthS: number): void {
     this.loopStartS = clamp(startS, 0, this.durationS);
