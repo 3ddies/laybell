@@ -139,6 +139,22 @@ export async function setNowPlayingLiked(active: boolean): Promise<void> {
   try { await TrackPlayer.updateOptions(playerOptions()); } catch {}
 }
 
+/**
+ * Repaint the lock-screen / Control Center card to an Auto-DJ track while the DJ engine (not
+ * track-player) is producing the audio. Updates metadata only — it doesn't touch track-player's
+ * queue/playback. No-op until the player's been set up (so it only lands when a card exists).
+ */
+export async function updateAutoDjNowPlaying(meta: { title: string; artist: string; artwork?: string | null }): Promise<void> {
+  if (!setupDone) return;
+  try {
+    await TrackPlayer.updateNowPlayingMetadata({
+      title: meta.title,
+      artist: meta.artist,
+      artwork: meta.artwork ?? undefined,
+    });
+  } catch { /* no current item to repaint — card isn't up */ }
+}
+
 let setupDone = false;
 let setupPromise: Promise<void> | null = null;
 export function ensurePlayerSetup(): Promise<void> {
