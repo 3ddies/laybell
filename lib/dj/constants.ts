@@ -30,3 +30,6 @@ export const AUTO_END_GUARD_ABRUPT_S = 1.0;   // cold stop — outgoing fully ou
 // the controller (pre-duck before play) and the engine (ramp start value).
 export const AUTO_MID_DUCK = -0.6;
 export const AUTO_HIGH_DUCK = -0.4;
+// Beat-LOCKED blends only: the incoming kick starts only mildly tucked (not killed) and layers in
+// under the outgoing's sub, so the two locked kicks reinforce ("the drums belong to each other").
+export const AUTO_MATCH_BASS_DUCK = -0.35;

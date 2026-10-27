@@ -21,7 +21,7 @@ import {
   type GainNode,
   type BiquadFilterNode,
 } from 'react-native-audio-api';
-import { TEMPO_MIN, TEMPO_MAX, AUTO_MID_DUCK, AUTO_HIGH_DUCK, type EqBand, type DeckId } from './constants';
+import { TEMPO_MIN, TEMPO_MAX, AUTO_MID_DUCK, AUTO_HIGH_DUCK, AUTO_MATCH_BASS_DUCK, type EqBand, type DeckId } from './constants';
 import { analyzeBeatGrid, analyzeEnding, type BeatGrid } from './beatGrid';
 
 // EQ knob travel: full kill at the bottom, a modest boost at the top (DJ mixers
@@ -50,8 +50,12 @@ const MORPH = {
   // the outgoing is then SILENT for the rest, so a loud/abrupt ending can't snap through.
   // (Energy-end anchoring does the main abrupt-cut work; this is the safety margin.)
   completeFrac: 0.8,
+  // UNMATCHED: quick bass swap — one track owns the sub (two un-synced kicks would clash → mud).
   bassOutStart: 0.35, bassOutEnd: 0.52, // outgoing low: flat → kill
   bassInStart: 0.48, bassInEnd: 0.66,   // incoming low: kill → flat (just after)
+  // MATCHED (beat-locked): the outgoing anchors the sub through a long shared window while the
+  // incoming kick layers IN (tucked, rising); the outgoing bows out late. Locked kicks reinforce.
+  mBassOutStart: 0.62, mBassOutEnd: 0.9,
   midInEnd: 0.55,  midOutStart: 0.45,   // incoming mid rises over [0,.55]; outgoing falls over [.45,1]
   highInEnd: 0.45, highOutStart: 0.55,  // highs a touch earlier than mids
 } as const;
@@ -400,7 +404,7 @@ export class DjEngine {
    *  across AND hand off the frequency bands (see MORPH) so one song melts into the next
    *  instead of merely overlapping. The incoming deck must already be PLAYING, pre-ducked
    *  (bass killed, mid/high at AUTO_*_DUCK). All ramps run on the audio thread. */
-  scheduleMorph(fromId: DeckId, toId: DeckId, blendS: number): void {
+  scheduleMorph(fromId: DeckId, toId: DeckId, blendS: number, matched = false): void {
     const t0 = this.ctx.currentTime;
     const from = this.deck(fromId);
     const to = this.deck(toId);
@@ -409,9 +413,17 @@ export class DjEngine {
 
     this.scheduleCross(fromId, toId, t0, blendS, MORPH.completeFrac);
 
-    // Low: quick swap around the midpoint — only one track holds the sub at a time.
-    from.rampEq('low', 0, -1, at(MORPH.bassOutStart), at(MORPH.bassOutEnd));
-    to.rampEq('low', -1, 0, at(MORPH.bassInStart), at(MORPH.bassInEnd));
+    // Low — the "drums belong together" lever.
+    if (matched) {
+      // Locked kicks reinforce: the outgoing anchors the sub through a long shared window, the
+      // incoming kick layers in (tucked, rising), then the outgoing bows out late.
+      to.rampEq('low', AUTO_MATCH_BASS_DUCK, 0, t0, at(MORPH.mBassOutEnd));
+      from.rampEq('low', 0, -1, at(MORPH.mBassOutStart), at(MORPH.mBassOutEnd));
+    } else {
+      // Unmatched: quick swap around the midpoint — only one track holds the sub at a time.
+      from.rampEq('low', 0, -1, at(MORPH.bassOutStart), at(MORPH.bassOutEnd));
+      to.rampEq('low', -1, 0, at(MORPH.bassInStart), at(MORPH.bassInEnd));
+    }
     // Mid: incoming rises early, outgoing fades late.
     to.rampEq('mid', AUTO_MID_DUCK, 0, t0, at(MORPH.midInEnd));
     from.rampEq('mid', 0, AUTO_MID_DUCK, at(MORPH.midOutStart), t0 + wS);

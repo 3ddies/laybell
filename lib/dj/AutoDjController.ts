@@ -36,6 +36,7 @@ import {
   AUTO_END_GUARD_ABRUPT_S,
   AUTO_MID_DUCK,
   AUTO_HIGH_DUCK,
+  AUTO_MATCH_BASS_DUCK,
 } from './constants';
 import { type BeatGrid } from './beatGrid';
 
@@ -148,8 +149,8 @@ export class AutoDjController {
     this.transitioning = true;
     this.emitMixing(true);
 
-    // Pre-duck the incoming so the morph can ramp it UP into the mix.
-    incDeck.setBassNow(-1);
+    // Pre-duck the incoming so the morph can ramp it UP into the mix. (Bass pre-duck is set
+    // below, once we know whether this is a beat-locked blend.)
     incDeck.setEq('mid', AUTO_MID_DUCK);
     incDeck.setEq('high', AUTO_HIGH_DUCK);
     incDeck.setFilter(0);
@@ -202,8 +203,10 @@ export class AutoDjController {
     blendS = Math.min(blendS, runway);
     if (!(blendS > 0.5)) { this.transitioning = false; this.emitMixing(false); void this.hardAdvance(); return; }
 
+    // Matched → tuck the incoming kick (both locked kicks layer); unmatched → kill it (clean swap).
+    incDeck.setBassNow(matched ? AUTO_MATCH_BASS_DUCK : -1);
     incDeck.play();
-    this.engine.scheduleMorph(this.live, inc, blendS);
+    this.engine.scheduleMorph(this.live, inc, blendS, matched);
     if (matched && matchRatio) this.startMatchGlide(inc, matchRatio, blendS);
     log('mixing', {
       track: this.queue[this.index]?.title ?? '?',
