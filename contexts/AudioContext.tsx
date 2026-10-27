@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import TrackPlayer, { Event as TPEvent, State as TPState } from 'react-native-track-player';
 import { ensurePlayerSetup, setRemoteHandlers, setNowPlayingLiked } from '../lib/trackPlayerService';
+import { useAutoDj, autoDjPosition, pauseAutoDj, resumeAutoDj, skipAutoDj, stopAutoDj } from '../lib/dj/autoDjStore';
 import { fetchSongLiked, setSongLike, publishSongLike, subscribeSongLike } from '../lib/songLike';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
@@ -1587,8 +1588,38 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { publishSongAudible(isPlaying); }, [isPlaying]);
   useEffect(() => { publishVideoMuted(videoMuted); }, [videoMuted]);
 
+  // ── Auto-DJ (Listen Mode) display + control routing ─────────────────────────
+  // While the DJ engine drives playback the normal track-player is paused, so the
+  // player UIs would otherwise show a stale song. An Auto-DJ track's id IS a real
+  // post, so EXPOSE it as the now-playing (the mini-player, the full Spotify view,
+  // its comments/likes/cover + artwork colour all become correct) and ROUTE the
+  // transport to the engine. Everything is gated on `dj.active`, so when Auto-DJ is
+  // off the context is byte-identical. (Audio already plays in the background;
+  // lock-screen controls are a later step.)
+  const dj = useAutoDj();
+  const djTrack: Track | null = dj.active && dj.track
+    ? { id: dj.track.id, uri: dj.track.url, caption: dj.track.title, artist: dj.track.artist, cover: dj.track.cover ?? null }
+    : null;
+  const njTrack = djTrack ?? currentTrack;
+  const njPlaying = dj.active ? !dj.paused : isPlaying;
+  const njPause = dj.active ? (async () => { pauseAutoDj(); }) : pause;
+  const njResume = dj.active ? (async () => { resumeAutoDj(); }) : resume;
+  const njNext = dj.active ? (() => skipAutoDj()) : next;
+  const njPrevious = dj.active ? (() => { /* a forward DJ mix has no "previous" */ }) : previous;
+  const njSeek = dj.active ? (async () => { /* seeking a live mix is disabled */ }) : seekTo;
+  const njStop = dj.active ? (async () => { stopAutoDj(); await stop(); }) : stop;
+
+  // Auto-DJ position → the scrubber / time labels (the paused track-player emits none).
+  useEffect(() => {
+    if (!dj.active) return;
+    const tick = () => { const p = autoDjPosition(); emitPosition(Math.round(p.pos * 1000), Math.round(p.dur * 1000)); };
+    tick();
+    const id = setInterval(tick, 300);
+    return () => clearInterval(id);
+  }, [dj.active]);
+
   return (
-    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, play, playFrom, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, hasMore, videoMuted, toggleVideoMuted, adState, skipAudioAd }}>
+    <AudioContext.Provider value={{ currentTrack: njTrack, isPlaying: njPlaying, isBuffering, play, playFrom, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause: njPause, resume: njResume, stop: njStop, seekTo: njSeek, expanded, expand, collapse, next: njNext, previous: njPrevious, queueIndex, queueLength, hasMore, videoMuted, toggleVideoMuted, adState, skipAudioAd }}>
       <AudioPositionContext.Provider value={subscribePosition}>
         {children}
       </AudioPositionContext.Provider>

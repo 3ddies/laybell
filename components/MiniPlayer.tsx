@@ -8,7 +8,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useAudio, useAudioPosition } from '../contexts/AudioContext';
-import { useAutoDj, autoDjPosition, pauseAutoDj, resumeAutoDj, stopAutoDj } from '../lib/dj/autoDjStore';
 import { adDestination, AUDIO_AD_SKIP_MS } from '../lib/ads';
 import { openAdCta } from '../contexts/AdCtaContext';
 import { fetchFeatures, type Feature } from '../lib/features';
@@ -49,25 +48,11 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   const { listenMode } = useListenMode();
   const router = useRouter();
 
-  // Auto-DJ (Listen mode) drives the BOTTOM BAR when active (variant 'bar' only): the persistent
-  // player shows the current Auto-DJ track + engine progress, and its controls route to the engine.
-  // Everything below is gated on `autoActive`, so normal playback / ads / other variants are
-  // byte-identical.
-  const autoDj = useAutoDj();
-  const autoActive = autoDj.active && variant === 'bar';
-  const [autoPos, setAutoPos] = useState({ pos: 0, dur: 0 });
-  useEffect(() => {
-    if (!autoActive) return;
-    setAutoPos(autoDjPosition());
-    const id = setInterval(() => setAutoPos(autoDjPosition()), 500);
-    return () => clearInterval(id);
-  }, [autoActive]);
-
   // Song collaborators ("features") for the currently-playing track — fetched
   // (and cached) when the track changes, so the card can flip title ↔ credits.
   // Never fetched for ads (they aren't posts).
   const [features, setFeatures] = useState<Feature[]>([]);
-  const trackId = (!adState && !autoActive) ? currentTrack?.id ?? null : null;
+  const trackId = !adState ? currentTrack?.id ?? null : null;
   useEffect(() => {
     if (!trackId) { setFeatures([]); return; }
     let alive = true;
@@ -191,7 +176,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   const lastDurRef = useRef(0);
   if (currentTrack && !adState) { lastPosRef.current = positionMs; lastDurRef.current = durationMs; }
   useEffect(() => {
-    const has = !!currentTrack || autoActive; // Auto-DJ keeps the bar up even with no track-player track
+    const has = !!currentTrack;
     if (has && !hadTrackRef.current) {
       setBarShown(true);
       appearAnim.setValue(0);
@@ -201,20 +186,11 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
         .start(({ finished }) => { if (finished) setBarShown(false); });
     }
     hadTrackRef.current = has;
-  }, [currentTrack, autoActive, appearAnim]);
+  }, [currentTrack, appearAnim]);
   const appearRise = appearAnim.interpolate({ inputRange: [0, 1], outputRange: [14, 0] });
 
   const track = currentTrack ?? lastTrackRef.current;
-  // When Auto-DJ drives the bar, keep it up even with no track-player track; otherwise the normal gate.
-  if (autoActive) {
-    if (expanded) return null;
-  } else if ((!currentTrack && !barShown) || !track || expanded) {
-    return null;
-  }
-  // Display fields: the Auto-DJ track when it's driving, else the track-player track.
-  const dispCover = autoActive ? (autoDj.track?.cover ?? null) : (track?.cover ?? null);
-  const dispTitle = autoActive ? (autoDj.track?.title || t('player.audioTrack')) : (track?.caption || t('player.audioTrack'));
-  const dispArtist = autoActive ? (autoDj.track?.artist || 'Laybell Auto-DJ') : (track?.artist ?? '');
+  if ((!currentTrack && !barShown) || !track || expanded) return null;
 
   // Audio ad: while a playlist break plays, the bar shows the ad like a song
   // (cover + sponsored brand + headline + progress), tappable to open the full
@@ -308,8 +284,8 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           accessibilityRole="button"
           accessibilityLabel={t('a11y.openPlayer')}
         >
-          {track?.cover ? (
-            <ExpoImage source={{ uri: track?.cover }} style={styles.compactCover} contentFit="cover" cachePolicy="memory-disk" transition={200} />
+          {track.cover ? (
+            <ExpoImage source={{ uri: track.cover }} style={styles.compactCover} contentFit="cover" cachePolicy="memory-disk" transition={200} />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.compactCover}>
               <Ionicons name="musical-notes" size={13} color={colors.primary} />
@@ -358,8 +334,8 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           accessibilityRole="button"
           accessibilityLabel={t('a11y.openPlayer')}
         >
-          {track?.cover ? (
-            <ExpoImage source={{ uri: track?.cover }} style={styles.compactCover} contentFit="cover" cachePolicy="memory-disk" transition={200} />
+          {track.cover ? (
+            <ExpoImage source={{ uri: track.cover }} style={styles.compactCover} contentFit="cover" cachePolicy="memory-disk" transition={200} />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.compactCover}>
               <Ionicons name="musical-notes" size={13} color={colors.primary} />
@@ -367,7 +343,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           )}
         </TouchableOpacity>
         <TouchableOpacity style={styles.compactBody} activeOpacity={0.7} onPress={() => expand()}>
-          <Text style={styles.compactTitle} numberOfLines={1}>{track?.caption || t('player.audioTrack')}</Text>
+          <Text style={styles.compactTitle} numberOfLines={1}>{track.caption || t('player.audioTrack')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.compactBtn}
@@ -399,13 +375,10 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   // castLift raises it over the Laybell TV cast bar while a session is live.
   const bottomOffset = 68 + insets.bottom + 6 + castLift;
 
-  // Live values while a track is loaded; the frozen ones for the fade-out frames. Auto-DJ supplies
-  // its own position + play state when it's driving the bar.
-  const showPos = autoActive ? Math.round(autoPos.pos * 1000) : (currentTrack ? positionMs : lastPosRef.current);
-  const showDur = autoActive ? Math.round(autoPos.dur * 1000) : (currentTrack ? durationMs : lastDurRef.current);
+  // Live values while a track is loaded; the frozen ones for the fade-out frames.
+  const showPos = currentTrack ? positionMs : lastPosRef.current;
+  const showDur = currentTrack ? durationMs : lastDurRef.current;
   const progress = showDur > 0 ? showPos / showDur : 0;
-  const showPlaying = autoActive ? !autoDj.paused : isPlaying;
-  const showBuffering = autoActive ? false : isBuffering;
 
   // Rendered in bar mode AND during an overlay dwell (fading out via barFade)
   // — never hard-removed on a tab flip, so fast swipes look smooth.
@@ -431,24 +404,23 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
       <View style={styles.scrubWrap}>
         <Scrubber
           progress={progress}
-          onSeek={r => { if (!autoActive && durationMs > 0) seekTo(Math.floor(r * durationMs)); }}
+          onSeek={r => durationMs > 0 && seekTo(Math.floor(r * durationMs))}
           height={16} trackHeight={4} thumbSize={12}
         />
       </View>
 
       <View style={styles.inner}>
-        {/* Album cover — tap to open the full now-playing screen (disabled while Auto-DJ drives the
-            bar, since the full player still reflects the track-player). */}
+        {/* Album cover — tap to open the full now-playing screen */}
         <TouchableOpacity
           style={styles.coverWrap}
-          onPress={() => { if (!autoActive) expand(); }}
+          onPress={() => expand()}
           accessibilityRole="button"
           accessibilityLabel={t('a11y.openPlayer')}
         >
           {/* transition: cross-dissolve when the track (and so the source)
               changes under this mounted view — smooths song-to-song swaps. */}
-          {dispCover ? (
-            <ExpoImage source={{ uri: dispCover }} style={styles.cover} contentFit="cover" cachePolicy="memory-disk" transition={200} />
+          {track.cover ? (
+            <ExpoImage source={{ uri: track.cover }} style={styles.cover} contentFit="cover" cachePolicy="memory-disk" transition={200} />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.cover}>
               <Ionicons name="musical-notes" size={16} color={colors.primary} />
@@ -457,17 +429,17 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
         </TouchableOpacity>
 
         {/* Tapping the bar (except the controls) expands the now-playing screen */}
-        <TouchableOpacity style={styles.body} activeOpacity={0.7} onPress={() => { if (!autoActive) expand(); }}>
+        <TouchableOpacity style={styles.body} activeOpacity={0.7} onPress={() => expand()}>
           <View style={styles.trackInfo}>
             <SongCardTitle
-              title={dispTitle}
-              features={autoActive ? [] : features}
+              title={track.caption || t('player.audioTrack')}
+              features={features}
               positionMs={showPos}
               durationMs={showDur}
               titleStyle={styles.caption}
               onOpenProfile={(id) => router.push(`/profile/${id}`)}
             />
-            <Text style={styles.artist} numberOfLines={1}>{dispArtist}</Text>
+            <Text style={styles.artist} numberOfLines={1}>{track.artist}</Text>
           </View>
           <Text style={styles.timeText}>
             {formatMs(showPos)}{showDur > 0 ? ` / ${formatMs(showDur)}` : ''}
@@ -476,20 +448,20 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
 
         <TouchableOpacity
           style={styles.playBtn}
-          onPress={() => (autoActive ? (autoDj.paused ? resumeAutoDj() : pauseAutoDj()) : (isPlaying ? pause() : resume()))}
+          onPress={() => (isPlaying ? pause() : resume())}
           accessibilityRole="button"
-          accessibilityLabel={showPlaying ? t('a11y.pause') : t('a11y.play')}
+          accessibilityLabel={isPlaying ? t('a11y.pause') : t('a11y.play')}
         >
-          {showBuffering ? (
+          {isBuffering ? (
             <Ionicons name="hourglass" size={18} color={colors.primary} />
           ) : (
-            <Ionicons name={showPlaying ? 'pause-circle' : 'play-circle'} size={34} color={colors.text} />
+            <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={34} color={colors.text} />
           )}
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.stopBtn}
-          onPress={() => { if (autoActive) stopAutoDj(); stop(); }}
+          onPress={stop}
           accessibilityRole="button"
           accessibilityLabel={t('a11y.stopPlayback')}
         >
