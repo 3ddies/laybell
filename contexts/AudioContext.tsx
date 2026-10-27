@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useRef, useEffect, useCallb
 import { AppState } from 'react-native';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import TrackPlayer, { Event as TPEvent, State as TPState } from 'react-native-track-player';
-import { ensurePlayerSetup, setRemoteHandlers, setNowPlayingLiked, updateAutoDjNowPlaying } from '../lib/trackPlayerService';
+import { ensurePlayerSetup, setRemoteHandlers, setNowPlayingLiked } from '../lib/trackPlayerService';
 import { useAutoDj, autoDjPosition, pauseAutoDj, resumeAutoDj, skipAutoDj, stopAutoDj } from '../lib/dj/autoDjStore';
 import { fetchSongLiked, setSongLike, publishSongLike, subscribeSongLike } from '../lib/songLike';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -1629,13 +1629,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(id);
   }, [dj.active]);
 
-  // Repaint the lock-screen / Control Center card to the current Auto-DJ track (metadata only; the
-  // engine owns the audio). No-op when there's no card up.
-  useEffect(() => {
-    if (dj.active && dj.track) {
-      void updateAutoDjNowPlaying({ title: dj.track.title, artist: dj.track.artist, artwork: dj.track.cover });
-    }
-  }, [dj.active, dj.track?.id]);
+  // NOTE: the DJ engine (react-native-audio-api) publishes its OWN correct lock-screen card when it
+  // owns the session (confirmed: fresh Listen mode shows the right card). Repainting track-player's
+  // card on top of that CLOBBERED it to blank when track-player had been used first — so we do NOT
+  // touch the now-playing metadata here; the engine's native card is the source of truth.
 
   return (
     <AudioContext.Provider value={{ currentTrack: njTrack, isPlaying: njPlaying, isBuffering, play, playFrom, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause: njPause, resume: njResume, stop: njStop, seekTo: njSeek, expanded, expand, collapse, next: njNext, previous: njPrevious, queueIndex, queueLength, hasMore, videoMuted, toggleVideoMuted, adState, skipAudioAd }}>
