@@ -1,3 +1,25 @@
+## 2026-10-28 — the "Midnight" redesign (current)
+
+The framing is now done by **`scripts/make-screenshots.mjs`** (HTML → headless
+Chrome), which supersedes the GDI+ `make-screenshots.ps1` for far more polish: a
+titanium device bezel, the Bricolage Grotesque display font, a soft brand-gradient
+glow, and a brand-gradient accent on each caption's key phrase. Same three output
+sizes, same no-alpha flatten at the end. Run it with `node scripts/make-screenshots.mjs`.
+
+`FRAMES` in that script is the source of truth for which captures ship, in what
+order, with what caption — paired by filename, so dropping/reordering one can't
+mislabel the rest. **The shop frame (`raw/06.png`) is intentionally omitted**: it is
+still the "Begging cat type beat" joke capture. Re-add its `FRAMES` entry once a real
+beat listing is captured (real art/title/price — same capture rules as below). The
+live set is therefore **7 frames** (profile, films, feed, player, live+tip, wallet,
+album). Films is kept for now despite goofy titles (it still proves the feature);
+owner to recapture real content for shop (and maybe films) later.
+
+Everything below is the 1.0.1 re-shoot history — the capture rules and per-frame
+reasoning still apply; only the framing engine and the frame list have changed.
+
+---
+
 # Store screenshots — the 1.0.1 re-shoot
 
 The framing pipeline is fine and stays: `scripts/make-screenshots.ps1` turns raw
