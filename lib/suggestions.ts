@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { fetchBlockedIds } from './blocks';
 import { readContactHashes } from './contacts';
+import { isNewAccount } from './accountAge';
 import { tg } from './i18n';
 
 // "Suggested for you" account recommendations. Three blind signals are merged,
@@ -10,7 +11,7 @@ import { tg } from './i18n';
 // Every signal is independently guarded so a missing RPC/table (pre-migration)
 // just drops that signal instead of failing the whole set.
 
-export type SuggestionReason = 'contacts' | 'mutual' | 'nearby' | 'popular';
+export type SuggestionReason = 'contacts' | 'mutual' | 'nearby' | 'popular' | 'new';
 
 export type SuggestedAccount = {
   id: string;
@@ -19,6 +20,7 @@ export type SuggestedAccount = {
   avatar_url: string | null;
   badge_tier: string | null;
   badge_show: boolean | null;
+  created_at: string | null; // account age → "New Account" tag (lib/accountAge)
   reason: SuggestionReason;
   score: number; // higher = more strongly recommended (drives ordering + rotation)
 };
@@ -30,6 +32,7 @@ export const REASON_LABEL: Record<SuggestionReason, string> = {
   mutual: 'Followed by people you follow',
   nearby: 'In your area',
   popular: 'Popular on Laybell',
+  new: 'New Account',
 };
 
 // Localized suggestion-reason label (e.g. "From your contacts").
@@ -37,18 +40,39 @@ export function reasonLabel(reason: SuggestionReason): string {
   return tg(`reason.${reason}`);
 }
 
-const PROFILE_COLS = 'id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden';
+// Should this suggestion wear the "New Account" tag instead of a reason line?
+// True for the newest-account backfill (reason 'new') and for any account still
+// in its first 30 days, whatever signal surfaced it (lib/accountAge).
+export function isNewSuggestion(a: { reason: SuggestionReason; created_at?: string | null }): boolean {
+  return a.reason === 'new' || isNewAccount(a.created_at);
+}
+
+const PROFILE_COLS = 'id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden, created_at';
 const HASH_BATCH = 500;
 
+// "In your area" must actually mean your area: a nearby candidate counts only
+// within this radius. The RPC just returns the CLOSEST profiles with no distance
+// ceiling of its own, so on a sparse map someone hundreds of km away was getting
+// "In your area".
+const NEARBY_MAX_KM = 80;
+
+// "Popular on Laybell" must mean a real follow signal: an account needs at least
+// this many followers in the sample to earn the label. The newest-accounts
+// backfill is labelled "New Account" instead (it used to be called popular).
+const POPULAR_MIN_FOLLOWS = 2;
+
 // Backfill so discovery is never empty even with zero contacts/location/mutual
-// signals (and before the recommendation SQL is applied). "Popular" = most-followed
-// from a sampled tally of the follows table (no aggregation SQL needed), falling
-// back to the newest accounts if there are no follows yet. Scores stay below the
-// nearby floor (1000) so any real signal always ranks above these.
+// signals (and before the recommendation SQL is applied). Two honestly-labelled
+// groups: a real follow tally → "Popular on Laybell" (only accounts followed by at
+// least POPULAR_MIN_FOLLOWS people in the sample), then the newest accounts →
+// "New Account" (this filler used to be mislabelled "popular" — a brand-new,
+// zero-follower account is not popular). Scores stay below the nearby floor (1000)
+// so any real signal always ranks above these, and popular ranks above new filler.
 async function fetchPopularProfiles(exclude: Set<string>, need: number): Promise<SuggestedAccount[]> {
   if (need <= 0) return [];
-  const ranked: string[] = [];
   const seen = new Set<string>(exclude);
+  const popularIds: string[] = []; // real follow signal → 'popular'
+  const newIds: string[] = [];     // newest-accounts filler → 'new'
 
   try {
     const { data } = await supabase.from('follows').select('following_id').limit(1000);
@@ -57,26 +81,28 @@ async function fetchPopularProfiles(exclude: Set<string>, need: number): Promise
       const id = r.following_id as string;
       if (!seen.has(id)) tally.set(id, (tally.get(id) ?? 0) + 1);
     }
-    for (const [id] of [...tally.entries()].sort((a, b) => b[1] - a[1])) {
-      ranked.push(id); seen.add(id);
+    for (const [id, count] of [...tally.entries()].sort((a, b) => b[1] - a[1])) {
+      if (count < POPULAR_MIN_FOLLOWS) continue; // not actually popular
+      popularIds.push(id); seen.add(id);
     }
   } catch {}
 
-  // Top up with the newest accounts if the follow tally didn't yield enough.
-  if (ranked.length < need) {
+  // Top up with the newest accounts if the follow tally didn't fill the quota.
+  if (popularIds.length < need) {
     try {
       const { data } = await supabase.from('profiles').select('id')
         .eq('hidden', false)
         .order('created_at', { ascending: false }).limit(need * 3 + 20);
       for (const p of data ?? []) {
         const id = p.id as string;
-        if (!seen.has(id)) { ranked.push(id); seen.add(id); }
+        if (!seen.has(id)) { newIds.push(id); seen.add(id); }
       }
     } catch {}
   }
 
-  const ids = ranked.slice(0, need);
+  const ids = [...popularIds, ...newIds].slice(0, need);
   if (!ids.length) return [];
+  const popularSet = new Set(popularIds);
 
   const { data } = await supabase.from('profiles').select(PROFILE_COLS).in('id', ids);
   const byId = new Map<string, any>((data ?? []).map((p: any) => [p.id, p]));
@@ -84,10 +110,13 @@ async function fetchPopularProfiles(exclude: Set<string>, need: number): Promise
   ids.forEach((id, i) => {
     const p = byId.get(id);
     if (!p || p.hidden) return; // never recommend a hidden account
+    const popular = popularSet.has(id);
     out.push({
       id: p.id, username: p.username, display_name: p.display_name,
       avatar_url: p.avatar_url ?? null, badge_tier: p.badge_tier ?? null,
-      badge_show: p.badge_show ?? null, reason: 'popular', score: 900 - i,
+      badge_show: p.badge_show ?? null, created_at: p.created_at ?? null,
+      reason: popular ? 'popular' : 'new',
+      score: popular ? 900 - i : 300 - i, // popular band stays above the new-filler band
     });
   });
   return out;
@@ -147,7 +176,11 @@ export async function fetchSuggestedAccounts(
       });
       for (const row of data ?? []) {
         const id = row.id as string;
-        if (!exclude.has(id)) nearby.set(id, { row, distance: row.distance_km ?? 0 });
+        // Only truly-nearby accounts earn "In your area" — the RPC returns the
+        // closest profiles with no distance ceiling of its own.
+        if (!exclude.has(id) && (row.distance_km ?? Infinity) <= NEARBY_MAX_KM) {
+          nearby.set(id, { row, distance: row.distance_km ?? 0 });
+        }
       }
     } catch {}
   }
@@ -200,7 +233,8 @@ export async function fetchSuggestedAccounts(
     out.push({
       id: p.id, username: p.username, display_name: p.display_name,
       avatar_url: p.avatar_url ?? null, badge_tier: p.badge_tier ?? null,
-      badge_show: p.badge_show ?? null, reason, score: scoreOf(id, reason),
+      badge_show: p.badge_show ?? null, created_at: p.created_at ?? null,
+      reason, score: scoreOf(id, reason),
     });
   }
 

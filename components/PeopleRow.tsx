@@ -8,7 +8,7 @@ import { useFollow } from '../contexts/FollowContext';
 import StoryAvatar from './StoryAvatar';
 import FollowButton from './FollowButton';
 import {
-  fetchSuggestedAccounts, loadContactHashesIfEnabled, reasonLabel, type SuggestedAccount,
+  fetchSuggestedAccounts, loadContactHashesIfEnabled, reasonLabel, isNewSuggestion, type SuggestedAccount,
 } from '../lib/suggestions';
 
 // "People to follow" — one card-rail woven into the home feed a few posts down.
@@ -80,7 +80,7 @@ export default function PeopleRow({ currentUserId }: { currentUserId: string | n
                 onPressProfile={() => router.push(`/profile/${p.id}`)}
               />
               <Text style={styles.name} numberOfLines={1}>{p.display_name || p.username}</Text>
-              <Text style={styles.reason} numberOfLines={2}>{reasonLabel(p.reason)}</Text>
+              <Text style={styles.reason} numberOfLines={2}>{reasonLabel(isNewSuggestion(p) ? 'new' : p.reason)}</Text>
             </TouchableOpacity>
             <FollowButton userId={p.id} style={styles.follow} />
           </View>

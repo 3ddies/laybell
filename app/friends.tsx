@@ -12,7 +12,7 @@ import StoryAvatar from '../components/StoryAvatar';
 import BadgeEmblem from '../components/BadgeEmblem';
 import FollowButton from '../components/FollowButton';
 import {
-  getRotatingSuggestions, loadContactHashesIfEnabled, reasonLabel, type SuggestedAccount,
+  getRotatingSuggestions, loadContactHashesIfEnabled, reasonLabel, isNewSuggestion, type SuggestedAccount,
 } from '../lib/suggestions';
 import { maskHiddenProfile } from '../lib/hiddenProfile';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
@@ -100,7 +100,7 @@ export default function FriendsScreen() {
     <View style={styles.suggestSection}>
       <Text style={styles.sectionTitle}>{t('friends.suggested')}</Text>
       {liveSuggestions.map(s => (
-        <View key={s.id}>{renderRow(s, reasonLabel(s.reason))}</View>
+        <View key={s.id}>{renderRow(s, reasonLabel(isNewSuggestion(s) ? 'new' : s.reason))}</View>
       ))}
     </View>
   ) : null;

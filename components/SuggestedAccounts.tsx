@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { fetchSuggestedAccounts, loadContactHashesIfEnabled, reasonLabel, type SuggestedAccount } from '../lib/suggestions';
+import { fetchSuggestedAccounts, loadContactHashesIfEnabled, reasonLabel, isNewSuggestion, type SuggestedAccount } from '../lib/suggestions';
 import { useFollow } from '../contexts/FollowContext';
 import FollowButton from './FollowButton';
 import StoryAvatar from './StoryAvatar';
@@ -90,7 +90,7 @@ export default function SuggestedAccounts({ currentUserId }: { currentUserId: st
             />
             <TouchableOpacity style={styles.cardText} activeOpacity={0.85} onPress={() => router.push(`/profile/${item.id}`)}>
               <Text style={styles.name} numberOfLines={1}>{item.display_name}</Text>
-              <Text style={styles.reason} numberOfLines={2}>{reasonLabel(item.reason)}</Text>
+              <Text style={styles.reason} numberOfLines={2}>{reasonLabel(isNewSuggestion(item) ? 'new' : item.reason)}</Text>
             </TouchableOpacity>
             <FollowButton userId={item.id} style={styles.followBtn} />
           </View>
