@@ -9,6 +9,11 @@ import { useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { isNotifTypeEnabled } from '../lib/notificationPrefs';
 import { destForPushData } from '../lib/notificationRoute';
+import { notifySuccess } from '../lib/haptics';
+import { parseAttachment } from '../lib/attachments';
+import { sharedPostId, parseStoryReply } from '../lib/postLinks';
+import { isOfferBody } from '../lib/offerMessage';
+import { isStudioInviteBody } from '../lib/studioInvite';
 import StoryAvatar from '../components/StoryAvatar';
 
 /**
@@ -55,6 +60,8 @@ type Banner = {
   icon: any;
   tint: string;
   dest: { href: string; tab: boolean } | null;
+  // Messages buzz as they drop in; nothing else does.
+  buzz?: boolean;
 };
 
 /** Screens where a banner would be telling you what you are already looking at. */
@@ -96,6 +103,11 @@ export default function ActivityBanner() {
     const seen = lastShownAt.current[b.key] ?? 0;
     if (now - seen < COOLDOWN_MS) return;
     lastShownAt.current[b.key] = now;
+
+    // The buzz. Only banners that ask for it (messages) fire a haptic, so a
+    // burst of likes or follows stays silent. No-ops where haptics aren't
+    // available — see lib/haptics.
+    if (b.buzz) notifySuccess();
 
     setBanner(b);
     if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -200,6 +212,39 @@ export default function ActivityBanner() {
               dest: { href: '/profile-viewers', tab: false },
             });
           })
+        // ── Source 4: a DM / group message TO ME — the message banner ───────
+        // A direct `messages` subscription, not a notifications row, so it
+        // carries the sender and the body: a real preview, the exact thread to
+        // open, and a buzz. RLS scopes realtime delivery to messages I'm allowed
+        // to read, so no server filter is needed — a 1:1 only arrives if I'm a
+        // party to it, a group message only if I'm a member.
+        .on('postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'messages' },
+          async (payload: any) => {
+            const m = payload.new;
+            if (!m || m.sender_id === user.id) return;          // never my own send
+            // 1:1 DM to me → the sender's thread; otherwise a group I'm in.
+            const href = m.receiver_id === user.id
+              ? `/messages/${m.sender_id}`
+              : m.conversation_id
+                ? `/messages/group/${m.conversation_id}`
+                : null;
+            if (!href) return;
+            if (pathRef.current === href) return;               // already reading this thread
+            const who = await actorOf(m.sender_id);
+            if (!who || !alive) return;                          // hidden / deleted sender
+            show({
+              key: `msg:${href}`,
+              actorId: m.sender_id,
+              avatarUrl: who.avatar_url,
+              name: who.display_name || who.username || t('notifications.someone'),
+              text: previewForBody(m.body ?? '', t),
+              icon: 'chatbubbles',
+              tint: '#60A5FA',
+              dest: { href, tab: false },
+              buzz: true,
+            });
+          })
         .subscribe();
     })();
 
@@ -263,6 +308,19 @@ async function actorOf(id: string) {
   return data as any;
 }
 
+/** One-line preview of an incoming message, matching the inbox's wording so the
+ *  banner and the conversation list say the same thing. Attachments / shared
+ *  posts / offers / story replies / studio invites get a label; text shows as-is. */
+function previewForBody(body: string, t: TFunc): string {
+  const att = parseAttachment(body);
+  if (att) return att.type === 'gif' ? t('messages.preview.gif') : t('messages.preview.photo');
+  if (sharedPostId(body)) return t('messages.preview.sharedPost');
+  if (parseStoryReply(body)) return t('messages.preview.storyReply');
+  if (isOfferBody(body)) return t('messages.preview.offer');
+  if (isStudioInviteBody(body)) return t('messages.preview.studio');
+  return body;
+}
+
 type TFunc = (key: string, vars?: Record<string, string | number>) => string;
 
 async function bannerForNotification(n: any, t: TFunc): Promise<Banner | null> {
@@ -286,7 +344,9 @@ async function bannerForNotification(n: any, t: TFunc): Promise<Banner | null> {
     comment:      { text: t('banner.commented'), icon: 'chatbubble',  tint: COLORS.primaryLight },
     follow:       { text: t('banner.followed'),  icon: 'person-add',  tint: COLORS.primaryLight },
     friend:       { text: t('banner.followed'),  icon: 'people',      tint: COLORS.primaryLight },
-    message:      { text: t('banner.messaged'),  icon: 'chatbubbles', tint: '#60A5FA' },
+    // 'message' is intentionally NOT here — message banners come from the direct
+    // messages subscription (Source 4), which has the body for a real preview and
+    // opens the thread. A notifications-row 'message' banner would double it up.
     mention:      { text: t('banner.mentioned'), icon: 'at',          tint: COLORS.primaryLight },
     tag:          { text: t('banner.tagged'),    icon: 'pricetag',    tint: COLORS.primary },
     offer:        { text: t('banner.offered'),   icon: 'pricetags',   tint: COLORS.success },
