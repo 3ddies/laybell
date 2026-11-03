@@ -13,7 +13,10 @@ import type { Community } from '../lib/communities';
 type Props = {
   community: Community;
   onPress: () => void;
-  variant?: 'rail' | 'row';
+  // 'rail' = small fixed-width card in a horizontal rail; 'row' = full-width list
+  // row (search results); 'feature' = larger card that fills its column in the
+  // emphasized Laybell grid (width comes from the parent cell).
+  variant?: 'rail' | 'row' | 'feature';
 };
 
 export default function CommunityCard({ community, onPress, variant = 'rail' }: Props) {
@@ -41,6 +44,31 @@ export default function CommunityCard({ community, onPress, variant = 'rail' }: 
         <View style={styles.rowCount}>
           <Ionicons name="people" size={13} color={colors.textTertiary} />
           <Text style={styles.rowCountText}>{formatCount(community.member_count)}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  }
+
+  if (variant === 'feature') {
+    return (
+      <TouchableOpacity style={styles.feature} onPress={onPress} activeOpacity={0.85}>
+        <View style={styles.featureBanner}>
+          <Image source={{ uri: img }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          {!!genreTag && (
+            <View style={styles.genrePill}>
+              <Text style={styles.genrePillText} numberOfLines={1}>{genreTag}</Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.featureBody}>
+          <View style={styles.cardTitleLine}>
+            <Text style={styles.featureName} numberOfLines={1}>{community.name}</Text>
+            {community.myRole && <RoleBadge role={community.myRole} size={10} showLabel={false} />}
+          </View>
+          <View style={styles.featureMetaRow}>
+            <Ionicons name="people" size={13} color={colors.textTertiary} />
+            <Text style={styles.cardMeta}>{countLabel('member', community.member_count)}</Text>
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -89,6 +117,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   cardTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   cardName: { color: colors.text, fontSize: 14, fontWeight: '800', flexShrink: 1 },
   cardMeta: { color: colors.textTertiary, fontSize: 12 },
+
+  // feature card — larger, fills its grid column (width comes from the parent cell)
+  feature: {
+    width: '100%',
+    borderRadius: RADIUS.md,
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  featureBanner: { height: 112, padding: SPACING.sm, justifyContent: 'flex-end', overflow: 'hidden', backgroundColor: colors.surface },
+  featureBody: { padding: SPACING.sm, gap: 4 },
+  featureName: { color: colors.text, fontSize: 15, fontWeight: '800', flexShrink: 1 },
+  featureMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 
   // row (search results / lists)
   row: {

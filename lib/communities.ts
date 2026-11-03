@@ -252,8 +252,10 @@ export async function fetchMyPostableCommunities(userId: string | null): Promise
   }
 }
 
-// The Laybell-owned "official" topic tabs, in a stable order for the Explore rail.
-// Everyone can browse these without joining (they're always 'live').
+// The Laybell-owned "official" topic tabs. Everyone can browse these without
+// joining (they're always 'live'). Ordered by popularity — most members first,
+// then most posts, then name as a stable tiebreaker — so the busiest topics sit
+// at the top of the Communities page. No limit: every official topic is returned.
 export async function fetchOfficialCommunities(): Promise<Community[]> {
   try {
     const { data } = await supabase
@@ -261,6 +263,8 @@ export async function fetchOfficialCommunities(): Promise<Community[]> {
       .select('*')
       .eq('is_official', true)
       .eq('status', 'live')
+      .order('member_count', { ascending: false })
+      .order('post_count', { ascending: false })
       .order('name', { ascending: true });
     return (data as Community[]) ?? [];
   } catch {

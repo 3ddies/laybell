@@ -23,6 +23,14 @@ import {
 
 const EMPTY: CommunityRails = { mine: [], invites: [], recommended: [], trending: [], explore: [] };
 
+// Right now Laybell's own official communities are the ONLY ones, so the tab leads
+// with just those — full-page and emphasized. The Recommended / Trending / Explore
+// rails would only re-list that same handful under labels that imply activity that
+// isn't there yet (a "Trending" that isn't trending reads as dishonest), so they're
+// held back until real member-made communities exist to populate them. Flip this to
+// true to bring the discovery rails back once there are enough communities.
+const SHOW_DISCOVERY_RAILS = false;
+
 export default function CommunitiesScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -186,16 +194,36 @@ export default function CommunitiesScreen() {
               </View>
             )}
 
-            <Rail title={t('communities.laybell')} data={shownOfficial} />
-            <Rail title={t('communities.yours')} data={rails.mine} />
-            <Rail title={t('communities.recommended')} data={rails.recommended} />
-            <Rail title={t('communities.trending')} data={rails.trending} />
-            <Rail title={t('communities.explore')} data={rails.explore} />
+            {/* Laybell's official communities — the emphasized, full-page content
+                while they're the only communities that exist. */}
+            {shownOfficial.length > 0 && (
+              <View style={styles.officialWrap}>
+                <Text style={styles.officialTitle}>{t('communities.laybell')}</Text>
+                <Text style={styles.officialSub}>{t('communities.laybellSub')}</Text>
+                <View style={styles.officialGrid}>
+                  {shownOfficial.map((c) => (
+                    <View key={c.id} style={styles.gridCell}>
+                      <CommunityCard community={c} variant="feature" onPress={() => open(c)} />
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
 
-            {/* Cold-start empty state */}
-            {rails.mine.length === 0 && rails.recommended.length === 0 &&
-             rails.trending.length === 0 && rails.explore.length === 0 && rails.invites.length === 0 &&
-             shownOfficial.length === 0 && (
+            {/* Your own memberships / creations — real, so kept (auto-hides empty). */}
+            <Rail title={t('communities.yours')} data={rails.mine} />
+
+            {/* Discovery rails return once there are genuine communities to show. */}
+            {SHOW_DISCOVERY_RAILS && (
+              <>
+                <Rail title={t('communities.recommended')} data={rails.recommended} />
+                <Rail title={t('communities.trending')} data={rails.trending} />
+                <Rail title={t('communities.explore')} data={rails.explore} />
+              </>
+            )}
+
+            {/* Cold-start empty state — only when there is genuinely nothing to show. */}
+            {rails.invites.length === 0 && rails.mine.length === 0 && shownOfficial.length === 0 && (
               <View style={styles.emptyState}>
                 <Ionicons name="people-outline" size={48} color={colors.textTertiary} />
                 <Text style={styles.emptyTitle}>{t('communities.empty')}</Text>
@@ -238,6 +266,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   listContent: { padding: SPACING.md, gap: SPACING.sm },
 
   section: { paddingHorizontal: SPACING.md, marginBottom: SPACING.lg, gap: SPACING.sm },
+
+  // Emphasized Laybell section — a big title + subtitle over a 2-column grid that
+  // fills the page (vs. the small horizontal rails used for secondary sections).
+  officialWrap: { paddingHorizontal: SPACING.md, marginBottom: SPACING.lg },
+  officialTitle: { color: colors.text, fontSize: 26, lineHeight: 30, fontWeight: '900', marginBottom: 4 },
+  officialSub: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, marginBottom: SPACING.md },
+  officialGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: SPACING.sm },
+  gridCell: { width: '48.5%' },
+
   railWrap: { marginBottom: SPACING.lg },
   railTitle: { color: colors.text, fontSize: 20, lineHeight: 28, fontWeight: '900', paddingHorizontal: SPACING.md, marginBottom: SPACING.sm },
   railList: { paddingHorizontal: SPACING.md, gap: SPACING.sm },
