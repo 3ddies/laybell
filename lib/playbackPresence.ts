@@ -70,6 +70,9 @@ export function markInteraction(): void {
 // Both clocks are marked together, so either one's reading is the same.
 export const msSinceInteraction = presence.msSinceInteraction;
 export const isLoopIdle = presence.isIdle;
+// Subscribe to loop-idle ↔ present transitions from non-React code (the Active-Status
+// heartbeat uses it to stop stamping when the room goes idle and resume on return).
+export const subscribeLoopIdle = presence.subscribe;
 
 // 'active' specifically, not merely "not background": the transient 'inactive'
 // of a notification pull-down is not someone coming back to the app. Logged in

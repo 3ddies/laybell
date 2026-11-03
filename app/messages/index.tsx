@@ -21,6 +21,7 @@ import { fetchBlockedIds } from '../../lib/blocks';
 import { maskHiddenProfile } from '../../lib/hiddenProfile';
 import HighlightText from '../../components/HighlightText';
 import StoryAvatar from '../../components/StoryAvatar';
+import ActiveNowRail from '../../components/ActiveNowRail';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import GroupAvatar from '../../components/GroupAvatar';
 import SwipeBackPager from '../../components/SwipeBackPager';
@@ -435,6 +436,9 @@ export default function MessagesScreen() {
         keyboardShouldPersistTaps="handled"
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
+        // Active-now friends rail: main inbox only, hidden while searching. The
+        // component hides itself when opted out or when no friend is online.
+        ListHeaderComponent={tab === 'main' && !q ? <ActiveNowRail /> : null}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         showsVerticalScrollIndicator={false}
         refreshControl={

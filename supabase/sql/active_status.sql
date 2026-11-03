@@ -50,9 +50,14 @@ security definer
 set search_path = public
 as $$
 begin
+  -- Alias + qualify: `returns table(id uuid)` puts an OUT column named `id` in
+  -- scope, so an UNqualified `id` here is ambiguous with it and Postgres throws
+  -- "column reference \"id\" is ambiguous" on EVERY authenticated call — which
+  -- silently killed the whole feature (the client swallows the error). Qualify
+  -- via the `pr` alias so `id` can only mean the column.
   if not exists (
-    select 1 from public.profiles
-    where id = auth.uid() and active_status_enabled
+    select 1 from public.profiles pr
+    where pr.id = auth.uid() and pr.active_status_enabled
   ) then
     return;
   end if;
@@ -62,7 +67,53 @@ begin
      where p.id = any(ids)
        and p.active_status_enabled
        and p.last_active_at is not null
-       and p.last_active_at > now() - interval '2 minutes';
+       and p.last_active_at > now() - interval '2 minutes'
+       -- TESTING ONLY (remove when done): the @laybell brand account's Active Status is
+       -- hidden from EVERYONE except @3ddie, so the owner can test presence without the
+       -- brand account showing as online to real users. laybell / 3ddie ids below.
+       and not (p.id = '0ca340d6-2d95-4038-88da-4a3dc9b5b9fd'
+                and auth.uid() <> 'd0f25dc3-b34c-400e-b380-4a5e83d6b018');
+end;
+$$;
+
+-- Active-now rail (Messages): up to p_limit users who are online RIGHT NOW. The caller
+-- passes the people it wants FIRST in p_prefer — friends, then everyone else they
+-- follow — and those fill the slots in that order; any slots still open fill with other
+-- online users, most-recently-active first. So the rail still shows faces on a near-
+-- empty app, yet never shows a stranger while 5 of your own people are active. Same
+-- reciprocity, 2-minute window, and @laybell test-gate as online_user_ids; also skips
+-- hidden accounts and anyone on either side of a block.
+create or replace function public.active_now(p_prefer uuid[], p_limit int)
+returns table(id uuid)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (
+    select 1 from public.profiles pr
+    where pr.id = auth.uid() and pr.active_status_enabled
+  ) then
+    return;
+  end if;
+  return query
+    select p.id
+      from public.profiles p
+     where p.id <> auth.uid()
+       and p.active_status_enabled
+       and p.last_active_at is not null
+       and p.last_active_at > now() - interval '2 minutes'
+       and coalesce(p.hidden, false) = false
+       and not (p.id = '0ca340d6-2d95-4038-88da-4a3dc9b5b9fd'
+                and auth.uid() <> 'd0f25dc3-b34c-400e-b380-4a5e83d6b018')
+       and not exists (
+         select 1 from public.blocks b
+         where (b.blocker_id = auth.uid() and b.blocked_id = p.id)
+            or (b.blocker_id = p.id and b.blocked_id = auth.uid())
+       )
+     order by coalesce(array_position(p_prefer, p.id), 2147483647) asc,
+              p.last_active_at desc
+     limit greatest(0, least(coalesce(p_limit, 5), 50));
 end;
 $$;
 
@@ -74,3 +125,7 @@ grant execute on function public.touch_active() to authenticated;
 revoke all on function public.online_user_ids(uuid[]) from public;
 revoke all on function public.online_user_ids(uuid[]) from anon;
 grant execute on function public.online_user_ids(uuid[]) to authenticated;
+
+revoke all on function public.active_now(uuid[], int) from public;
+revoke all on function public.active_now(uuid[], int) from anon;
+grant execute on function public.active_now(uuid[], int) to authenticated;

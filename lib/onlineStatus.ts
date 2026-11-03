@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { supabase } from './supabase';
+import { isLoopIdle, subscribeLoopIdle } from './playbackPresence';
 
 // ── Active Status: the green "online now" dot ────────────────────────────────
 // Two halves share one module so they can both read the viewer's own opt-out flag:
@@ -25,10 +26,15 @@ let myEnabled = false; // the viewer's own Active-Status setting
 // ── Heartbeat ────────────────────────────────────────────────────────────────
 let hbTimer: ReturnType<typeof setInterval> | null = null;
 let appSub: { remove: () => void } | null = null;
+let presenceUnsub: (() => void) | null = null;
 
 async function beat() {
   if (!myUserId || !myEnabled) return;
   if (AppState.currentState !== 'active') return; // foreground only — no background-audio "online"
+  // Foregrounded but untouched past the idle threshold = the room is empty (see
+  // lib/presenceCore). Stop stamping so an app left open on a table drops to offline
+  // instead of reading "active" forever — a single touch (below) brings it right back.
+  if (isLoopIdle()) return;
   try { await supabase.rpc('touch_active'); } catch { /* pre-migration / offline */ }
 }
 
@@ -36,12 +42,18 @@ function startHeartbeat() {
   if (hbTimer) return;
   beat();
   hbTimer = setInterval(beat, HEARTBEAT_MS);
-  appSub = AppState.addEventListener('change', (s: AppStateStatus) => { if (s === 'active') beat(); });
+  // On foreground: stamp at once AND re-poll, so a returning viewer's now-stale dots
+  // clear within a second instead of on the next 45s tick.
+  appSub = AppState.addEventListener('change', (s: AppStateStatus) => { if (s === 'active') { beat(); poll(); } });
+  // A touch after an idle stretch means the user is back — stamp immediately so their
+  // dot reappears promptly rather than waiting for the next 60s beat.
+  presenceUnsub = subscribeLoopIdle(() => { if (!isLoopIdle()) beat(); });
 }
 
 function stopHeartbeat() {
   if (hbTimer) { clearInterval(hbTimer); hbTimer = null; }
   if (appSub) { appSub.remove(); appSub = null; }
+  if (presenceUnsub) { presenceUnsub(); presenceUnsub = null; }
 }
 
 // ── Shared online poll ─────────────────────────────────────────────────────────
@@ -125,4 +137,31 @@ export function useIsOnline(userId?: string | null): boolean {
     };
   }, [id]);
   return id ? online.has(id) : false;
+}
+
+// ── Hook: who is active right now for the "Active now" rail? ────────────────────
+// Up to `limit` users online this moment, with the caller's own people (passed in
+// `prefer`, friends first) ahead of everyone else — the server (active_now) fills any
+// slots still open with other online users, so the rail shows faces even on a near-
+// empty app yet never a stranger while your own people fill it. Its own light poll on
+// the shared cadence; pass `prefer = null` when the viewer has Active Status off (the
+// rail then shows nothing, which the server enforces too).
+export function useActiveNow(prefer: string[] | null, limit = 5): string[] {
+  const [ids, setIds] = useState<string[]>([]);
+  const key = prefer ? prefer.join(',') : null;
+  useEffect(() => {
+    if (key === null) { setIds([]); return; }
+    let live = true;
+    const run = async () => {
+      try {
+        const { data, error } = await supabase.rpc('active_now', { p_prefer: prefer ?? [], p_limit: limit });
+        if (!error && live) setIds(((data ?? []) as { id: string }[]).map((r) => r.id));
+      } catch { /* offline / pre-migration — keep the last set */ }
+    };
+    run();
+    const timer = setInterval(run, POLL_MS);
+    return () => { live = false; clearInterval(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, limit]);
+  return ids;
 }
