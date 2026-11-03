@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { createNotification } from './createNotification';
 import { maskHiddenProfile } from './hiddenProfile';
 import { removePublicUrls } from './storageCleanup';
+import { LAYBELL_OFFICIAL_USER_ID } from './official';
 
 // 24-hour stories. Schema + RLS live in supabase/sql/stories.sql.
 // A story is an ephemeral image/video visible to the author and their followers
@@ -685,25 +686,33 @@ export async function fetchStoryTray(userId: string, localSeen: Set<string> = ne
     .select('following_id')
     .eq('follower_id', userId);
   const followingIds = (follows ?? []).map((f: any) => f.following_id);
-  const authorIds = Array.from(new Set([userId, ...followingIds]));
+  // The official @laybell account is ALWAYS loaded — follow or not — so its story
+  // reaches everyone on Laybell, the way Instagram surfaces its own. See lib/official.
+  const authorIds = Array.from(new Set([userId, LAYBELL_OFFICIAL_USER_ID, ...followingIds]));
 
   const map = await loadGroups(authorIds, userId, localSeen);
   const list = Array.from(map.values());
 
   const own = list.find((g) => g.user.id === userId) ?? null;
-  const others = list.filter((g) => g.user.id !== userId);
+  // Pin the official account's story right after your own — unless you ARE it, in
+  // which case it already is `own`. Only present when @laybell has a live story.
+  const official = userId !== LAYBELL_OFFICIAL_USER_ID
+    ? (list.find((g) => g.user.id === LAYBELL_OFFICIAL_USER_ID) ?? null)
+    : null;
+  const others = list.filter((g) => g.user.id !== userId && g.user.id !== LAYBELL_OFFICIAL_USER_ID);
+  const head = [...(own ? [own] : []), ...(official ? [official] : [])];
 
-  // Excluded by FOLLOW, not by "has a story in the tray": somebody you follow
-  // who has not posted today is still not a stranger, and surfacing them under
-  // discovery would be odd. Self is excluded for the obvious reason.
-  const exclude = new Set<string>([userId, ...followingIds]);
+  // Excluded from discovery: self, the official account (already pinned above),
+  // and everybody you follow — somebody you follow who hasn't posted today is
+  // still not a stranger, so surfacing them under discovery would be odd.
+  const exclude = new Set<string>([userId, LAYBELL_OFFICIAL_USER_ID, ...followingIds]);
 
   // Ask for enough to reach TRAY_MIN_SLOTS, never fewer than the baseline five.
   // A viewer following nobody asks for ten; one whose follows already fill the
   // rail still asks for five, because discovery is a way to meet people and not
-  // just padding. Counted off `others` rather than `followingIds`: what matters
-  // is how many followed people actually POSTED, not how many were followed.
-  const haveAlready = (own ? 1 : 0) + others.length;
+  // just padding. Counted off what's already in the tray (own + official + posted
+  // follows), not followingIds — what matters is how many actually POSTED.
+  const haveAlready = head.length + others.length;
   const wantDiscovery = Math.max(DISCOVERY_STORY_AUTHORS, TRAY_MIN_SLOTS - haveAlready);
 
   let discovery: StoryGroup[] = [];
@@ -713,9 +722,9 @@ export async function fetchStoryTray(userId: string, localSeen: Set<string> = ne
 
   try {
     const ranked = await rankStoryGroups(others, userId);
-    return [...(own ? [own] : []), ...ranked, ...discovery]; // your own story always leads
+    return [...head, ...ranked, ...discovery]; // your own story leads, then official, then follows
   } catch {
-    return [...baselineTraySort(list, userId), ...discovery];
+    return [...head, ...baselineTraySort(others, userId), ...discovery];
   }
 }
 
