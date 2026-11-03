@@ -112,6 +112,10 @@ export default function DjBoothScreen() {
               loading={loadingA}
               waveWidth={WAVE_W}
               onLoadPress={() => setPicker('a')}
+              onTapeStop={() => engineRef.current?.deck('a').tapeStop()}
+              onTapeStart={() => engineRef.current?.deck('a').tapeStart()}
+              onRoll={() => engineRef.current?.deck('a').roll()}
+              onReverse={() => engineRef.current?.deck('a').reverse()}
             />
             <DjCrossfader onChange={(x) => engineRef.current?.crossfade(x)} colorA={COLOR_A} colorB={COLOR_B} />
             <DjDeck
@@ -122,6 +126,10 @@ export default function DjBoothScreen() {
               loading={loadingB}
               waveWidth={WAVE_W}
               onLoadPress={() => setPicker('b')}
+              onTapeStop={() => engineRef.current?.deck('b').tapeStop()}
+              onTapeStart={() => engineRef.current?.deck('b').tapeStart()}
+              onRoll={() => engineRef.current?.deck('b').roll()}
+              onReverse={() => engineRef.current?.deck('b').reverse()}
             />
           </>
         )}

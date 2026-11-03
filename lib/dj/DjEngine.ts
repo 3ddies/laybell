@@ -121,6 +121,9 @@ export class Deck {
   private startedAtCtx = 0;    // ctx.currentTime at the last source start
   private startOffset = 0;     // buffer offset at the last source start
   private tempo = 1;
+  private reversing = false;   // true while a reverse/rewind one-shot is playing
+  private reverseStartPos = 0; // forward position (s) the reverse began at
+  private channelVol = 1;      // the up-fader's INTENDED level, so FX gating restores to it (not a gated 0)
 
   // Loop + cues (seconds).
   private loopOn = false;
@@ -177,6 +180,7 @@ export class Deck {
     this.playing = false;
     this.pausedAt = 0;
     this.loopOn = false;
+    this.reversing = false;
     this.cues = [null, null, null, null];
     const buf = await this.ctx.decodeAudioData(url);
     this.buffer = buf;
@@ -191,6 +195,11 @@ export class Deck {
   /** Current playback position in seconds. */
   position(): number {
     if (!this.playing) return this.pausedAt;
+    if (this.reversing) {
+      // Playhead runs BACKWARD during a reverse, matching the audio.
+      const r = this.reverseStartPos - (this.ctx.currentTime - this.startedAtCtx) * this.tempo;
+      return clamp(r, 0, this.durationS || r);
+    }
     let p = this.startOffset + (this.ctx.currentTime - this.startedAtCtx) * this.tempo;
     if (this.loopOn && this.loopEndS > this.loopStartS) {
       const len = this.loopEndS - this.loopStartS;
@@ -210,11 +219,13 @@ export class Deck {
     this.pausedAt = this.position();
     this.stopSource();
     this.playing = false;
+    this.reversing = false;
   }
 
   toggle(): void { this.playing ? this.pause() : this.play(); }
 
   seek(sec: number): void {
+    this.reversing = false;
     const to = clamp(sec, 0, this.durationS);
     if (this.playing) {
       this.stopSource();
@@ -349,6 +360,106 @@ export class Deck {
     g.setValueAtTime(1, startT + dur + 0.001); // restore full after the chop
   }
 
+  /** Booth FX: tape-stop — spin the live source down to a halt over durS, then pause at the
+   *  point the stop began, so a re-play resumes cleanly at normal tempo. No-op if not playing. */
+  tapeStop(durS = 0.8): void {
+    if (!this.playing || !this.source) return;
+    const startPos = this.position();
+    const now = this.ctx.currentTime;
+    const p = this.source.playbackRate;
+    p.cancelScheduledValues(now);
+    p.setValueAtTime(Math.max(0.05, this.tempo), now);
+    p.linearRampToValueAtTime(0.03, now + durS);
+    setTimeout(() => {
+      if (!this.playing) return;
+      this.stopSource();
+      this.playing = false;
+      this.pausedAt = startPos;
+    }, (durS + 0.05) * 1000);
+  }
+
+  /** Booth FX: tape-start — wind the deck UP to full speed from a near-stop (the "power on" spin-up).
+   *  Starts the deck if it was paused. Minor: the waveform playhead runs slightly ahead during the
+   *  ~durS wind-up (position tracks the set tempo, not the ramped source rate) — cosmetic. */
+  tapeStart(durS = 0.7): void {
+    if (!this.buffer) return;
+    if (!this.playing) this.play();
+    if (!this.source) return;
+    const now = this.ctx.currentTime;
+    const p = this.source.playbackRate;
+    p.cancelScheduledValues(now);
+    p.setValueAtTime(0.08, now);
+    p.linearRampToValueAtTime(this.tempo, now + durS);
+  }
+
+  /** Booth FX: beat-roll — a short rhythmic gate (on/off chops) of this deck's level, restoring to
+   *  the CURRENT volume after (so it respects the up-fader). `count` chops of `periodS` each.
+   *  Built from DISCRETE setValueAtTime steps, NOT setValueCurveAtTime: two overlapping value CURVES
+   *  throw a native error (that's what crashed the app on a double-tap). cancelScheduledValues +
+   *  setValueAtTime is always safe to re-fire, so a re-tap just cleanly restarts the gate. */
+  roll(periodS = 0.11, count = 8): void {
+    const g = this.channelGain.gain;
+    // Restore to the up-fader's INTENDED level — NOT g.value. On a rapid re-tap, reading the live
+    // gain can catch an "off" slice (0), which then poisons every step and freezes the deck silent.
+    const base = this.channelVol;
+    const now = this.ctx.currentTime;
+    try {
+      g.cancelScheduledValues(now);
+      for (let i = 0; i < count; i++) {
+        const t0 = now + i * periodS;
+        g.setValueAtTime(base, t0);              // on (first half of each slice)
+        g.setValueAtTime(0, t0 + periodS * 0.5); // off (second half) — the chop
+      }
+      g.setValueAtTime(base, now + count * periodS); // restore full after the roll
+    } catch {
+      const t = this.ctx.currentTime;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(base, t); // never leave the deck gated/silent if scheduling fails
+    }
+  }
+
+  /** Booth FX: reverse / rewind — play the last ~durS of audio BACKWARDS, then resume forward from
+   *  where the rewind landed. Only a short recent SEGMENT is reversed (≈1 MB, not the whole track),
+   *  built sample-contiguous with the surrounding audio so the swap in and out is near-seamless.
+   *  Re-tap is ignored while a reverse is running; no-op if not playing or too near the start. */
+  reverse(durS = 1.4): void {
+    if (!this.buffer || !this.playing || this.reversing) return;
+    const pos = this.position();
+    const sr = (this.buffer as unknown as { sampleRate?: number }).sampleRate ?? this.ctx.sampleRate;
+    const ch = Math.max(1, (this.buffer as unknown as { numberOfChannels?: number }).numberOfChannels ?? 1);
+    const posSample = Math.floor(pos * sr);
+    const segLen = Math.min(Math.floor(durS * sr), posSample);
+    if (segLen < 1024) return; // too near the start to rewind
+    let seg: AudioBuffer;
+    try {
+      seg = this.ctx.createBuffer(ch, segLen, sr);
+      const startSample = posSample - segLen;
+      for (let c = 0; c < ch; c++) {
+        const s = this.buffer.getChannelData(c);
+        const d = seg.getChannelData(c);
+        for (let i = 0; i < segLen; i++) d[i] = s[startSample + segLen - 1 - i];
+      }
+    } catch { return; } // createBuffer/getChannelData unsupported → skip the effect
+    this.stopSource();
+    const src = this.ctx.createBufferSource();
+    src.buffer = seg;
+    src.playbackRate.value = this.tempo;
+    src.connect(this.eqLow);
+    src.start(0, 0);
+    this.source = src;
+    this.startedAtCtx = this.ctx.currentTime;
+    this.reversing = true;
+    this.reverseStartPos = pos;
+    const landed = clamp(pos - segLen / sr, 0, this.durationS);
+    setTimeout(() => {
+      if (!this.reversing) return; // interrupted by pause / seek / load
+      this.reversing = false;
+      if (!this.playing) return;
+      this.stopSource();
+      this.spawnSource(landed); // continue forward from where the rewind ended
+    }, (segLen / sr) * 1000 / this.tempo);
+  }
+
   /** Filter knob in [-1,1]: <0 lowpass (darker), >0 highpass (thinner), 0 = open. */
   setFilter(knob: number): void {
     this.filter.frequency.cancelScheduledValues(this.ctx.currentTime); // clear any FX sweep
@@ -367,8 +478,9 @@ export class Deck {
 
   /** Channel (up-fader) volume 0..1. */
   setVolume(v: number): void {
-    this.channelGain.gain.cancelScheduledValues(this.ctx.currentTime); // clear any stutter gating
-    this.channelGain.gain.value = clamp(v, 0, 1);
+    this.channelVol = clamp(v, 0, 1);
+    this.channelGain.gain.cancelScheduledValues(this.ctx.currentTime); // clear any stutter/roll gating
+    this.channelGain.gain.value = this.channelVol;
   }
 
   setLoop(startS: number, lengthS: number): void {

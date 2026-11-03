@@ -18,16 +18,22 @@ type Props = {
   loading: boolean;
   waveWidth: number;
   onLoadPress: () => void;
+  // Advanced FX — all one-shot taps, driven by the parent (which owns the engine).
+  onTapeStop: () => void;
+  onTapeStart: () => void;
+  onRoll: () => void;
+  onReverse: () => void;
 };
 
 const LOOP_SECONDS = 2; // a fixed time-based loop until Phase-3 adds a beat grid
 
-export default memo(function DjDeck({ deck, color, track, peaks, loading, waveWidth, onLoadPress }: Props) {
+export default memo(function DjDeck({ deck, color, track, peaks, loading, waveWidth, onLoadPress, onTapeStop, onTapeStart, onRoll, onReverse }: Props) {
   const progress = useSharedValue(0);
   const [playing, setPlaying] = useState(false);
   const [loopOn, setLoopOn] = useState(false);
   const [loopRegion, setLoopRegion] = useState<{ start: number; end: number } | null>(null);
   const [cues, setCues] = useState<boolean[]>([false, false, false, false]);
+  const [fxOpen, setFxOpen] = useState(false);
   const hasTrack = !!track;
 
   // Playhead + end-of-track handling.
@@ -37,10 +43,10 @@ export default memo(function DjDeck({ deck, color, track, peaks, loading, waveWi
       const dur = deck.durationS || 0;
       const pos = deck.position();
       progress.value = dur > 0 ? Math.min(1, pos / dur) : 0;
-      if (deck.isPlaying && dur > 0 && pos >= dur - 0.04 && !deck.loopActive) {
-        deck.pause();
-        setPlaying(false);
-      }
+      if (deck.isPlaying && dur > 0 && pos >= dur - 0.04 && !deck.loopActive) deck.pause();
+      // Keep the transport button in sync with the engine no matter how it stopped
+      // (end of track, or a tape-stop pausing the deck from the FX panel).
+      setPlaying((prev) => (prev !== deck.isPlaying ? deck.isPlaying : prev));
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -80,11 +86,28 @@ export default memo(function DjDeck({ deck, color, track, peaks, loading, waveWi
             {loading ? 'Loading track…' : track?.artist ?? 'Tap Load to pick a song'}
           </Text>
         </View>
+        <Pressable
+          style={[styles.fxBtn, fxOpen && { backgroundColor: color + '22', borderColor: color }]}
+          onPress={() => { if (hasTrack) setFxOpen((o) => !o); }}
+          disabled={!hasTrack}
+        >
+          <Ionicons name="sparkles" size={13} color={hasTrack ? color : '#45454D'} />
+          <Text style={[styles.loadTxt, { color: hasTrack ? color : '#45454D' }]}>FX</Text>
+        </Pressable>
         <Pressable style={[styles.loadBtn, { borderColor: color }]} onPress={onLoadPress} disabled={loading}>
           <Ionicons name="musical-notes" size={13} color={color} />
           <Text style={[styles.loadTxt, { color }]}>{hasTrack ? 'Swap' : 'Load'}</Text>
         </Pressable>
       </View>
+
+      {fxOpen && (
+        <View style={styles.fxPanel}>
+          <FxBtn label="Tape Stop" icon="stop-circle" color={color} onPress={onTapeStop} />
+          <FxBtn label="Tape Start" icon="play-circle" color={color} onPress={onTapeStart} />
+          <FxBtn label="Roll" icon="pulse" color={color} onPress={onRoll} />
+          <FxBtn label="Reverse" icon="play-back" color={color} onPress={onReverse} />
+        </View>
+      )}
 
       <View style={styles.wave}>
         <DjWaveform peaks={peaks} progress={progress} width={waveWidth} height={54} color={color} loop={loopRegion} />
@@ -131,6 +154,28 @@ export default memo(function DjDeck({ deck, color, track, peaks, loading, waveWi
   );
 });
 
+// One pill in the FX panel. active = a toggle (echo/reverb) that's engaged; momentary
+// one-shots (riser, tape-stop) never pass active.
+function FxBtn({ label, icon, active, color, onPress }: {
+  label: string; icon: any; active?: boolean; color: string; onPress: () => void;
+}) {
+  return (
+    <Pressable style={[fxStyles.btn, active && { backgroundColor: color, borderColor: color }]} onPress={onPress}>
+      <Ionicons name={icon} size={16} color={active ? '#101013' : color} />
+      <Text style={[fxStyles.label, { color: active ? '#101013' : '#C8C8CE' }]} numberOfLines={1}>{label}</Text>
+    </Pressable>
+  );
+}
+
+const fxStyles = StyleSheet.create({
+  btn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3,
+    paddingVertical: 8, borderRadius: 10,
+    backgroundColor: '#1A1A1D', borderWidth: 1, borderColor: '#2E2E34',
+  },
+  label: { fontSize: 10, fontWeight: '800', letterSpacing: 0.2 },
+});
+
 const styles = StyleSheet.create({
   deck: { backgroundColor: '#141417', borderRadius: 16, borderWidth: 1, padding: 12, gap: 10 },
   head: { flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -138,6 +183,8 @@ const styles = StyleSheet.create({
   artist: { fontSize: 12, fontWeight: '600', marginTop: 1 },
   loadBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1.5, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
   loadTxt: { fontSize: 12.5, fontWeight: '800', letterSpacing: 0.2 },
+  fxBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1.5, borderColor: '#2E2E34', borderRadius: 20, paddingHorizontal: 11, paddingVertical: 6 },
+  fxPanel: { flexDirection: 'row', gap: 6 },
   wave: { backgroundColor: '#0D0D10', borderRadius: 8, overflow: 'hidden' },
   knobs: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 2 },
   transport: { flexDirection: 'row', alignItems: 'center', gap: 10 },
