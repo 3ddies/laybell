@@ -112,6 +112,7 @@ const en: Record<string, string> = {
   'reason.mutual': 'Followed by people you follow',
   'reason.nearby': 'In your area',
   'reason.popular': 'Popular on Laybell',
+  'reason.new': 'New Account',
   'genre.all': 'All',
   'genre.rap': 'Rap',
   'genre.rnb': 'R&B',
@@ -1228,6 +1229,7 @@ const en: Record<string, string> = {
   'communities.title': 'Communities',
   'communities.searchPlaceholder': 'Search communities...',
   'communities.laybell': 'Laybell communities',
+  'communities.laybellSub': 'Official spaces to dive into. Member-made communities show up here as they grow.',
   'communities.yours': 'Your communities',
   'communities.invites': 'Invites',
   'communities.recommended': 'Recommended',
@@ -1971,6 +1973,7 @@ const en: Record<string, string> = {
 
   // Messages — list + conversation
   'messages.title': 'Messages',
+  'messages.activeNow': 'Active now',
   'messages.searchPlaceholder': 'Search names or messages',
   'messages.tab.main': 'Main',
   'messages.tab.friends': 'Friends',
@@ -2117,6 +2120,7 @@ const en: Record<string, string> = {
   'post.tabPosts': 'POSTS',
   'post.tabMusic': 'MUSIC',
   'post.addSound': 'Add sound',
+  'post.uploadMusic': 'Upload your Music',
   'post.autoMusicTitle': 'Music added',
   'post.autoMusicBody': 'Put "{song}" over your silent clip — change or remove it in the sound options.',
   'post.multiClipHint': 'Record more, or tap ✓',
