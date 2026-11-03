@@ -607,6 +607,11 @@ export default function PostScreen() {
   // The same iOS rule for the camera's Modal: an alert can't show while it's still
   // sliding away, so whatever a capture leads to runs from its onDismiss.
   const pendingCameraAction = useRef<(() => void) | null>(null);
+  // A gentle bounce of the "Upload your Music" label (it overshoots either side of its
+  // rest point), pulsed every few seconds to draw the eye. Native-driven, so it runs
+  // off the JS thread and never competes with the camera; looped only while the camera
+  // is open (below).
+  const musicSlide = useRef(new Animated.Value(0)).current;
   // Film upload heads-up: holds the estimate plus the promise resolver for the
   // Share flow, which awaits the user's answer before any work begins.
   const [filmNotice, setFilmNotice] = useState<{ minutes: number; resolve: (go: boolean) => void } | null>(null);
@@ -712,6 +717,24 @@ export default function PostScreen() {
     if (step === 'pick' && postType !== 'audio') setCameraOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFocused]);
+  // Pulse the "Upload your Music" label with a SUBTLE bounce — it overshoots a little
+  // above AND below its rest point, then settles — only ~every 7s while the camera is
+  // open. Stops on close, so nothing animates in the background.
+  useEffect(() => {
+    if (!cameraOpen) return;
+    musicSlide.setValue(0);
+    const loop = Animated.loop(Animated.sequence([
+      Animated.delay(6500),
+      // Small damped wiggle centered on 0 (the rest point): +5, -5, +2, 0 — swings
+      // gently to either side of the middle.
+      Animated.timing(musicSlide, { toValue: 5,  duration: 180, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(musicSlide, { toValue: -5, duration: 300, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(musicSlide, { toValue: 2,  duration: 220, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(musicSlide, { toValue: 0,  duration: 200, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => { loop.stop(); musicSlide.setValue(0); };
+  }, [cameraOpen, musicSlide]);
   useEffect(() => {
     if (isFocused && step === 'pick') return;
     const p = previewSoundRef.current;
@@ -3555,6 +3578,29 @@ export default function PostScreen() {
           </View>
         )}
 
+        {/* "Upload your Music" — a long white oval hugging the right edge, its label
+            reading sideways down the pill. Leaves the camera and switches the composer
+            to the audio post type. Hidden while recording / with a multi-clip take
+            banked — same gate as the Add-sound pill. */}
+        {!capturing && captureSegCount === 0 && (
+          <View style={[styles.uploadMusicWrap, { top: insets.top + 116 }]} pointerEvents="box-none">
+            <TouchableOpacity
+              style={styles.uploadMusicPill}
+              activeOpacity={0.9}
+              onPress={() => { resetCaptureSession(); closeCamera(() => switchType('audio')); }}
+              accessibilityRole="button"
+              accessibilityLabel={t('post.uploadMusic')}
+            >
+              <Animated.Text
+                style={[styles.uploadMusicText, { transform: [{ translateX: musicSlide }, { rotate: '90deg' }] }]}
+                numberOfLines={1}
+              >
+                {t('post.uploadMusic')}
+              </Animated.Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {cameraBusy && (
           <View style={[StyleSheet.absoluteFill, styles.cameraBusy]}>
             <ActivityIndicator size="large" color="#fff" />
@@ -3880,6 +3926,26 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   addSoundMain: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
   addSoundText: { color: '#fff', fontSize: 14, fontWeight: '700', flexShrink: 1 },
   addSoundClear: { marginLeft: 2 },
+
+  // "Upload your Music" — a long white oval on the right edge, tucked just under the
+  // top tool rail (flash/timer) so it reads as part of that cluster; its top is set
+  // inline from the safe-area inset. box-none wrapper lets camera gestures through
+  // everywhere except the pill itself.
+  uploadMusicWrap: { position: 'absolute', right: SPACING.sm },
+  uploadMusicPill: {
+    width: 46, height: 200, borderRadius: 23, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 5,
+  },
+  // Only the LABEL rotates (the oval stays an upright touch target, so taps land
+  // anywhere on it). Sized wide enough pre-rotation to hold the text on one line,
+  // then quarter-turned so it runs down the pill.
+  uploadMusicText: {
+    color: '#111', fontSize: 14, fontWeight: '800', letterSpacing: 0.3,
+    // The rotate is applied inline (combined with the animated nudge); `width` gives
+    // the label room to lay out on one line BEFORE it's turned sideways.
+    width: 180, textAlign: 'center',
+  },
 
   // "Add sound" bottom sheet drawn INSIDE the camera Modal (see the note there).
   captureSongScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
