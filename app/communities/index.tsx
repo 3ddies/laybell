@@ -23,13 +23,11 @@ import {
 
 const EMPTY: CommunityRails = { mine: [], invites: [], recommended: [], trending: [], explore: [] };
 
-// Right now Laybell's own official communities are the ONLY ones, so the tab leads
-// with just those — full-page and emphasized. The Recommended / Trending / Explore
-// rails would only re-list that same handful under labels that imply activity that
-// isn't there yet (a "Trending" that isn't trending reads as dishonest), so they're
-// held back until real member-made communities exist to populate them. Flip this to
-// true to bring the discovery rails back once there are enough communities.
-const SHOW_DISCOVERY_RAILS = false;
+// The Recommended / Trending / Explore rails list ONLY genuine member-made communities
+// (fetchCommunityRails excludes the official tabs, which get their own emphasized grid
+// above). Each rail auto-hides while empty, so they stay invisible until real
+// communities exist and then appear on their own — no misleading "Trending" over a
+// handful of official tabs, and no manual flag to flip as the community grows.
 
 export default function CommunitiesScreen() {
   const { colors } = useTheme();
@@ -213,14 +211,11 @@ export default function CommunitiesScreen() {
             {/* Your own memberships / creations — real, so kept (auto-hides empty). */}
             <Rail title={t('communities.yours')} data={rails.mine} />
 
-            {/* Discovery rails return once there are genuine communities to show. */}
-            {SHOW_DISCOVERY_RAILS && (
-              <>
-                <Rail title={t('communities.recommended')} data={rails.recommended} />
-                <Rail title={t('communities.trending')} data={rails.trending} />
-                <Rail title={t('communities.explore')} data={rails.explore} />
-              </>
-            )}
+            {/* Discovery rails — each auto-hides while empty (see note at top), so they
+                surface member-made communities only once they genuinely exist. */}
+            <Rail title={t('communities.recommended')} data={rails.recommended} />
+            <Rail title={t('communities.trending')} data={rails.trending} />
+            <Rail title={t('communities.explore')} data={rails.explore} />
 
             {/* Cold-start empty state — only when there is genuinely nothing to show. */}
             {rails.invites.length === 0 && rails.mine.length === 0 && shownOfficial.length === 0 && (

@@ -110,7 +110,10 @@ export async function fetchCommunityRails(userId: string | null): Promise<Commun
       .eq('status', 'live')
       .order('member_count', { ascending: false })
       .limit(60);
-    const liveNotJoined = ((live as Community[]) ?? []).filter((c) => !joinedIds.has(c.id));
+    // Official tabs have their own emphasized grid on the Communities page, so the
+    // discovery rails (Recommended/Trending/Explore) show ONLY genuine member-made
+    // communities — never the official handful re-listed under activity labels.
+    const liveNotJoined = ((live as Community[]) ?? []).filter((c) => !joinedIds.has(c.id) && !c.is_official);
 
     const myGenres = new Set(mine.map((c) => c.genre));
     const recommended = liveNotJoined.filter((c) => myGenres.has(c.genre)).slice(0, 12);
@@ -123,7 +126,7 @@ export async function fetchCommunityRails(userId: string | null): Promise<Commun
       .eq('status', 'live')
       .order('created_at', { ascending: false })
       .limit(30);
-    const explore = ((newest as Community[]) ?? []).filter((c) => !joinedIds.has(c.id));
+    const explore = ((newest as Community[]) ?? []).filter((c) => !joinedIds.has(c.id) && !c.is_official);
 
     return { mine, invites, recommended, trending, explore };
   } catch {
