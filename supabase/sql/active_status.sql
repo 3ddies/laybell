@@ -67,12 +67,7 @@ begin
      where p.id = any(ids)
        and p.active_status_enabled
        and p.last_active_at is not null
-       and p.last_active_at > now() - interval '2 minutes'
-       -- TESTING ONLY (remove when done): the @laybell brand account's Active Status is
-       -- hidden from EVERYONE except @3ddie, so the owner can test presence without the
-       -- brand account showing as online to real users. laybell / 3ddie ids below.
-       and not (p.id = '0ca340d6-2d95-4038-88da-4a3dc9b5b9fd'
-                and auth.uid() <> 'd0f25dc3-b34c-400e-b380-4a5e83d6b018');
+       and p.last_active_at > now() - interval '2 minutes';
 end;
 $$;
 
@@ -81,7 +76,7 @@ $$;
 -- follow — and those fill the slots in that order; any slots still open fill with other
 -- online users, most-recently-active first. So the rail still shows faces on a near-
 -- empty app, yet never shows a stranger while 5 of your own people are active. Same
--- reciprocity, 2-minute window, and @laybell test-gate as online_user_ids; also skips
+-- reciprocity, 2-minute window as online_user_ids; also skips
 -- hidden accounts and anyone on either side of a block.
 create or replace function public.active_now(p_prefer uuid[], p_limit int)
 returns table(id uuid)
@@ -104,8 +99,6 @@ begin
        and p.last_active_at is not null
        and p.last_active_at > now() - interval '2 minutes'
        and coalesce(p.hidden, false) = false
-       and not (p.id = '0ca340d6-2d95-4038-88da-4a3dc9b5b9fd'
-                and auth.uid() <> 'd0f25dc3-b34c-400e-b380-4a5e83d6b018')
        and not exists (
          select 1 from public.blocks b
          where (b.blocker_id = auth.uid() and b.blocked_id = p.id)
