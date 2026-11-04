@@ -5,11 +5,13 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import type { DjEngine } from '../lib/dj/DjEngine';
 import type { DeckId } from '../lib/dj/constants';
-import DjDeck from '../components/dj/DjDeck';
+import DjDeck, { type ProFx } from '../components/dj/DjDeck';
 import DjCrossfader from '../components/dj/DjCrossfader';
 import SongPickerModal, { type PickedSong } from '../components/SongPickerModal';
 import { supabase } from '../lib/supabase';
 import { usePostMusicActions } from '../contexts/PostMusicContext';
+import { usePremium } from '../contexts/PremiumContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SCREEN_W = Dimensions.get('window').width;
 const WAVE_W = SCREEN_W - 28 /* screen padding */ - 24 /* deck padding */;
@@ -35,6 +37,43 @@ export default function DjBoothScreen() {
   const [loadingA, setLoadingA] = useState(false);
   const [loadingB, setLoadingB] = useState(false);
   const [picker, setPicker] = useState<DeckId | null>(null);
+
+  // ── Pro mode (Premium perk) ──────────────────────────────────────────────────
+  const { isPremium } = usePremium();
+  const [mode, setMode] = useState<'simple' | 'pro'>('simple'); // Simple is the default (owner: clean + simple)
+  const [bpmA, setBpmA] = useState<number | null>(null);
+  const [bpmB, setBpmB] = useState<number | null>(null);
+
+  // Restore the saved mode once — Pro only if the viewer is actually Premium (a lapsed
+  // member drops back to Simple). Default stays Simple.
+  useEffect(() => {
+    AsyncStorage.getItem('dj:mode').then((m) => { if (m === 'pro' && isPremium) setMode('pro'); }).catch(() => {});
+  }, [isPremium]);
+
+  const selectMode = (m: 'simple' | 'pro') => {
+    if (m === 'pro' && !isPremium) { router.push('/premium'); return; } // Pro is gated behind the paywall
+    setMode(m);
+    AsyncStorage.setItem('dj:mode', m).catch(() => {});
+  };
+
+  const syncDeck = (d: DeckId): 'locked' | 'near' | 'unavailable' => {
+    const engine = engineRef.current;
+    if (!engine) return 'unavailable';
+    const r = engine.deck(d).syncTo(engine.deck(d === 'a' ? 'b' : 'a'));
+    (d === 'a' ? setBpmA : setBpmB)(engine.deck(d).bpm); // reflect the nudged tempo in the readout
+    return r;
+  };
+
+  const fxDeck = (d: DeckId, fx: ProFx) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (fx === 'echo') engine.fxEcho(d);
+    else if (fx === 'reverb') engine.fxReverb(d);
+    else if (fx === 'riser') engine.fxRiser();
+    else if (fx === 'chop') engine.fxChop(d);
+    else if (fx === 'sweepDown') engine.fxSweepDown(d);
+    else if (fx === 'sweepUp') engine.fxSweepUp(d);
+  };
 
   useEffect(() => {
     let engine: DjEngine | null = null;
@@ -74,6 +113,7 @@ export default function DjBoothScreen() {
       if (!url) throw new Error('no media url');
       await engine.deck(d).load(url);
       setPeaks(engine.deck(d).peaks(440));
+      (d === 'a' ? setBpmA : setBpmB)(engine.deck(d).bpm); // detected tempo for the Pro readout
       setTrack({ title: song.title, artist: song.artist });
     } catch {
       Alert.alert("Couldn't load that track", 'Try a different song.');
@@ -100,7 +140,12 @@ export default function DjBoothScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Header onBack={() => { router.back(); }} />
+      <Header
+        onBack={() => { router.back(); }}
+        mode={mode}
+        isPremium={isPremium}
+        onSelectMode={selectMode}
+      />
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {ready && engineRef.current && (
           <>
@@ -116,6 +161,10 @@ export default function DjBoothScreen() {
               onTapeStart={() => engineRef.current?.deck('a').tapeStart()}
               onRoll={() => engineRef.current?.deck('a').roll()}
               onReverse={() => engineRef.current?.deck('a').reverse()}
+              pro={mode === 'pro'}
+              bpm={bpmA}
+              onSync={() => syncDeck('a')}
+              onFx={(fx) => fxDeck('a', fx)}
             />
             <DjCrossfader onChange={(x) => engineRef.current?.crossfade(x)} colorA={COLOR_A} colorB={COLOR_B} />
             <DjDeck
@@ -130,6 +179,10 @@ export default function DjBoothScreen() {
               onTapeStart={() => engineRef.current?.deck('b').tapeStart()}
               onRoll={() => engineRef.current?.deck('b').roll()}
               onReverse={() => engineRef.current?.deck('b').reverse()}
+              pro={mode === 'pro'}
+              bpm={bpmB}
+              onSync={() => syncDeck('b')}
+              onFx={(fx) => fxDeck('b', fx)}
             />
           </>
         )}
@@ -144,7 +197,12 @@ export default function DjBoothScreen() {
   );
 }
 
-function Header({ onBack }: { onBack: () => void }) {
+function Header({ onBack, mode, isPremium, onSelectMode }: {
+  onBack: () => void;
+  mode?: 'simple' | 'pro';
+  isPremium?: boolean;
+  onSelectMode?: (m: 'simple' | 'pro') => void;
+}) {
   return (
     <View style={styles.header}>
       <Pressable onPress={onBack} hitSlop={10} style={styles.back}>
@@ -152,6 +210,19 @@ function Header({ onBack }: { onBack: () => void }) {
       </Pressable>
       <Text style={styles.hTitle}>DJ Booth</Text>
       <View style={styles.betaTag}><Text style={styles.betaTxt}>BETA</Text></View>
+      {/* Compact Simple/Pro switch in the header slot (not a full-width bar). Only on the
+          live booth — the "needs a build" screen renders the Header without these props. */}
+      {mode && onSelectMode && (
+        <View style={styles.modeSeg}>
+          <Pressable style={[styles.modeSegBtn, mode === 'simple' && styles.modeSegOn]} onPress={() => onSelectMode('simple')}>
+            <Text style={[styles.modeSegTxt, mode === 'simple' && styles.modeSegTxtOn]}>Simple</Text>
+          </Pressable>
+          <Pressable style={[styles.modeSegBtn, mode === 'pro' && styles.modeSegOn]} onPress={() => onSelectMode('pro')}>
+            <Ionicons name={isPremium ? 'sparkles' : 'lock-closed'} size={11} color={mode === 'pro' ? '#101013' : isPremium ? '#F5F5F5' : '#8A8A92'} />
+            <Text style={[styles.modeSegTxt, mode === 'pro' && styles.modeSegTxtOn]}>Pro</Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -167,4 +238,9 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 36 },
   unavailTitle: { color: '#F5F5F5', fontSize: 17, fontWeight: '700', textAlign: 'center' },
   unavailBody: { color: '#8A8A92', fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  modeSeg: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1D', borderRadius: 9, padding: 3, gap: 2, marginLeft: 'auto' },
+  modeSegBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 7 },
+  modeSegOn: { backgroundColor: '#F26522' },
+  modeSegTxt: { color: '#8A8A92', fontSize: 11.5, fontWeight: '800', letterSpacing: 0.2 },
+  modeSegTxtOn: { color: '#101013' },
 });

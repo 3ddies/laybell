@@ -49,6 +49,7 @@ export default function PremiumScreen() {
     { icon: 'flash-outline' as const, label: t('premium.perkSpotlight'), desc: t('premium.perkSpotlightDesc') },
     { icon: 'ribbon-outline' as const, label: t('premium.perkBadgeGrace'), desc: t('premium.perkBadgeGraceDesc') },
     { icon: 'list-outline' as const, label: t('premium.perkMusicOrder'), desc: t('premium.perkMusicOrderDesc') },
+    { icon: 'disc-outline' as const, label: t('premium.perkDjBooth'), desc: t('premium.perkDjBoothDesc') },
     // Unlimited downloads moved UP to Premium+ (owner, 2026-08-07) — the row
     // lives on the plus card now, and effectivePinLimit gates on plus to match.
   ];

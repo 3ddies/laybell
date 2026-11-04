@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSharedValue } from 'react-native-reanimated';
@@ -10,6 +10,9 @@ import { TEMPO_MIN, TEMPO_MAX } from '../../lib/dj/constants';
 // One deck's full surface: track header + load, waveform, EQ/filter/tempo/vol knobs,
 // transport, loop, and 4 hot-cue pads. It owns a ~60fps loop that drives the waveform
 // playhead (a shared value, so no React churn) and auto-stops at the end of a track.
+// Pro FX rack — momentary one-shot "throws", driven by the parent (which owns the engine).
+export type ProFx = 'echo' | 'reverb' | 'riser' | 'chop' | 'sweepDown' | 'sweepUp';
+
 type Props = {
   deck: Deck;
   color: string;
@@ -23,17 +26,26 @@ type Props = {
   onTapeStart: () => void;
   onRoll: () => void;
   onReverse: () => void;
+  // ── Pro mode (Premium perk): extra controls rendered ONLY when `pro`. ────────
+  pro?: boolean;
+  bpm?: number | null;                                // detected tempo for the readout
+  onSync?: () => 'locked' | 'near' | 'unavailable';   // beatmatch THIS deck to the other
+  onFx?: (fx: ProFx) => void;                         // the Pro FX rack
 };
 
 const LOOP_SECONDS = 2; // a fixed time-based loop until Phase-3 adds a beat grid
 
-export default memo(function DjDeck({ deck, color, track, peaks, loading, waveWidth, onLoadPress, onTapeStop, onTapeStart, onRoll, onReverse }: Props) {
+export default memo(function DjDeck({ deck, color, track, peaks, loading, waveWidth, onLoadPress, onTapeStop, onTapeStart, onRoll, onReverse, pro, bpm, onSync, onFx }: Props) {
   const progress = useSharedValue(0);
   const [playing, setPlaying] = useState(false);
   const [loopOn, setLoopOn] = useState(false);
   const [loopRegion, setLoopRegion] = useState<{ start: number; end: number } | null>(null);
   const [cues, setCues] = useState<boolean[]>([false, false, false, false]);
   const [fxOpen, setFxOpen] = useState(false);
+  // Pro-only state (hooks stay unconditional — declared even in Simple mode, just unused there).
+  const [beatLoopLen, setBeatLoopLen] = useState<number | null>(null);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const fxLock = useRef<Record<string, number>>({});
   const hasTrack = !!track;
 
   // Playhead + end-of-track handling.
@@ -57,12 +69,38 @@ export default memo(function DjDeck({ deck, color, track, peaks, loading, waveWi
   const cueToStart = () => { if (!hasTrack) return; deck.seek(0); };
   const toggleLoop = () => {
     if (!hasTrack) return;
+    setBeatLoopLen(null); // a plain loop toggle isn't one of the beat-loop lengths
     if (loopOn) { deck.clearLoop(); setLoopOn(false); setLoopRegion(null); return; }
     const start = deck.position();
     deck.setLoop(start, LOOP_SECONDS);
     setLoopOn(true);
     const dur = deck.durationS || 1;
     setLoopRegion({ start: start / dur, end: Math.min(1, (start + LOOP_SECONDS) / dur) });
+  };
+
+  // ── Pro handlers ─────────────────────────────────────────────────────────────
+  const beatLoop = (beats: number) => {
+    if (!hasTrack) return;
+    if (beatLoopLen === beats) { deck.clearLoop(); setBeatLoopLen(null); setLoopOn(false); setLoopRegion(null); return; }
+    deck.beatLoop(beats);
+    setBeatLoopLen(beats);
+    setLoopOn(true);
+    const lw = deck.loopWindow;
+    const dur = deck.durationS || 1;
+    if (lw) setLoopRegion({ start: lw.startS / dur, end: Math.min(1, lw.endS / dur) });
+  };
+  const doSync = () => {
+    if (!hasTrack || !onSync) return;
+    const r = onSync();
+    setSyncMsg(r === 'locked' ? 'Synced' : r === 'near' ? '≈ Sync' : 'No beat');
+    setTimeout(() => setSyncMsg(null), 1400);
+  };
+  const fireFx = (fx: ProFx) => {
+    if (!hasTrack || !onFx) return;
+    const now = Date.now();
+    if (now - (fxLock.current[fx] || 0) < 350) return; // debounce rapid re-taps (curve-stack safety)
+    fxLock.current[fx] = now;
+    onFx(fx);
   };
   const cuePad = (i: number) => {
     if (!hasTrack) return;
@@ -150,6 +188,45 @@ export default memo(function DjDeck({ deck, color, track, peaks, loading, waveWi
           <Text style={styles.cuesHint}>Long-press to clear</Text>
         </View>
       </View>
+
+      {pro && (
+        <>
+          <View style={styles.proRow}>
+            <View style={styles.bpmBox}>
+              <Text style={[styles.bpmVal, { color }]}>{bpm ? Math.round(bpm) : '—'}</Text>
+              <Text style={styles.bpmLbl}>BPM</Text>
+            </View>
+            <Pressable style={[styles.syncBtn, { borderColor: color }]} onPress={doSync} disabled={!hasTrack}>
+              <Ionicons name="sync" size={13} color={hasTrack ? color : '#45454D'} />
+              <Text style={[styles.syncTxt, { color: hasTrack ? color : '#45454D' }]}>{syncMsg ?? 'SYNC'}</Text>
+            </Pressable>
+            <View style={styles.beatLoops}>
+              <Text style={styles.beatLoopsLbl}>LOOP</Text>
+              <View style={styles.beatLoopsRow}>
+                {[0.5, 1, 2, 4].map((b) => (
+                  <Pressable
+                    key={b}
+                    style={[styles.bl, beatLoopLen === b && { backgroundColor: color, borderColor: color }]}
+                    onPress={() => beatLoop(b)}
+                  >
+                    <Text style={[styles.blTxt, beatLoopLen === b && { color: '#101013' }]}>{b < 1 ? '½' : b}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          </View>
+          <View style={styles.fxRow}>
+            <FxBtn label="Echo" icon="musical-note" color={color} onPress={() => fireFx('echo')} />
+            <FxBtn label="Reverb" icon="cloudy" color={color} onPress={() => fireFx('reverb')} />
+            <FxBtn label="Riser" icon="trending-up" color={color} onPress={() => fireFx('riser')} />
+          </View>
+          <View style={styles.fxRow}>
+            <FxBtn label="Chop" icon="cut" color={color} onPress={() => fireFx('chop')} />
+            <FxBtn label="Sweep ↓" icon="chevron-down" color={color} onPress={() => fireFx('sweepDown')} />
+            <FxBtn label="Sweep ↑" icon="chevron-up" color={color} onPress={() => fireFx('sweepUp')} />
+          </View>
+        </>
+      )}
     </View>
   );
 });
@@ -196,4 +273,17 @@ const styles = StyleSheet.create({
   cuesHint: { color: '#56565E', fontSize: 8.5, fontWeight: '600', letterSpacing: 0.2 },
   cue: { width: 38, height: 44, borderRadius: 8, borderWidth: 1.5, borderColor: '#2E2E34', backgroundColor: '#1A1A1D', alignItems: 'center', justifyContent: 'center' },
   cueTxt: { color: '#8A8A92', fontSize: 14, fontWeight: '800' },
+  // ── Pro rows ──────────────────────────────────────────────────────────────
+  proRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  bpmBox: { alignItems: 'center', minWidth: 42 },
+  bpmVal: { fontSize: 20, fontWeight: '900', letterSpacing: -0.5 },
+  bpmLbl: { color: '#6F6F79', fontSize: 8.5, fontWeight: '800', letterSpacing: 1.5, marginTop: -1 },
+  syncBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1.5, borderRadius: 20, paddingHorizontal: 11, paddingVertical: 7 },
+  syncTxt: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3, minWidth: 42, textAlign: 'center' },
+  beatLoops: { marginLeft: 'auto', alignItems: 'center', gap: 3 },
+  beatLoopsLbl: { color: '#6F6F79', fontSize: 8.5, fontWeight: '800', letterSpacing: 1.5 },
+  beatLoopsRow: { flexDirection: 'row', gap: 4 },
+  bl: { width: 30, height: 30, borderRadius: 7, borderWidth: 1.5, borderColor: '#2E2E34', backgroundColor: '#1A1A1D', alignItems: 'center', justifyContent: 'center' },
+  blTxt: { color: '#C8C8CE', fontSize: 13, fontWeight: '800' },
+  fxRow: { flexDirection: 'row', gap: 6 },
 });

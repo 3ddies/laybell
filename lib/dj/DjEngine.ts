@@ -131,6 +131,11 @@ export class Deck {
   private loopEndS = 0;
   cues: Array<number | null> = [null, null, null, null];
 
+  // Beat grid (BPM + phase), computed once per load from the decoded PCM. Powers the
+  // Pro booth's BPM readout, SYNC, and beat-synced loops. Null when analysis is
+  // inconclusive — the UI then falls back to time-based behaviour. Pure-JS (beatGrid.ts).
+  grid: BeatGrid | null = null;
+
   durationS = 0;
 
   constructor(id: DeckId, ctx: AudioContext, master: GainNode, echoBus: AudioNode) {
@@ -173,6 +178,51 @@ export class Deck {
   get hasTrack() { return this.buffer !== null; }
   get tempoRate() { return this.tempo; }
   get loopActive() { return this.loopOn; }
+  /** Detected tempo in BPM (grid × current playback rate), or null if unknown. Pro booth readout. */
+  get bpm(): number | null { return this.grid ? this.grid.bpm * this.tempo : null; }
+  /** The active loop as buffer-second bounds, or null — drives the Pro waveform loop highlight. */
+  get loopWindow(): { startS: number; endS: number } | null {
+    return this.loopOn && this.loopEndS > this.loopStartS ? { startS: this.loopStartS, endS: this.loopEndS } : null;
+  }
+
+  /** Beatmatch THIS deck to `other` by nudging playback rate so their tempos line up, within the
+   *  ±8% pitch range (authentic varispeed — no key-mangling time-stretch). Picks the 1×/½×/2×
+   *  multiple closest to no-change. Returns 'locked' (an exact match fits the range), 'near'
+   *  (clamped best-effort — the two are too far apart to lock), or 'unavailable' (no beat grid on
+   *  one side). Tempo-only in v1 — phase alignment is deferred. */
+  syncTo(other: Deck): 'locked' | 'near' | 'unavailable' {
+    if (!this.grid || !other.grid || this.grid.bpm <= 0 || other.grid.bpm <= 0) return 'unavailable';
+    const target = other.grid.bpm * other.tempo; // the other deck's CURRENT effective tempo
+    const base = target / this.grid.bpm;          // ratio that matches it at 1×
+    const cands = [base, base * 2, base / 2];     // allow half-/double-time locks
+    let best: number | null = null;
+    let bestDist = Infinity;
+    for (const r of cands) {
+      if (r >= TEMPO_MIN && r <= TEMPO_MAX) {
+        const d = Math.abs(r - 1);
+        if (d < bestDist) { bestDist = d; best = r; }
+      }
+    }
+    if (best != null) { this.setTempo(best); return 'locked'; }
+    const closest = cands.reduce((a, b) => (Math.abs(b - 1) < Math.abs(a - 1) ? b : a));
+    this.setTempo(clamp(closest, TEMPO_MIN, TEMPO_MAX)); // too far to truly lock — get as close as ±8% allows
+    return 'near';
+  }
+
+  /** Loop `beats` of the track from the current position, snapped to the beat grid when there is
+   *  one (falls back to ~½s per "beat" otherwise). Uses the same loop machinery as the Simple
+   *  booth's loop button, so clearLoop() turns it off the same way. */
+  beatLoop(beats: number): void {
+    const period = this.grid && this.grid.beatPeriodS > 0 ? this.grid.beatPeriodS : 0.5;
+    let start = this.position();
+    if (this.grid && this.grid.beatPeriodS > 0) {
+      // Snap the loop-in to the nearest grid beat so the loop sits musically, not mid-beat.
+      const k = Math.round((start - this.grid.firstBeatS) / period);
+      const snapped = this.grid.firstBeatS + k * period;
+      if (snapped >= 0 && snapped <= this.durationS) start = snapped;
+    }
+    this.setLoop(start, beats * period);
+  }
 
   /** Decode a song URL (or local path) into this deck, stopped at 0. */
   async load(url: string): Promise<void> {
@@ -185,6 +235,12 @@ export class Deck {
     const buf = await this.ctx.decodeAudioData(url);
     this.buffer = buf;
     this.durationS = buf.duration;
+    // One-time beat-grid read for the Pro booth. Best-effort — a null just disables
+    // sync + beat-loops for this track (the deck still plays and loops by time).
+    try {
+      const sr = (buf as unknown as { sampleRate?: number }).sampleRate ?? this.ctx.sampleRate;
+      this.grid = analyzeBeatGrid(buf.getChannelData(0), sr);
+    } catch { this.grid = null; }
   }
 
   /** `n` normalized waveform peak bars (0..1), or null if nothing is loaded. */
@@ -669,6 +725,32 @@ export class DjEngine {
   }
 
   deck(id: DeckId): Deck { return id === 'a' ? this.a : this.b; }
+
+  // ── Pro-booth FX (manual one-shot "throws") ──────────────────────────────────
+  // Thin, UI-friendly wrappers over the transition DSP above, so the booth fires an effect with
+  // just a deck id (no scheduling maths). All are momentary / self-terminating and safe to re-fire;
+  // the Pro UI also debounces each pad so a rapid double-tap can't stack overlapping curves.
+  private fxDelayS(deckId: DeckId): number {
+    const p = this.deck(deckId).grid?.beatPeriodS;
+    return p && p > 0 ? clamp(p / 2, 0.05, 0.9) : 0.25; // a half-beat echo when the tempo is known
+  }
+  /** Echo "throw": feed the deck into the delay for ~a beat, then let the tail ring out. */
+  fxEcho(deckId: DeckId): void {
+    this.echoBegin(deckId, this.fxDelayS(deckId), this.ctx.currentTime);
+    setTimeout(() => { try { this.echoRelease(deckId); } catch { /* disposed */ } }, 850);
+  }
+  /** Reverb bloom: a short lush wash that swells then pulls back (self-contained). */
+  fxReverb(deckId: DeckId): void { this.washBloom(deckId, this.ctx.currentTime, 2.2); }
+  /** Riser: a rising filtered-noise whoosh into the drop (engine-level, into master). */
+  fxRiser(): void { this.uplift(this.ctx.currentTime, 2.0); }
+  /** Chop: a beat-synced rhythmic gate — reuses the SAFE discrete-step roll (never curve-based). */
+  fxChop(deckId: DeckId): void {
+    const p = this.deck(deckId).grid?.beatPeriodS;
+    this.deck(deckId).roll(p && p > 0 ? p / 4 : 0.12, 8);
+  }
+  /** Filter sweeps: darken (lowpass down) or open back up over ~1.6s. */
+  fxSweepDown(deckId: DeckId): void { this.deck(deckId).sweepOutDark(this.ctx.currentTime, 1.6); }
+  fxSweepUp(deckId: DeckId): void { this.deck(deckId).sweepInOpen(this.ctx.currentTime, 1.6); }
 
   /** Claim the iOS audio session for exclusive playback and resume the context. */
   async init(): Promise<void> {

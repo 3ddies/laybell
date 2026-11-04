@@ -1139,6 +1139,8 @@ const en: Record<string, string> = {
   'premium.perkBadgeGraceDesc': 'A 3-day grace period on all time-sensitive badges, so a busy day never breaks your streak.',
   'premium.perkMusicOrder': 'Arrange your music',
   'premium.perkMusicOrderDesc': 'Order your profile’s Music tab exactly how you want — Premium only.',
+  'premium.perkDjBooth': 'Pro DJ Booth',
+  'premium.perkDjBoothDesc': 'Unlock Pro mode in the DJ Booth — BPM sync, beat-loops, and a full FX rack (echo, reverb, riser, chop, filter sweeps).',
   'premium.perkOffline': 'Unlimited downloads',
   'premium.perkOfflineDesc': 'Save any song and play it with no connection.',
   // Music-order (Premium reorder screen) + the profile Music-tab entry. English
