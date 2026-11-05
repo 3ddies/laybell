@@ -15,6 +15,8 @@ import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { reactionPop, notifySuccess } from '../lib/haptics';
 import { fmtCents } from '../lib/donations';
+import { CoachmarkCard } from '../components/Coachmark';
+import { useCoachmark, COACHMARKS } from '../lib/coachmarks';
 import {
   fetchWalletBalance, type WalletBalance,
 } from '../lib/wallet';
@@ -53,6 +55,7 @@ export default function WalletScreen() {
   const [onboarding, setOnboarding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const earnTip = useCoachmark(COACHMARKS.walletEarn, !loading); // first-visit "how earning works"
 
   const [confirmTransfer, setConfirmTransfer] = useState(false);
   const [transferred, setTransferred] = useState(false);
@@ -166,6 +169,18 @@ export default function WalletScreen() {
           <Text style={styles.headerTitle}>{t('wallet.title')}</Text>
           <View style={styles.headerBtn} />
         </View>
+
+        {earnTip.shouldShow && (
+          <CoachmarkCard
+            icon="wallet"
+            title={t('coach.wallet.title')}
+            body={t('coach.wallet.body')}
+            gradient={GRADIENTS.money}
+            accent="#15803D"
+            ctaLabel={t('coach.gotIt')}
+            onDismiss={earnTip.markSeen}
+          />
+        )}
 
         {loading ? (
           <View style={styles.loadingCenter}><ActivityIndicator color={colors.textSecondary} /></View>

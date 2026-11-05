@@ -14,6 +14,8 @@ import type { Pkg } from '../lib/purchases';
 import { DONATION_FEE_RATE_PREMIUM, DONATION_FEE_RATE_STANDARD } from '../lib/donations';
 import { Skeleton, SkeletonLine } from '../components/Skeleton';
 import PremiumBubbles from '../components/PremiumBubbles';
+import { CoachmarkCard } from '../components/Coachmark';
+import { useCoachmark, COACHMARKS } from '../lib/coachmarks';
 
 // Laybell Premium paywall. Reads offerings/status from RevenueCat via PremiumContext;
 // perks are wired through lib/entitlements (unlimited offline + ad-free are live; the
@@ -26,6 +28,9 @@ export default function PremiumScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { isPremium, isPremiumPlus, packages, configured, loading, purchase, restore } = usePremium();
+  // First-visit orientation for people who don't yet have Premium (members already know);
+  // wait for entitlements to resolve so it never flashes for a member mid-load.
+  const perkTip = useCoachmark(COACHMARKS.premiumPerks, !isPremium && !loading);
 
   // Premium+ packages are told apart by their product id ('laybell_premium_plus…'
   // — must match RevenueCat + the webhook). Everything else sells the $9.99 tier.
@@ -129,6 +134,18 @@ export default function PremiumScreen() {
           <View style={{ width: 40 }} />
         </View>
 
+        {perkTip.shouldShow && (
+          <CoachmarkCard
+            icon="star"
+            title={t('coach.premium.title')}
+            body={t('coach.premium.body')}
+            gradient={GRADIENTS.primary}
+            accent="#C23A14"
+            ctaLabel={t('coach.gotIt')}
+            onDismiss={perkTip.markSeen}
+          />
+        )}
+
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <LinearGradient colors={GRADIENTS.primary as any} style={styles.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
             <View style={styles.heroGlow} />
@@ -193,6 +210,11 @@ export default function PremiumScreen() {
               <Text style={styles.plusTagline}>{t('premium.plusTagline')}</Text>
             </LinearGradient>
             <View style={styles.plusPerks}>
+              {/* Lead the list by stating Premium+ INCLUDES everything in Premium, so the
+                  rows below read as the extras on top — not the whole offer. */}
+              <View style={styles.plusIncludeRow}>
+                <Text style={styles.plusIncludeText}>{t('premium.plusIncludesPremium')}</Text>
+              </View>
               <View style={styles.plusPerkRow}>
                 <Ionicons name="film-outline" size={20} color={PLUS_RED_LIGHT} />
                 <View style={styles.perkBody}>
@@ -407,6 +429,16 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   plusTagline: { color: 'rgba(255,255,255,0.9)', fontSize: 13, textAlign: 'center', lineHeight: 18 },
   plusPerks: { gap: SPACING.md, padding: SPACING.md },
   plusPerkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.md },
+  // A flat, square-cornered tinted band like the Premium card's "Earn more" row —
+  // same orange tint, and the negative margin cancels plusPerks' padding so it spans
+  // the full card width (the card's overflow:hidden keeps the edges clean).
+  plusIncludeRow: {
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary + '14',
+    marginHorizontal: -SPACING.md, marginTop: -SPACING.md,
+    paddingVertical: SPACING.lg, paddingHorizontal: SPACING.md,
+  },
+  plusIncludeText: { color: colors.text, fontSize: 16.5, fontWeight: '800', letterSpacing: -0.2, textAlign: 'center' },
   plusNote: {
     color: colors.textTertiary, fontSize: 11, lineHeight: 16,
     paddingHorizontal: SPACING.md, paddingBottom: SPACING.md,

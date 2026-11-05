@@ -16,6 +16,7 @@ import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { formatBytes } from '../lib/format';
 import { fetchWalletBalance } from '../lib/wallet';
+import { resetAllCoachmarks } from '../lib/coachmarks';
 import { fmtCents } from '../lib/donations';
 import { LANGUAGES } from '../lib/i18n';
 import BadgeEmblem from '../components/BadgeEmblem';
@@ -705,6 +706,15 @@ export default function SettingsScreen() {
       },
     },
     {
+      // Clears every coachmark's "seen" flag so the in-app walkthroughs replay.
+      icon: 'school-outline',
+      label: t('settings.replayTutorials'),
+      subtitle: t('settings.replayTutorialsSub'),
+      onPress: () => {
+        resetAllCoachmarks().then(() => Alert.alert(t('settings.replayDoneTitle'), t('settings.replayDoneBody')));
+      },
+    },
+    {
       icon: 'document-text-outline',
       label: t('about.privacyPolicy'),
       onPress: () => router.push('/privacy-policy'),
@@ -912,7 +922,13 @@ export default function SettingsScreen() {
 
         <Section title="" items={dangerItems} />
 
-        <Text style={styles.madeWith}>{t('settings.madeWith')}</Text>
+        <Image
+          source={require('../assets/logo-mark-white.png')}
+          style={styles.footerLogo}
+          resizeMode="contain"
+          accessibilityRole="image"
+          accessibilityLabel="Laybell"
+        />
       </ScrollView>
 
       <LanguagePicker
@@ -1089,8 +1105,10 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
 
   separator: { height: 0.5, backgroundColor: c.border, marginLeft: SPACING.md + 28 + SPACING.md },
 
-  madeWith: {
-    color: c.textTertiary, fontSize: 13,
-    textAlign: 'center', paddingVertical: SPACING.lg,
+  // The Laybell wordmark as a quiet footer, tinted to the theme's text color so the
+  // white asset reads as a mono mark in BOTH themes (plain white would vanish on light).
+  footerLogo: {
+    width: 46, height: 46, alignSelf: 'center',
+    marginTop: 0, marginBottom: SPACING.lg, tintColor: c.text,
   },
 });

@@ -18,6 +18,8 @@ import FollowButton from '../components/FollowButton';
 import SwipeBackPager from '../components/SwipeBackPager';
 import { NotificationsSkeleton } from '../components/Skeleton';
 import { destForSystemKey } from '../lib/notificationRoute';
+import { useLifetimeStats } from '../lib/useLifetimeStats';
+import { FlipNumber } from '../components/RollingNumber';
 
 // The app icon, standing in for the avatar on a message from Laybell itself.
 // Bundled, so it draws with the row instead of arriving a moment later the way
@@ -211,6 +213,8 @@ export default function NotificationsScreen() {
   // row needs it, to open /followers/<id> — their OWN list, not a stranger's.
   const [selfId, setSelfId] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, string>>({});
+  // Lifetime views / plays / likes for the header — auto-refreshes (polling) while focused.
+  const stats = useLifetimeStats();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   // Grouped rows the user has expanded to reveal the individual posts.
@@ -390,6 +394,28 @@ export default function NotificationsScreen() {
             contentContainerStyle={styles.listContent}
             stickySectionHeadersEnabled={false}
             showsVerticalScrollIndicator={false}
+            ListHeaderComponent={stats ? (
+              <TouchableOpacity activeOpacity={0.85} onPress={() => router.push('/lifetime-stats')} style={styles.statsWrap}>
+                <View style={styles.statsEyebrowRow}>
+                  <Text style={styles.statsEyebrow}>{t('analytics.lifetime')}</Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} />
+                </View>
+                <View style={styles.statsRow}>
+                  <View style={styles.statTile}>
+                    <FlipNumber value={stats.views} fontSize={30} color={colors.text} abbreviate />
+                    <Text style={styles.statLabel}>{t('notifications.statViews')}</Text>
+                  </View>
+                  <View style={styles.statTile}>
+                    <FlipNumber value={stats.plays} fontSize={30} color={colors.text} abbreviate />
+                    <Text style={styles.statLabel}>{t('notifications.statPlays')}</Text>
+                  </View>
+                  <View style={styles.statTile}>
+                    <FlipNumber value={stats.likes} fontSize={30} color={colors.text} abbreviate />
+                    <Text style={styles.statLabel}>{t('notifications.statLikes')}</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ) : null}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchNotifications().catch(() => { setLoading(false); setRefreshing(false); }); }} tintColor={colors.primary} />
             }
@@ -531,6 +557,15 @@ export default function NotificationsScreen() {
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+
+  // Lifetime stats header (views / song plays / likes) — three tiles above the list.
+  statsWrap: { paddingTop: SPACING.sm, paddingBottom: SPACING.md },
+  statsEyebrowRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: SPACING.xs, marginLeft: 2, marginRight: 2 },
+  statsEyebrow: { color: colors.textTertiary, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
+  statsRow: { flexDirection: 'row', gap: SPACING.sm },
+  statTile: { flex: 1, alignItems: 'center', gap: 1, paddingVertical: SPACING.xs },
+  // Proud, bold numbers that FLIP to new values — a scoreboard you want to run up.
+  statLabel: { color: colors.textTertiary, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 },
   skeletonBody: { flex: 1, paddingHorizontal: SPACING.sm, paddingTop: SPACING.sm },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

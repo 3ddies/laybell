@@ -95,6 +95,29 @@ export function hourLabel(h: number): string {
 }
 export function dayLabel(d: number): string { return WD_FULL[d] ?? ''; }
 
+// A lightweight lifetime roll-up for the notifications header: one query over the
+// user's posts, summing views, song plays (stream_count) and likes. No followers,
+// timestamps or charts — that's fetchCreatorAnalytics' (heavier) job.
+export type LifetimeStats = { views: number; plays: number; likes: number };
+
+export async function fetchLifetimeStats(userId: string): Promise<LifetimeStats> {
+  // Denormalized counters ONLY (view_count / stream_count / like_count are kept in sync
+  // by triggers — see post_engagement_counts.sql). Summing integers is O(posts), so this
+  // stays cheap no matter how viral a post goes. NEVER count the likes table here: that's
+  // O(likes) and would melt on an ultra-viral post.
+  const { data } = await supabase
+    .from('posts')
+    .select('view_count, stream_count, like_count')
+    .eq('user_id', userId);
+  let views = 0, plays = 0, likes = 0;
+  for (const p of (data ?? []) as any[]) {
+    views += p.view_count || 0;
+    plays += p.stream_count || 0;
+    likes += p.like_count || 0;
+  }
+  return { views, plays, likes };
+}
+
 export async function fetchCreatorAnalytics(userId: string): Promise<CreatorAnalytics> {
   const sinceIso = new Date(Date.now() - 365 * 86_400_000).toISOString();
 

@@ -24,6 +24,8 @@ import {
   type ExploreSort, type ListingCategory, type SellerProfile, type Shop, type ShopListing, type ShopOrder,
 } from '../../lib/shop';
 import { useShopCart } from '../../lib/shopCart';
+import { CoachmarkCard } from '../../components/Coachmark';
+import { useCoachmark, COACHMARKS } from '../../lib/coachmarks';
 
 // The Shop hub — Laybell's marketplace for digital goods.
 //   Explore  — browse/search every active listing (the marketplace feed)
@@ -54,6 +56,7 @@ export default function ShopHubScreen() {
   const params = useLocalSearchParams<{ tab?: string }>();
   const [tab, setTab] = useState<Tab>(params.tab === 'mine' ? 'mine' : params.tab === 'orders' ? 'orders' : 'explore');
   const { count: cartCount } = useShopCart();
+  const shopTip = useCoachmark(COACHMARKS.shopBuy); // first-visit overview of the marketplace
   // Buy requests waiting on you — surfaces as a green count on the Orders tab.
   const [pendingCount, setPendingCount] = useState(0);
   useEffect(() => {
@@ -77,6 +80,18 @@ export default function ShopHubScreen() {
             )}
           </TouchableOpacity>
         </View>
+
+        {shopTip.shouldShow && (
+          <CoachmarkCard
+            icon="storefront"
+            title={t('coach.shop.title')}
+            body={t('coach.shop.body')}
+            gradient={['#3B82F6', '#1D4ED8']}
+            accent="#1D4ED8"
+            ctaLabel={t('coach.gotIt')}
+            onDismiss={shopTip.markSeen}
+          />
+        )}
 
         {/* Marketplace Terms §11 — material changes are communicated in the
             app. Self-dismissing, shown once per user; renders null otherwise. */}

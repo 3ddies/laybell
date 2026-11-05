@@ -18,7 +18,7 @@ import { isAudioPost } from '../lib/genres';
 import VideoThumb from '../components/VideoThumb';
 import SwipeBackPager from '../components/SwipeBackPager';
 import HeroSky from '../components/HeroSky';
-import SpotlightButton, { GALAXY_ACCENT, GALAXY_LIGHT } from '../components/SpotlightButton';
+import SpotlightButton, { GALAXY, GALAXY_ACCENT, GALAXY_LIGHT } from '../components/SpotlightButton';
 import ConfirmDialog from '../components/ConfirmDialog';
 import SpotlightLiveDialog from '../components/SpotlightLiveDialog';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
@@ -26,6 +26,8 @@ import { Skeleton, SkeletonLine, GridSkeleton } from '../components/Skeleton';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { formatCount } from '../lib/format';
+import { CoachmarkCard } from '../components/Coachmark';
+import { useCoachmark, COACHMARKS } from '../lib/coachmarks';
 
 // Spotlight manager (reached from the profile's Spotlight button and Settings).
 // Pay (real — credits are debited server-side) → the campaign is born `pending` → attach a post (an
@@ -62,6 +64,7 @@ export default function SpotlightScreen() {
 
   const [campaigns, setCampaigns] = useState<SpotlightCampaign[]>([]);
   const [loading, setLoading] = useState(true);
+  const promoteTip = useCoachmark(COACHMARKS.spotlightPromote, !loading); // first-visit "what Spotlight does"
   const [refreshing, setRefreshing] = useState(false);
   // Premium free monthly Spotlight: whether this month's credit is unclaimed, and
   // whether the CURRENT create flow is spending it (skips package/pay → grid).
@@ -428,6 +431,18 @@ export default function SpotlightScreen() {
         <Text style={styles.headerTitle}>Spotlight</Text>
         <View style={{ width: 40 }} />
       </View>
+
+      {promoteTip.shouldShow && (
+        <CoachmarkCard
+          icon="rocket"
+          title={t('coach.spotlight.title')}
+          body={t('coach.spotlight.body')}
+          gradient={GALAXY}
+          accent="#5B21B6"
+          ctaLabel={t('coach.gotIt')}
+          onDismiss={promoteTip.markSeen}
+        />
+      )}
 
       {loading ? (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>

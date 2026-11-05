@@ -1175,6 +1175,7 @@ const en: Record<string, string> = {
   'film.lapseWarnBody': 'Posting films is a Premium+ perk. Since your subscription ended, your films are hidden and will be deleted after 7 days. Resubscribe to bring them back exactly as they were.',
   'premium.plusTitle': 'Laybell Premium+',
   'premium.plusTagline': 'Everything in Premium, plus Films, zero ads, and a badge streak that never breaks.',
+  'premium.plusIncludesPremium': 'Everything in Laybell Premium, plus:',
   'premium.plusPerkFilms': 'Post Films',
   'premium.plusPerkFilmsDesc': 'Landscape videos up to 1 hour at full source quality, with their own shelf on Laybell TV.',
   'premium.plusPerkMaxQuality': 'Max Quality recording',
@@ -1397,6 +1398,10 @@ const en: Record<string, string> = {
   'notifications.thisWeek': 'This Week',
   'notifications.thisMonth': 'This Month',
   'notifications.earlier': 'Earlier',
+  'notifications.statViews': 'Views',
+  'notifications.statPlays': 'Song plays',
+  'notifications.statLikes': 'Likes',
+  'lifetimeStats.live': 'Updating live',
   'notifications.emptyTitle': 'No notifications yet',
   'notifications.emptySub': "When someone likes, comments, or follows you — it'll show here",
 
@@ -3039,6 +3044,22 @@ const en: Record<string, string> = {
   'studioInvite.preview': 'Studio session invite',
   'messages.preview.studio': 'Invited you to a studio session',
   'messages.preview.studioSent': 'You sent a studio invite',
+
+  // Coachmarks / in-app walkthroughs (reusable system — see lib/coachmarks + components/Coachmark).
+  // Keep copy to ONE short line each.
+  'coach.gotIt': 'Got it',
+  'coach.shop.title': 'The Shop',
+  'coach.shop.body': 'Buy beats & sounds — or sell your own.',
+  'coach.wallet.title': 'Your Wallet',
+  'coach.wallet.body': 'Tips and sales land here. Cash out anytime.',
+  'coach.spotlight.title': 'Spotlight',
+  'coach.spotlight.body': 'Push any post into everyone’s feed.',
+  'coach.premium.title': 'Premium',
+  'coach.premium.body': 'Get the most out of Laybell.',
+  'settings.replayTutorials': 'Replay tutorials',
+  'settings.replayTutorialsSub': 'Show the in-app walkthroughs again',
+  'settings.replayDoneTitle': 'Tutorials reset',
+  'settings.replayDoneBody': 'Walkthrough tips will show again as you explore Laybell.',
 };
 
 // Each translation is its own module (lib/locales), required the first time that
