@@ -578,7 +578,12 @@ const PostCard = memo(function PostCard({
         <SongSquareCard
           postId={item.id}
           title={item.caption || ''}
-          artist={songSquareArtist(item)}
+          // DJ edit of someone else's track → show their avatar credit top-right and drop
+          // the plain text artist line (it would say the same thing twice).
+          artist={item.song_artist_id && item.song_artist_id !== (item as any).user_id ? null : songSquareArtist(item)}
+          originalArtistId={item.song_artist_id && item.song_artist_id !== (item as any).user_id ? item.song_artist_id : null}
+          originalSongId={item.song_id ?? null}
+          originalSongTitle={item.song_title ?? null}
           features={parseFeatures((item as any).features)}
           cover={item.cover_url ?? item.thumbnail_url ?? null}
           onOpen={() => onExpandTrack(item)}

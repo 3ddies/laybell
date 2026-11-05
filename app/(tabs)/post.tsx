@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { consumePendingDjEdit } from '../../lib/djHandoff';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { usePagerSwiping, useTabSwipeControl } from '../../contexts/PagerContext';
 import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync, createAudioPlayer, type AudioPlayer } from 'expo-audio';
@@ -355,6 +356,9 @@ export default function PostScreen() {
   const [genre, setGenre] = useState('');
   const [showGenrePicker, setShowGenrePicker] = useState(false);
   const [song, setSong] = useState<PickedSong | null>(null); // another creator's track on this image/video
+  // True when this audio post is a DJ Booth edit of `song` — carries the original's credit
+  // through the audio insert (song_* columns) even though the post type is audio.
+  const [djEdit, setDjEdit] = useState(false);
   // Music-video mode: the attached song is a CREDIT + LINK, never played, because
   // it is already this video's own soundtrack. Video posts only — see lib/postSong.
   const [musicVideo, setMusicVideo] = useState(false);
@@ -617,6 +621,25 @@ export default function PostScreen() {
   const [filmNotice, setFilmNotice] = useState<{ minutes: number; resolve: (go: boolean) => void } | null>(null);
   const editingDraftId = useRef<string | null>(null);
   useFocusEffect(useCallback(() => { loadDrafts().then(setDrafts); }, []));
+  // Pick up a DJ Booth "Record & Post" hand-off (lib/djHandoff): load the recorded edit as
+  // an audio post credited to the original song, and jump to details — same shape as
+  // restoring an audio draft. A no-op on every focus where nothing is pending.
+  useFocusEffect(useCallback(() => {
+    const edit = consumePendingDjEdit();
+    if (!edit) return;
+    setPostType('audio');
+    setAudioKind('audio');
+    const name = edit.uri.split('/').pop() || `dj-edit-${Date.now()}.m4a`;
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    const mimeType = ext === 'wav' ? 'audio/wav' : ext === 'caf' ? 'audio/x-caf' : 'audio/m4a';
+    setAudioFile({ uri: edit.uri, name, mimeType });
+    setAudioDuration(edit.durationS ? Math.round(edit.durationS) : null);
+    setSong(edit.song);
+    setDjEdit(!!edit.song);
+    setCoverUri(null);
+    setStep('details');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []));
   useFocusEffect(useCallback(() => {
     let cancelled = false;
     (async () => {
@@ -836,7 +859,7 @@ export default function PostScreen() {
     setPostFilter('original'); setFilterModalOpen(false);
     setVideoDuration(0); setTrimStart(0); setTrimEnd(0); setVideoCaptions([]);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
-    setCaption(''); setFilmTitle(''); setGenre(''); setSong(null); setSongMix(null); setCoverSec(null); setScheduleAt(null); setMusicVideo(false); setTagged([]); setCommunities([]); setError(''); setStep('pick');
+    setCaption(''); setFilmTitle(''); setGenre(''); setSong(null); setSongMix(null); setCoverSec(null); setScheduleAt(null); setMusicVideo(false); setTagged([]); setCommunities([]); setError(''); setStep('pick'); setDjEdit(false);
     // features was MISSING here, which meant collaborators credited on one song
     // silently rode onto the next one posted in the same sitting — and every
     // one of them would have been notified they were on a track they are not.
@@ -2084,8 +2107,13 @@ export default function PostScreen() {
         // Small copy + blurred placeholder for grids and loading (lib/mediaPreview).
         ...(preview.thumbUrl ? { thumb_url: preview.thumbUrl } : {}),
         ...(preview.placeholder ? { placeholder: preview.placeholder } : {}),
-        ...(song && postType !== 'audio'
-          ? { song_id: song.id, song_title: song.title, song_artist: song.artist, song_artist_id: song.artistId }
+        ...(song && (postType !== 'audio' || djEdit)
+          ? {
+              song_id: song.id, song_title: song.title, song_artist: song.artist, song_artist_id: song.artistId,
+              // A DJ-edit audio post's attached song is the ORIGINAL, shown only as a credit —
+              // mark it link-only so nothing ever auto-plays it over the edit.
+              ...(djEdit ? { song_link_only: true } : {}),
+            }
           : {}),
         ...(tagged.length && postType !== 'audio' ? { tagged_user_ids: tagged.map((t) => t.id) } : {}),
         // Song "features" (collaborators) — audio posts only, ≤6.
@@ -2120,7 +2148,7 @@ export default function PostScreen() {
         // live (publish_scheduled_posts) — sent now, they would open a post nobody
         // can see yet.
         if (!publishAt) processMentions({ text: caption.trim(), actorId: user.id, postId: newPost.id });
-        if (!publishAt && song && postType !== 'audio' && song.artistId && song.artistId !== user.id) {
+        if (!publishAt && song && (postType !== 'audio' || djEdit) && song.artistId && song.artistId !== user.id) {
           createNotification({ userId: song.artistId, actorId: user.id, type: 'song_used', postId: newPost.id });
         }
         if (!publishAt && postType !== 'audio') {

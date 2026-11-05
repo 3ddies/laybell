@@ -63,9 +63,9 @@ export default function FollowerInsightsScreen() {
         <View style={styles.container}>
           {Header}
           <View style={styles.lockWrap}>
-            <LinearGradient colors={GRADIENTS.primary as any} style={styles.lockIcon} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-              <Ionicons name="people" size={30} color="#fff" />
-            </LinearGradient>
+            <View style={styles.lockIcon}>
+              <Ionicons name="people" size={36} color={colors.text} />
+            </View>
             <Text style={styles.lockTitle}>{t('followerInsights.lockTitle')}</Text>
             <Text style={styles.lockBody}>{t('followerInsights.lockBody')}</Text>
             <TouchableOpacity style={styles.upgradeBtn} onPress={() => router.push('/premium')} activeOpacity={0.85}>
@@ -174,10 +174,22 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   empty: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.md },
   emptyText: { color: colors.textTertiary, fontSize: 14, textAlign: 'center', paddingHorizontal: 30 },
 
-  lockWrap: { alignItems: 'center', justifyContent: 'center', flex: 1, gap: SPACING.md, padding: SPACING.xl },
-  lockIcon: { width: 66, height: 66, borderRadius: 33, alignItems: 'center', justifyContent: 'center' },
-  lockTitle: { color: colors.text, fontSize: 18, fontWeight: '800', textAlign: 'center' },
-  lockBody: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  // Centered on the SCREEN, not just the area under the header: the ~100px header
+  // would otherwise push the vertically-centered block visibly low, so the extra
+  // bottom padding lifts its optical center back to the middle.
+  lockWrap: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: SPACING.md,
+    paddingHorizontal: SPACING.xl, paddingBottom: SPACING.xxl * 2,
+  },
+  // A clean frosted circle instead of the brand-orange disc — soft shadow, neutral
+  // surface, crisp icon. Reads premium without shouting orange.
+  lockIcon: {
+    width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border,
+    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 7,
+  },
+  lockTitle: { color: colors.text, fontSize: 22, fontWeight: '900', letterSpacing: -0.3, textAlign: 'center', marginTop: SPACING.sm },
+  lockBody: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center', maxWidth: 300 },
   upgradeBtn: { borderRadius: RADIUS.full, overflow: 'hidden', marginTop: SPACING.sm, alignSelf: 'stretch' },
   upgradeInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: SPACING.md },
   upgradeText: { color: '#fff', fontSize: 15, fontWeight: '800' },

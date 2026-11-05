@@ -9,6 +9,7 @@ import SongCardTitle from './SongCardTitle';
 import { type Feature } from '../lib/features';
 import FloatingComments from './FloatingComments';
 import { useLoopIdle } from '../lib/playbackPresence';
+import OriginalArtistCredit from './OriginalArtistCredit';
 
 // The square, poster-style rendering of a song post in the HOME FEED.
 //
@@ -88,7 +89,7 @@ function FloatingNote({ delay, startX, drift, size }: {
 }
 
 export default function SongSquareCard({
-  postId, title, artist, features, cover, onOpen, onOpenProfile,
+  postId, title, artist, features, cover, onOpen, onOpenProfile, originalArtistId, originalSongId, originalSongTitle,
 }: {
   postId: string;
   title: string;
@@ -99,6 +100,12 @@ export default function SongSquareCard({
   onOpen: () => void;
   /** A credited collaborator's profile — by id, since they are not the poster. */
   onOpenProfile: (id: string) => void;
+  // DJ-Booth edit of ANOTHER artist's track: show their avatar + @username + track title
+  // top-right. Null for a normal song (the poster IS the artist — the post header credits
+  // them already). When set, the plain text `artist` line is suppressed by the caller.
+  originalArtistId?: string | null;
+  originalSongId?: string | null;
+  originalSongTitle?: string | null;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -205,7 +212,7 @@ export default function SongSquareCard({
         pointerEvents="none"
       />
 
-      <View style={styles.header} pointerEvents="box-none">
+      <View style={[styles.header, originalArtistId ? styles.headerNarrow : null]} pointerEvents="box-none">
         {/* Same component the mini player and full player use, so a title that
             is too long marquees here exactly as it does there, and credits
             stay tappable through to the collaborator's profile. */}
@@ -227,6 +234,11 @@ export default function SongSquareCard({
             header directly above this, and repeating it there is noise. */}
         {!!artist && <Text style={styles.artist} numberOfLines={1}>{artist}</Text>}
       </View>
+      {!!originalArtistId && (
+        <View style={styles.origCredit} pointerEvents="box-none">
+          <OriginalArtistCredit artistId={originalArtistId} songId={originalSongId ?? undefined} songTitle={originalSongTitle ?? undefined} />
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
@@ -262,4 +274,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   title: { color: '#fff' },
   feat: { color: 'rgba(255,255,255,0.92)', fontSize: 16, fontWeight: '700', lineHeight: 20 },
   artist: { color: 'rgba(255,255,255,0.8)', fontSize: 14.5, marginTop: 3 },
+  headerNarrow: { maxWidth: '62%' }, // reserve the top-right for the original-artist credit
+  origCredit: { position: 'absolute', top: SPACING.md, right: SPACING.md, alignItems: 'center' },
 });

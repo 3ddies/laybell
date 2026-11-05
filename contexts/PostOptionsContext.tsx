@@ -550,6 +550,21 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
       options.push({ key: 'playlist', label: t('postOptions.addToPlaylist'), icon: 'add-circle-outline',
         onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) onAddToPlaylist(o.postId); }); } });
     }
+    // Remix this song in the DJ Booth. Opening (play/mix) is free for everyone; the booth's
+    // own "Record & Post" is the Premium gate. The track pre-loads onto deck A via params.
+    options.push({ key: 'djbooth', label: t('postOptions.djBooth'), icon: 'disc-outline',
+      onPress: () => {
+        const o = optsRef.current;
+        dismissThen(() => {
+          o?.onNavigate?.();
+          if (o?.postId) router.push({ pathname: '/dj', params: {
+            songId: o.postId,
+            songTitle: (o.caption ?? dlTitle) || '',
+            songArtist: o.authorName ?? '',
+            songArtistId: o.authorId ?? '',
+          } });
+        });
+      } });
     // Download for offline (any viewer). Pinned → "Remove download"; otherwise
     // "Download". useDownloadAction owns all the failure alerts (tier/space/opt-out).
     {

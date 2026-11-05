@@ -95,11 +95,16 @@ export default memo(function DjDeck({ deck, color, track, peaks, loading, waveWi
     setSyncMsg(r === 'locked' ? 'Synced' : r === 'near' ? '≈ Sync' : 'No beat');
     setTimeout(() => setSyncMsg(null), 1400);
   };
+  // Debounce each pad for at least as long as its own audio-thread schedule runs, and share ONE
+  // lock between the two filter sweeps — both write the same filter curve, and overlapping
+  // setValueCurveAtTime events crash the native engine.
+  const FX_LOCK_MS: Record<ProFx, number> = { echo: 900, reverb: 2300, riser: 2100, chop: 1000, sweepDown: 1700, sweepUp: 1700 };
   const fireFx = (fx: ProFx) => {
     if (!hasTrack || !onFx) return;
+    const key = fx === 'sweepDown' || fx === 'sweepUp' ? 'filter' : fx;
     const now = Date.now();
-    if (now - (fxLock.current[fx] || 0) < 350) return; // debounce rapid re-taps (curve-stack safety)
-    fxLock.current[fx] = now;
+    if (now - (fxLock.current[key] || 0) < FX_LOCK_MS[fx]) return;
+    fxLock.current[key] = now;
     onFx(fx);
   };
   const cuePad = (i: number) => {

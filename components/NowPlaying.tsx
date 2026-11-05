@@ -30,6 +30,7 @@ import { openAdCta } from '../contexts/AdCtaContext';
 import { isPostSpotlighted } from '../lib/spotlight';
 import { fetchFeatures, type Feature } from '../lib/features';
 import SongCardTitle from './SongCardTitle';
+import OriginalArtistCredit from './OriginalArtistCredit';
 
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 // Full-width art (capped at 300): at rest the header fills the screen down to
@@ -760,21 +761,26 @@ export default function NowPlaying() {
             ListHeaderComponent={
               <>
                 <View style={styles.artWrap}>
-                  {/* Always-on transition (unlike the first-seen list fade):
-                      this view stays MOUNTED across track changes, so the fade
-                      fires exactly when the source swaps — a native
-                      cross-dissolve from the old cover to the new one. */}
-                  {track.cover ? (
-                    // Tapping the art opens the full-bleed listening view. Only
-                    // when there IS art — the placeholder has nothing to pan.
-                    <TouchableOpacity activeOpacity={0.9} onPress={() => setImmersive(true)} accessibilityRole="button" accessibilityLabel={t('a11y.play')}>
-                      <ExpoImage source={{ uri: track.cover }} style={styles.art} contentFit="cover" cachePolicy="memory-disk" transition={250} />
-                    </TouchableOpacity>
-                  ) : (
-                    <LinearGradient colors={GRADIENTS.primary} style={styles.art}>
-                      <Ionicons name="musical-notes" size={64} color={colors.text} />
-                    </LinearGradient>
-                  )}
+                  <View style={styles.artBox}>
+                    {/* Always-on transition (unlike the first-seen list fade):
+                        this view stays MOUNTED across track changes, so the fade
+                        fires exactly when the source swaps — a native
+                        cross-dissolve from the old cover to the new one. */}
+                    {track.cover ? (
+                      // Tapping the art opens the full-bleed listening view. Only
+                      // when there IS art — the placeholder has nothing to pan.
+                      <TouchableOpacity activeOpacity={0.9} onPress={() => setImmersive(true)} accessibilityRole="button" accessibilityLabel={t('a11y.play')}>
+                        <ExpoImage source={{ uri: track.cover }} style={styles.art} contentFit="cover" cachePolicy="memory-disk" transition={250} />
+                      </TouchableOpacity>
+                    ) : (
+                      <LinearGradient colors={GRADIENTS.primary} style={styles.art}>
+                        <Ionicons name="musical-notes" size={64} color={colors.text} />
+                      </LinearGradient>
+                    )}
+                    {/* Credit the original artist when this track is a DJ-Booth edit of
+                        someone else's song (renders nothing otherwise). */}
+                    <OriginalArtistCredit postId={pid} onNavigate={collapse} style={styles.npOrigCredit} />
+                  </View>
                 </View>
 
                 <View style={styles.meta}>
@@ -877,7 +883,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Vertical rhythm intentionally tight so the Comments header clears the
   // bottom fold at rest instead of sitting half-cut against the input bar.
   artWrap: { alignItems: 'center', marginTop: SPACING.xs },
+  artBox: { width: ART, height: ART }, // anchors the original-artist credit to the art's corner
   art: { width: ART, height: ART, borderRadius: RADIUS.lg, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceLight },
+  npOrigCredit: { position: 'absolute', top: SPACING.sm, right: SPACING.sm },
 
   meta: { marginTop: SPACING.md, alignItems: 'center', gap: SPACING.xs },
   title: { color: colors.text, fontSize: 22, fontWeight: '800', textAlign: 'center' },

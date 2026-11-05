@@ -16,12 +16,19 @@
 import {
   AudioContext,
   AudioManager,
+  AudioRecorder,
+  FileFormat,
+  FileDirectory,
+  IOSAudioQuality,
+  BitDepth,
+  FlacCompressionLevel,
   type AudioBuffer,
   type AudioBufferSourceNode,
   type GainNode,
   type BiquadFilterNode,
   type DelayNode,
   type AudioNode,
+  type RecorderAdapterNode,
 } from 'react-native-audio-api';
 import {
   TEMPO_MIN, TEMPO_MAX, AUTO_MID_DUCK, AUTO_HIGH_DUCK, AUTO_MATCH_BASS_DUCK, AUTO_MATCH_BASS_SHARE,
@@ -36,7 +43,7 @@ const EQ_BOOST_DB = 6;
 // Filter sweep bounds. A single biquad that is a lowpass for the "left" half of
 // the knob (darker) and a highpass for the "right" half (thinner); dead-centre is
 // a wide-open lowpass = bypass.
-const LP_OPEN_HZ = 20000; // lowpass fully open ≈ no effect
+const LP_OPEN_HZ = 22000; // lowpass fully open ≈ no effect (above the top octave → neutral is transparent)
 const LP_MIN_HZ = 180;    // darkest lowpass
 const HP_MIN_HZ = 20;     // highpass just opening = no effect
 const HP_MAX_HZ = 9000;   // thinnest highpass
@@ -604,6 +611,10 @@ export class DjEngine {
   private readonly echoReturn: GainNode;
   private noiseBuf: AudioBuffer | null = null; // lazily-created white noise for the uplifter
   private ready = false;
+  // Master-tap recorder for the Pro "Record & Post" flow (captures the live mix to a file).
+  private recAdapter: RecorderAdapterNode | null = null;
+  private recorder: AudioRecorder | null = null;
+  private recording = false;
 
   constructor() {
     this.ctx = new AudioContext();
@@ -749,8 +760,95 @@ export class DjEngine {
     this.deck(deckId).roll(p && p > 0 ? p / 4 : 0.12, 8);
   }
   /** Filter sweeps: darken (lowpass down) or open back up over ~1.6s. */
-  fxSweepDown(deckId: DeckId): void { this.deck(deckId).sweepOutDark(this.ctx.currentTime, 1.6); }
-  fxSweepUp(deckId: DeckId): void { this.deck(deckId).sweepInOpen(this.ctx.currentTime, 1.6); }
+  fxSweepDown(deckId: DeckId): void { try { this.deck(deckId).sweepOutDark(this.ctx.currentTime, 1.6); } catch (e) { console.warn('[dj] fxSweepDown', e); } }
+  fxSweepUp(deckId: DeckId): void { try { this.deck(deckId).sweepInOpen(this.ctx.currentTime, 1.6); } catch (e) { console.warn('[dj] fxSweepUp', e); } }
+
+  // ── Record the master mix (Pro "Record & Post") ──────────────────────────────
+  get isRecording(): boolean { return this.recording; }
+
+  /** Start capturing the booth's master output to an .m4a file. No-op if already recording.
+   *  Returns WHY it couldn't start so the UI can say the right thing: 'denied' (recording
+   *  permission refused), 'unsupported' (this build lacks the recorder native code) or 'failed'
+   *  (anything else — logged for diagnosis). The adapter is a parallel tap, so the master still
+   *  reaches the speakers while recording. */
+  async startRecording(lossless = false): Promise<'ok' | 'denied' | 'unsupported' | 'failed'> {
+    if (this.recording) return 'ok';
+    // The native recorder needs RECORD permission even when tapping the app's own output —
+    // without a granted status, start() fails. Ask up front (a no-op once already granted).
+    try {
+      let status = await AudioManager.checkRecordingPermissions();
+      if (status !== 'Granted') status = await AudioManager.requestRecordingPermissions();
+      if (status !== 'Granted') return 'denied';
+    } catch { /* older native without the permission API — fall through and try anyway */ }
+    try {
+      if (typeof (this.ctx as unknown as { createRecorderAdapter?: unknown }).createRecorderAdapter !== 'function') {
+        return 'unsupported'; // this build predates the recorder APIs (no OTA → needs a rebuild)
+      }
+      // The booth runs the session as 'playback' (output only, no input), so the native
+      // recorder's audio engine cannot start ("Failed to start audio engine for recording").
+      // Switch to 'playAndRecord' (output stays on the speaker) and re-activate before
+      // starting; stopRecording() restores 'playback'.
+      try {
+        // 'videoRecording' mode keeps FULL-FIDELITY capture. 'default'/voice modes let iOS
+        // apply AGC + downsample to a voice-grade rate, which muffles music — the likely cause
+        // of the low-quality posts. defaultToSpeaker keeps the mix on the loudspeaker.
+        AudioManager.setAudioSessionOptions({
+          iosCategory: 'playAndRecord', iosMode: 'videoRecording', iosOptions: ['defaultToSpeaker', 'allowBluetoothA2DP'],
+        });
+        await AudioManager.setAudioSessionActivity(true);
+      } catch { /* best-effort — try to record anyway */ }
+      try { console.warn('[dj] rec start', { ctxRate: this.ctx.sampleRate, devRate: AudioManager.getDevicePreferredSampleRate() }); } catch { /* noop */ }
+      if (!this.recAdapter) {
+        this.recAdapter = this.ctx.createRecorderAdapter();
+        this.master.connect(this.recAdapter);
+      }
+      if (!this.recorder) {
+        this.recorder = new AudioRecorder();
+        this.recorder.connect(this.recAdapter);
+      }
+      const fileRes = this.recorder.enableFileOutput({
+        format: lossless ? FileFormat.Wav : FileFormat.M4A, // WAV = bit-exact (no re-encode), bigger files
+        directory: FileDirectory.Cache,
+        fileNamePrefix: 'laybell-dj',
+        channelCount: 2, // stereo — the mono default was half the quality loss
+        preset: {
+          bitRate: 320000,                 // 320 kbps AAC — the max meaningful for AAC-LC (ignored for WAV/PCM)
+          sampleRate: this.ctx.sampleRate, // match the engine's mix rate (no resample)
+          bitDepth: BitDepth.Bit16,        // 16-bit PCM for WAV — transparent for an already-lossy source
+          iosQuality: IOSAudioQuality.Max,
+          flacCompressionLevel: FlacCompressionLevel.L5, // unused for M4A/WAV; sane default
+        },
+      });
+      if (fileRes && (fileRes as { status?: string }).status === 'error') console.warn('[dj] enableFileOutput', fileRes);
+      const res = await this.recorder.start();
+      if (res.status !== 'success') { console.warn('[dj] recorder.start() returned', res); return 'failed'; }
+      this.recording = true;
+      return 'ok';
+    } catch (e) {
+      console.warn('[dj] startRecording error', e);
+      this.recording = false;
+      return 'failed';
+    }
+  }
+
+  /** Stop recording and return the written file + its duration (seconds), or null on failure. */
+  async stopRecording(): Promise<{ uri: string; durationS: number } | null> {
+    if (!this.recorder || !this.recording) return null;
+    this.recording = false;
+    try {
+      const res = await this.recorder.stop();
+      console.warn('[dj] rec stop', res); // FileInfo: paths/size(MB)/duration(s) → real bitrate
+      // Back to output-only now that we're done capturing input.
+      try { AudioManager.setAudioSessionOptions({ iosCategory: 'playback', iosMode: 'default', iosOptions: [] }); } catch { /* noop */ }
+      if (res.status !== 'success') return null;
+      const path = res.paths?.[0];
+      if (!path) return null;
+      const uri = path.startsWith('file://') || path.startsWith('http') ? path : `file://${path}`;
+      return { uri, durationS: res.duration ?? 0 };
+    } catch {
+      return null;
+    }
+  }
 
   /** Claim the iOS audio session for exclusive playback and resume the context. */
   async init(): Promise<void> {
@@ -832,6 +930,8 @@ export class DjEngine {
   setMasterVolume(v: number): void { this.master.gain.value = clamp(v, 0, 1); }
 
   async dispose(): Promise<void> {
+    try { if (this.recording && this.recorder) await this.recorder.stop(); } catch { /* noop */ }
+    this.recording = false;
     this.a.dispose();
     this.b.dispose();
     try { await this.ctx.close(); } catch { /* noop */ }

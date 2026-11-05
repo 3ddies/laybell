@@ -258,6 +258,7 @@ const en: Record<string, string> = {
   'postOptions.reportPost': 'Report post',
   'postOptions.reportUser': 'Report user',
   'postOptions.remix': 'React',
+  'postOptions.djBooth': 'DJ Booth',
 
   // React (compose screen + player) — internal keys stay `remix.*` for stability.
   'remix.title': 'React',
@@ -1176,6 +1177,8 @@ const en: Record<string, string> = {
   'premium.plusTagline': 'Everything in Premium, plus Films, zero ads, and a badge streak that never breaks.',
   'premium.plusPerkFilms': 'Post Films',
   'premium.plusPerkFilmsDesc': 'Landscape videos up to 1 hour at full source quality, with their own shelf on Laybell TV.',
+  'premium.plusPerkMaxQuality': 'Max Quality recording',
+  'premium.plusPerkMaxQualityDesc': 'Record and post your DJ Booth edits at the highest audio quality.',
   'premium.plusPerkFreeze': 'Badge freeze',
   'premium.plusPerkFreezeDesc': "Your badges and streaks hold on their own while you're subscribed. You can still climb — you can't fall.",
   'premium.plusPerkNoAds': 'No ads',

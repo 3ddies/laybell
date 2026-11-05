@@ -15,9 +15,14 @@
 // this feature exists to prevent, so the check needs to be impossible to write
 // two different ways.
 
+import { isAudioPost } from './genres';
+
 export type SongAttachable = {
   song_id?: string | null;
   song_link_only?: boolean | null;
+  // The post's media type. An audio post IS its own audio, so an attached song on it is
+  // only ever a CREDIT (e.g. a DJ-Booth edit crediting the original) — never a soundtrack.
+  type?: string | null;
 } | null | undefined;
 
 /**
@@ -29,6 +34,10 @@ export type SongAttachable = {
  * the behaviour that already shipped. New behaviour requires an explicit true.
  */
 export function songPlaysFor(post: SongAttachable): boolean {
+  // Audio posts never play an attached song over themselves — their own media IS the audio.
+  // This is what stops a DJ-Booth edit's credited original from auto-playing in the feed /
+  // after the edit ends (the attachment is a credit, not a soundtrack).
+  if (isAudioPost(post?.type)) return false;
   return !!post?.song_id && post?.song_link_only !== true;
 }
 

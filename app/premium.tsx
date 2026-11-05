@@ -44,12 +44,12 @@ export default function PremiumScreen() {
       }),
       highlight: true,
     },
+    { icon: 'disc-outline' as const, label: t('premium.perkDjBooth'), desc: t('premium.perkDjBoothDesc') },
     { icon: 'people-outline' as const, label: t('premium.perkFollowers'), desc: t('premium.perkFollowersDesc') },
+    { icon: 'list-outline' as const, label: t('premium.perkMusicOrder'), desc: t('premium.perkMusicOrderDesc') },
     { icon: 'musical-notes-outline' as const, label: t('premium.perkLessAds'), desc: t('premium.perkLessAdsDesc') },
     { icon: 'flash-outline' as const, label: t('premium.perkSpotlight'), desc: t('premium.perkSpotlightDesc') },
     { icon: 'ribbon-outline' as const, label: t('premium.perkBadgeGrace'), desc: t('premium.perkBadgeGraceDesc') },
-    { icon: 'list-outline' as const, label: t('premium.perkMusicOrder'), desc: t('premium.perkMusicOrderDesc') },
-    { icon: 'disc-outline' as const, label: t('premium.perkDjBooth'), desc: t('premium.perkDjBoothDesc') },
     // Unlimited downloads moved UP to Premium+ (owner, 2026-08-07) — the row
     // lives on the plus card now, and effectivePinLimit gates on plus to match.
   ];
@@ -198,6 +198,13 @@ export default function PremiumScreen() {
                 <View style={styles.perkBody}>
                   <Text style={styles.perkText}>{t('premium.plusPerkFilms')}</Text>
                   <Text style={styles.perkDesc}>{t('premium.plusPerkFilmsDesc')}</Text>
+                </View>
+              </View>
+              <View style={styles.plusPerkRow}>
+                <Ionicons name="diamond-outline" size={20} color={PLUS_RED_LIGHT} />
+                <View style={styles.perkBody}>
+                  <Text style={styles.perkText}>{t('premium.plusPerkMaxQuality')}</Text>
+                  <Text style={styles.perkDesc}>{t('premium.plusPerkMaxQualityDesc')}</Text>
                 </View>
               </View>
               <View style={styles.plusPerkRow}>

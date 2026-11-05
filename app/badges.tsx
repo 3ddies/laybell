@@ -13,7 +13,7 @@ import BadgeEmblem from '../components/BadgeEmblem';
 import SwipeBackPager from '../components/SwipeBackPager';
 import {
   BADGES, CATEGORY_META, CATEGORY_ORDER, THEME_OPTIONS, THEME_RING_STYLE,
-  isUnlocked, tierLabel, rawTier, badgeRingColors,
+  isUnlocked, tierLabel, TIER_WEIGHT, rawTier, badgeRingColors,
   evaluateBadges, fetchBadgeState, computeMetrics,
   type Tier, type BadgeState, type BadgeMetrics, type EvalResult, type BadgeDef, type BadgeCategory,
 } from '../lib/badges';
@@ -493,11 +493,20 @@ function CategoryCard({ category, metrics, held, t, onRate }: { category: BadgeC
           <View key={def.key} style={styles.badgeRow}>
             <BadgeEmblem tier={def.tier} size={24} style={st.kind === 'earned' ? undefined : styles.dimmed} />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.badgeTitle, st.kind !== 'earned' && styles.badgeTitleMuted]}>
-                {tierLabel(def.tier)}
-                {/* Permanent badges never revert once earned — flag them. */}
-                {def.permanent && <Text style={styles.permanentTag}> {t('badges.permanentTag')}</Text>}
-              </Text>
+              <View style={styles.badgeTitleRow}>
+                <Text numberOfLines={1} style={[styles.badgeTitle, { flexShrink: 1 }, st.kind !== 'earned' && styles.badgeTitleMuted]}>
+                  {tierLabel(def.tier)}
+                  {/* Permanent badges never revert once earned — flag them. */}
+                  {def.permanent && <Text style={styles.permanentTag}> {t('badges.permanentTag')}</Text>}
+                </Text>
+                {/* Each badge's point weight toward the emblem rollup (Bronze 1 … Diamond 8),
+                    so a user can see exactly what a badge is worth. */}
+                <View style={[styles.pointsPill, st.kind !== 'earned' && styles.pointsPillMuted]}>
+                  <Text style={[styles.pointsPillText, st.kind !== 'earned' && styles.pointsPillTextMuted]}>
+                    {TIER_WEIGHT[def.tier] === 1 ? t('badges.pointOne', { points: 1 }) : t('badges.points', { points: TIER_WEIGHT[def.tier] })}
+                  </Text>
+                </View>
+              </View>
               <Text style={styles.badgeCriteria}>{t('badges.criteria.' + def.key)}</Text>
             </View>
             <View style={styles.badgeStatus}>
@@ -707,6 +716,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   badgeTitle: { color: colors.text, fontSize: 13, fontWeight: '700' },
   badgeTitleMuted: { color: colors.textSecondary },
   permanentTag: { color: colors.textTertiary, fontSize: 11, fontWeight: '600' },
+  // Row holding the tier label + its point-weight pill, so the weight sits right
+  // beside the tier it belongs to.
+  badgeTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  // A small brand-tinted pill carrying the badge's point value. Earned → brand
+  // orange; not-yet-earned → a neutral muted chip (matches the dimmed row).
+  pointsPill: {
+    backgroundColor: colors.primary + '1A', borderRadius: RADIUS.full,
+    borderWidth: 0.5, borderColor: colors.primary + '40',
+    paddingHorizontal: 7, paddingVertical: 1.5,
+  },
+  pointsPillMuted: { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+  pointsPillText: { color: colors.primary, fontSize: 10.5, fontWeight: '800', letterSpacing: 0.2 },
+  pointsPillTextMuted: { color: colors.textTertiary },
   badgeCriteria: { color: colors.textSecondary, fontSize: 13, lineHeight: 17, marginTop: 2 },
   // Earned badges show just a checkmark in a rounded green disc with a soft glow.
   earnedCheck: {

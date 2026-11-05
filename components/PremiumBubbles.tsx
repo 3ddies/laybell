@@ -40,10 +40,29 @@ const HERO_FIELD = [
   { left: '92%', size: 20, peak: 0.34, drift: 48, sway: -5, startY: 64, dur: 9800, delay: 9200 },
 ] as const;
 
-type Variant = 'card' | 'hero';
+// Gate page (PremiumGateHost): a FULL-SCREEN field — bigger, bolder, and more of them than
+// the hero, spread across the whole width and height, because here the bubbles ARE the
+// page's motion. Higher peaks so they actually read on the gradient rather than ghosting.
+const GATE_FIELD = [
+  { left: '6%', size: 34, peak: 0.55, drift: 90, sway: 10, startY: 180, dur: 9000, delay: 0 },
+  { left: '14%', size: 22, peak: 0.5, drift: 70, sway: -8, startY: 320, dur: 7800, delay: 2600 },
+  { left: '20%', size: 46, peak: 0.6, drift: 110, sway: 12, startY: 460, dur: 11000, delay: 1200 },
+  { left: '30%', size: 18, peak: 0.45, drift: 64, sway: -6, startY: 120, dur: 7000, delay: 4200 },
+  { left: '40%', size: 28, peak: 0.52, drift: 84, sway: 8, startY: 520, dur: 9600, delay: 3000 },
+  { left: '50%', size: 52, peak: 0.42, drift: 120, sway: -10, startY: 300, dur: 12000, delay: 5200 },
+  { left: '58%', size: 20, peak: 0.62, drift: 68, sway: 7, startY: 150, dur: 7400, delay: 1800 },
+  { left: '66%', size: 38, peak: 0.55, drift: 96, sway: -9, startY: 430, dur: 10400, delay: 600 },
+  { left: '74%', size: 24, peak: 0.7, drift: 74, sway: 8, startY: 250, dur: 8200, delay: 3600 },
+  { left: '82%', size: 44, peak: 0.6, drift: 104, sway: -11, startY: 360, dur: 11200, delay: 2000 },
+  { left: '88%', size: 20, peak: 0.82, drift: 66, sway: 6, startY: 130, dur: 7000, delay: 4800 },
+  { left: '92%', size: 30, peak: 0.52, drift: 88, sway: -7, startY: 500, dur: 9800, delay: 1400 },
+] as const;
+
+type Variant = 'card' | 'hero' | 'gate';
 
 export default function PremiumBubbles({ variant = 'card' }: { variant?: Variant }) {
-  const BUBBLES = variant === 'hero' ? HERO_FIELD : CARD_FIELD;
+  const BUBBLES = variant === 'hero' ? HERO_FIELD : variant === 'gate' ? GATE_FIELD : CARD_FIELD;
+  const bubbleStyle = variant === 'gate' ? styles.bubbleBold : styles.bubble;
   const [reduceMotion, setReduceMotion] = useState(false);
   const anims = useRef(BUBBLES.map(() => new Animated.Value(0))).current;
 
@@ -78,7 +97,7 @@ export default function PremiumBubbles({ variant = 'card' }: { variant?: Variant
       {BUBBLES.map((b, i) => reduceMotion ? (
         <View
           key={i}
-          style={[styles.bubble, {
+          style={[bubbleStyle, {
             left: b.left, top: b.startY - b.drift / 2,
             width: b.size, height: b.size, borderRadius: b.size / 2,
             opacity: b.peak * 0.5,
@@ -87,7 +106,7 @@ export default function PremiumBubbles({ variant = 'card' }: { variant?: Variant
       ) : (
         <Animated.View
           key={i}
-          style={[styles.bubble, {
+          style={[bubbleStyle, {
             left: b.left, top: b.startY,
             width: b.size, height: b.size, borderRadius: b.size / 2,
             opacity: anims[i].interpolate({
@@ -123,5 +142,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.20)',
     borderWidth: 1.2,
     borderColor: 'rgba(255,255,255,0.75)',
+  },
+  // Gate page: bolder fill + rim so the bigger field reads clearly on a full-screen gradient.
+  bubbleBold: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255,255,255,0.28)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.92)',
   },
 });

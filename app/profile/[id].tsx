@@ -101,7 +101,7 @@ type ProfileSnapshot = {
 const profileCache = createScreenCache<ProfileSnapshot>(24);
 
 export default function PublicProfileScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, tab: tabParam, song: songParam } = useLocalSearchParams<{ id: string; tab?: string; song?: string }>();
   const { colors, mode } = useTheme();
   const { t } = useTranslation();
   const linkGuard = useLinkGuard();
@@ -188,6 +188,15 @@ export default function PublicProfileScreen() {
   useEffect(() => {
     if (!orderedKeys.includes(activeTab)) setActiveTab('posts');
   }, [orderedKeys, activeTab]);
+
+  // Deep-link from a DJ-edit "original artist" credit: open the Music tab once (when this
+  // artist has one). renderMusicList reads the `song` param to surface + highlight the track.
+  const deepTabHandledRef = useRef(false);
+  useEffect(() => {
+    if (deepTabHandledRef.current) return;
+    const wantMusic = (Array.isArray(tabParam) ? tabParam[0] : tabParam) === 'music';
+    if (wantMusic && orderedKeys.includes('music')) { deepTabHandledRef.current = true; setActiveTab('music'); }
+  }, [tabParam, orderedKeys]);
 
   // Slide the incoming sub-tab in from the travel direction (Music-pill style).
   const tabAnimX = useRef(new Animated.Value(0)).current;
@@ -586,8 +595,54 @@ export default function PublicProfileScreen() {
       id: t.id, uri: t.media_url, caption: t.caption,
       artist: t.profiles?.display_name ?? profile?.display_name ?? '', cover: t.cover_url,
     }));
+    const deepSongId = Array.isArray(songParam) ? songParam[0] : songParam;
+    const deepAlbum = deepSongId ? albums.find((a) => (a.tracks ?? []).some((tr: any) => tr.post_id === deepSongId)) : undefined;
+    const deepTrack = deepSongId && !deepAlbum ? data.find((p: any) => p.id === deepSongId) : undefined;
+    const deepQueue = deepTrack
+      ? [{ id: deepTrack.id, uri: deepTrack.media_url, caption: deepTrack.caption, artist: deepTrack.profiles?.display_name ?? profile?.display_name ?? '', cover: deepTrack.cover_url }]
+      : [];
     return (
       <View style={styles.musicList}>
+        {/* Arrived from a DJ-edit's "original artist" credit → surface that track at the top,
+            highlighted and ready to play (or its album when it belongs to one). */}
+        {(deepTrack || deepAlbum) && (
+          <View style={styles.deepWrap}>
+            <Text style={styles.deepLabel}>Original track</Text>
+            {deepTrack ? (
+              <View style={styles.deepHighlight}>
+                <TrackRow
+                  hidePlayButton
+                  caption={deepTrack.caption}
+                  artist={deepTrack.profiles?.display_name ?? profile?.display_name ?? ''}
+                  username={deepTrack.profiles?.username ?? profile?.username ?? ''}
+                  duration={deepTrack.duration_seconds}
+                  streams={deepTrack.stream_count ?? 0}
+                  cover={deepTrack.cover_url}
+                  badgeProfile={profile}
+                  badgeOwnerId={id}
+                  spotlighted={spotlightIds.has(deepTrack.id)}
+                  isPlaying={playingId === deepTrack.id}
+                  trackId={deepTrack.id}
+                  onPlay={() => playQueue(deepQueue, 0)}
+                  onCoverPress={() => { playQueue(deepQueue, 0); expand(); }}
+                />
+              </View>
+            ) : deepAlbum ? (
+              <TouchableOpacity style={[styles.deepHighlight, styles.deepAlbumRow]} activeOpacity={0.85} onPress={() => router.push(`/album/${deepAlbum.id}`)}>
+                {albumCover(deepAlbum) ? (
+                  <Image source={{ uri: albumCover(deepAlbum)! }} style={styles.deepAlbumCover} contentFit="cover" cachePolicy="memory-disk" />
+                ) : (
+                  <View style={[styles.deepAlbumCover, styles.deepAlbumCoverEmpty]}><Ionicons name="albums" size={20} color={colors.textTertiary} /></View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.deepAlbumTitle} numberOfLines={1}>{deepAlbum.title}</Text>
+                  <Text style={styles.deepAlbumMeta} numberOfLines={1}>{countLabel('track', deepAlbum.track_count ?? 0)}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        )}
         {featured.length > 0 && (
           <View style={styles.featuredWrap}>
             <Text style={styles.sectionLabel}>{t('featured.shelf')}</Text>
@@ -1180,6 +1235,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   albumCardMeta: { color: quietText(colors), fontSize: 12, marginTop: 1 },
 
   musicList: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: SPACING.sm },
+  deepWrap: { marginBottom: SPACING.sm, gap: SPACING.xs },
+  deepLabel: { color: colors.primary, fontSize: 11.5, fontWeight: '800', letterSpacing: 0.6, textTransform: 'uppercase' },
+  deepHighlight: { borderWidth: 2, borderColor: colors.primary, borderRadius: 16, padding: 3, backgroundColor: colors.primary + '14' },
+  deepAlbumRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, padding: SPACING.sm },
+  deepAlbumCover: { width: 48, height: 48, borderRadius: 8, backgroundColor: colors.surfaceLight },
+  deepAlbumCoverEmpty: { alignItems: 'center', justifyContent: 'center' },
+  deepAlbumTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  deepAlbumMeta: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
   emptyGrid: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.sm },
   emptyGridText: { color: colors.textTertiary, fontSize: 14 },
 

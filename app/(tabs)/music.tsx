@@ -31,6 +31,7 @@ import { useTranslation } from '../../contexts/LanguageContext';
 import { useTabSwipeControl, isSwipeTap, useSearchSwipeLock } from '../../contexts/PagerContext';
 import { useListenMode } from '../../contexts/ListenModeContext';
 import { useProfile } from '../../contexts/ProfileContext';
+import { usePremium } from '../../contexts/PremiumContext';
 import { fetchBlockedIds } from '../../lib/blocks';
 import { afterHomePaint } from '../../lib/startupGate';
 import { countLabel } from '../../lib/i18n';
@@ -130,6 +131,24 @@ export default function MusicScreen() {
   // Playlists already counted as "listened to" this session — one bump each.
   const bumpedPlaylistsRef = useRef<Set<string>>(new Set());
   const { profile } = useProfile();
+  const { isPremium } = usePremium();
+  // Record & Post is a perk of Premium OR an earned Gold+ badge. A one-time "new perk
+  // unlocked" pointer to the DJ Booth shows for anyone who has it and hasn't seen it yet.
+  const canOpenRecordPerk = isPremium || tierRank(rawTier(profile)) >= tierRank('gold');
+  const [showPerkPointer, setShowPerkPointer] = useState(false);
+  const discRef = useRef<any>(null);
+  const [discX, setDiscX] = useState(0); // window-x of the DJ Booth icon's centre, for the pointer arrow
+  useFocusEffect(useCallback(() => {
+    if (!canOpenRecordPerk) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    AsyncStorage.getItem('dj:perkPointerSeen').then((seen) => {
+      if (seen) { setShowPerkPointer(false); return; }
+      setShowPerkPointer(true);
+      AsyncStorage.setItem('dj:perkPointerSeen', '1').catch(() => {});
+      timer = setTimeout(() => setShowPerkPointer(false), 5000); // a few seconds, then gone
+    }).catch(() => {});
+    return () => { if (timer) clearTimeout(timer); };
+  }, [canOpenRecordPerk]));
   // Public-playlist creation is gated by the user's EARNED badge tier
   // (none 0 / bronze 1 / silver 2 / gold 3 / diamond 6); deleting frees a slot.
   const myPublicCount = playlists.filter(p => p.is_public).length;
@@ -1168,6 +1187,8 @@ export default function MusicScreen() {
           )}
           {/* DJ Booth — load two tracks and mix them live (components/dj + app/dj). */}
           <TouchableOpacity
+            ref={discRef}
+            onLayout={() => discRef.current?.measureInWindow?.((x: number, _y: number, w: number) => setDiscX(x + w / 2))}
             accessibilityRole="button"
             accessibilityLabel="DJ Booth"
             style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' }}
@@ -1182,6 +1203,27 @@ export default function MusicScreen() {
           <ListenButton active={listenMode} onPress={() => setListenMode(!listenMode)} />
         </View>
       </View>
+
+      {/* One-time pointer at the DJ Booth icon when the Record & Post perk unlocks. The arrow
+          is placed at the measured centre of the disc icon (discX), not guessed. */}
+      {showPerkPointer && (
+        <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, top: insets.top + 50, zIndex: 50 }}>
+          {discX > 0 && (
+            <View style={{ position: 'absolute', left: discX - 9, top: 0, width: 0, height: 0, borderLeftWidth: 9, borderRightWidth: 9, borderBottomWidth: 10, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: '#F26522' }} />
+          )}
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => { setShowPerkPointer(false); router.push('/dj'); }}
+            style={{ alignSelf: 'flex-end', marginRight: 10, marginTop: 9, maxWidth: 268, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F26522', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 }}
+          >
+            <Ionicons name="sparkles" size={16} color="#fff" />
+            <View style={{ flexShrink: 1 }}>
+              <Text style={{ color: '#fff', fontSize: 13.5, fontWeight: '800' }}>New perk unlocked</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.92)', fontSize: 11.5, marginTop: 1 }}>{'Open the DJ Booth to record & post remixes'}</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Search bar — find songs by name, username, or display name */}
       <View style={styles.searchRow}>

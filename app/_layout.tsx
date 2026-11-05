@@ -33,6 +33,7 @@ import { PremiumProvider } from '../contexts/PremiumContext';
 import { ThemeProvider, useTheme } from '../contexts/ThemeContext';
 import { LanguageProvider } from '../contexts/LanguageContext';
 import { ShareProvider } from '../contexts/ShareContext';
+import PremiumGateHost from '../components/PremiumGateHost';
 import { FollowProvider } from '../contexts/FollowContext';
 import { StoriesProvider } from '../contexts/StoriesContext';
 import { ListenModeProvider } from '../contexts/ListenModeContext';
@@ -836,6 +837,7 @@ function RootLayout() {
                                               wrapper) so it overlays every screen
                                               without affecting any layout. */}
                                           <OfflineBanner />
+                                          <PremiumGateHost />
                                         </CastProvider>
                                       </StoryUploadProvider>
                                     </UploadQueueProvider>
