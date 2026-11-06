@@ -19,13 +19,20 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // Stripe webhook at this until the money review passes.
 //
 // Deploy (JWT OFF — Stripe can't send a Supabase JWT; the signature is the auth):
+//   supabase secrets set STRIPE_SHOP_SECRET_KEY=sk_test_…   # the shop's OWN key; TEST for testing
 //   supabase functions deploy stripe-webhook --no-verify-jwt
-//   # then create the endpoint in Stripe → events checkout.session.completed,
+//   supabase functions deploy stripe-checkout
+//   # then, IN THE MATCHING STRIPE MODE (test), create a webhook endpoint pointing at the
+//   #   stripe-webhook URL for events checkout.session.completed,
 //   #   checkout.session.async_payment_succeeded, charge.refunded → set its signing
 //   #   secret:  supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_…
+//   # (the webhook endpoint's mode must match STRIPE_SHOP_SECRET_KEY's mode.)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const STRIPE_KEY = Deno.env.get('STRIPE_SECRET_KEY');
+// DEDICATED shop key (same one stripe-checkout uses for refunds) — NOT the shared
+// STRIPE_SECRET_KEY, which is LIVE and powers payouts. Set STRIPE_SHOP_SECRET_KEY to a
+// TEST key for testing, live only at go-live. Fail-closed if unset.
+const STRIPE_KEY = Deno.env.get('STRIPE_SHOP_SECRET_KEY');
 const WEBHOOK_SECRET = Deno.env.get('STRIPE_WEBHOOK_SECRET');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');

@@ -23,7 +23,12 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const STRIPE_KEY = Deno.env.get('STRIPE_SECRET_KEY');
+// DEDICATED shop key — deliberately NOT the shared STRIPE_SECRET_KEY, which is this
+// account's LIVE key and powers payouts (stripe-connect). Reading a separate secret
+// decouples shop checkout's mode from payouts: set STRIPE_SHOP_SECRET_KEY to a TEST key
+// (sk_test_) to test safely, and to the live key only at go-live. Fail-closed: if it's
+// unset the function refuses rather than silently falling back to the live key.
+const STRIPE_KEY = Deno.env.get('STRIPE_SHOP_SECRET_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
