@@ -408,8 +408,8 @@ footer.site .wrap{padding-block:30px 40px; display:flex; flex-wrap:wrap; gap:18p
 
 /* ── Shop: dark storefront (shop surfaces stay dark in any site theme) ── */
 .shopdark{
-  --bg:#0b0b0d; --surface:#17171b; --surface-2:#1c1c21; --elevate:#1f1f25;
-  --fg:#f4f4f7; --muted:#9a9aa4; --faint:#73737d; --border:#262630; --border-2:#303040;
+  --bg:#1c1c20; --surface:#26262b; --surface-2:#2d2d33; --elevate:#333339;
+  --fg:#f4f4f7; --muted:#a0a0aa; --faint:#78787f; --border:#3a3a43; --border-2:#45454f;
   --shadow:0 1px 2px rgba(0,0,0,.5), 0 14px 34px rgba(0,0,0,.55);
   color-scheme:dark; background:var(--bg); color:var(--fg);
 }
