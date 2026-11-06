@@ -328,3 +328,90 @@ footer.site .wrap{padding-block:30px 40px; display:flex; flex-wrap:wrap; gap:18p
 .ccap:focus{outline:2px solid color-mix(in srgb,var(--accent) 60%,transparent); outline-offset:1px}
 .cnote{color:var(--faint); font-size:12.5px; margin-top:12px; text-align:center}
 .create .submit{width:100%; justify-content:center; margin-top:14px; padding:13px}
+
+/* ── Shop: listing cards + grid ── */
+.shop-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:16px 14px}
+@media(min-width:620px){.shop-grid{grid-template-columns:repeat(3,1fr)}}
+@media(min-width:900px){.shop-grid.big{grid-template-columns:repeat(4,1fr)}}
+.scard{display:block}
+.scover{position:relative; aspect-ratio:1; border-radius:14px; overflow:hidden; background:var(--surface); display:grid; place-items:center; box-shadow:var(--shadow); transition:transform .16s}
+.scard:hover .scover{transform:translateY(-2px)}
+.scover img{width:100%; height:100%; object-fit:cover}
+.scover-ic{color:#fff; opacity:.85} .scover-ic svg{width:40px; height:40px}
+.sprice{position:absolute; left:8px; bottom:8px; z-index:2; background:rgba(0,0,0,.72); color:#fff; font-weight:800; font-size:13px; padding:4px 9px; border-radius:999px; backdrop-filter:blur(4px)}
+.sprice.free{background:var(--live)}
+.splay{position:absolute; top:8px; right:8px; z-index:2; width:30px; height:30px; border-radius:50%; background:rgba(0,0,0,.5); display:grid; place-items:center; color:#fff; backdrop-filter:blur(3px)}
+.splay svg{width:15px; height:15px; margin-left:1px}
+.smeta{padding:9px 2px 2px}
+.stitle{font-family:var(--f-display); font-weight:700; font-size:14.5px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.ssub{font-size:12.5px; color:var(--muted); display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px}
+.schips{display:flex; gap:5px; margin-top:7px; flex-wrap:wrap}
+.schip{font-size:10.5px; font-weight:800; letter-spacing:.02em; text-transform:uppercase; padding:3px 7px; border-radius:6px; font-style:normal}
+.schip.sell{background:color-mix(in srgb,var(--accent) 16%,transparent); color:var(--accent-deep)}
+.schip.lease{background:color-mix(in srgb,#6366f1 18%,transparent); color:#6366f1}
+.schip.free{background:color-mix(in srgb,var(--live) 18%,transparent); color:var(--live)}
+
+/* Profile Shop tab */
+.shop-sec{margin-bottom:10px}
+.shop-head{display:flex; align-items:baseline; gap:10px; margin:6px 2px 4px; flex-wrap:wrap}
+.shop-head h2{font-size:19px; font-weight:800}
+.shop-note{font-size:12.5px; color:var(--muted)}
+.shop-bio{color:var(--muted); font-size:14px; margin:0 2px 16px; max-width:60ch; white-space:pre-wrap}
+
+/* Market page */
+.market{padding-bottom:10px}
+.market-hero{position:relative; overflow:hidden; border-bottom:1px solid var(--border)}
+.market-hero .wrap{position:relative; padding-block:34px 24px}
+.market-hero h1{font-size:clamp(28px,5vw,40px); font-family:var(--f-display); font-weight:900; letter-spacing:-.02em}
+.market-hero p{color:var(--muted); font-size:15px; margin:8px 0 0; max-width:56ch}
+.market > .wrap{padding-block:24px 48px}
+
+/* Listing detail */
+.listing{padding-bottom:48px}
+.lwrap{max-width:900px; display:grid; grid-template-columns:minmax(0,420px) 1fr; gap:36px; padding-block:30px 10px; align-items:start}
+.lcover{position:sticky; top:80px; aspect-ratio:1; border-radius:18px; overflow:hidden; background:var(--surface); display:grid; place-items:center; box-shadow:var(--shadow)}
+.lcover img{width:100%; height:100%; object-fit:cover}
+.lcover-ic{color:var(--muted)} .lcover-ic svg{width:64px; height:64px}
+.linfo{min-width:0}
+.lcat{font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); font-weight:700}
+.ltitle{font-size:clamp(24px,4vw,34px); font-family:var(--f-display); font-weight:900; letter-spacing:-.02em; margin:5px 0 14px; line-height:1.08}
+.lseller{display:inline-flex; align-items:center; gap:10px; margin-bottom:20px}
+.lseller .mini-av{width:40px; height:40px}
+.ls-txt{display:flex; flex-direction:column; line-height:1.25}
+.ls-txt b{font-family:var(--f-display); font-weight:700; font-size:15px; display:inline-flex; align-items:center; gap:6px}
+.ls-handle{font-size:13px; color:var(--muted)}
+.lpreview{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:12px 14px; margin-bottom:18px}
+.lp-label{display:flex; align-items:center; gap:7px; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:9px}
+.lp-label svg{width:15px; height:15px}
+.lpreview audio{width:100%; height:38px}
+.ldeals{display:flex; flex-direction:column; gap:10px; margin-bottom:18px}
+.ldeal{display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 16px; border-radius:14px; border:1px solid var(--border-2); background:var(--surface-2)}
+.ldeal.sell{border-color:color-mix(in srgb,var(--accent) 45%,var(--border-2))}
+.ld-main b{font-family:var(--f-display); font-weight:700; font-size:16px; display:block}
+.ld-main span{font-size:13px; color:var(--muted)}
+.ld-price{font-family:var(--f-display); font-weight:800; font-size:19px; white-space:nowrap}
+.lbuy{width:100%; justify-content:center; padding:14px; font-size:15px}
+.lnote{color:var(--faint); font-size:12.5px; margin:10px 0 0; text-align:center}
+.ldesc{margin-top:26px; border-top:1px solid var(--border); padding-top:20px}
+.ldesc h3{font-size:16px; font-family:var(--f-display); font-weight:800; margin-bottom:8px}
+.ldesc p{color:var(--fg); font-size:14.5px; white-space:pre-wrap; line-height:1.55}
+@media(max-width:720px){
+  .lwrap{grid-template-columns:1fr; gap:20px; padding-block:18px 6px}
+  .lcover{position:relative; top:0; max-width:420px}
+}
+@media(max-width:560px){ .shoplink{display:none} }
+
+/* ── Shop: dark storefront (shop surfaces stay dark in any site theme) ── */
+.shopdark{
+  --bg:#0b0b0d; --surface:#17171b; --surface-2:#1c1c21; --elevate:#1f1f25;
+  --fg:#f4f4f7; --muted:#9a9aa4; --faint:#73737d; --border:#262630; --border-2:#303040;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 14px 34px rgba(0,0,0,.55);
+  color-scheme:dark; background:var(--bg); color:var(--fg);
+}
+.market.shopdark, .listing.shopdark{ min-height:calc(100dvh - 140px) }
+.shop-sec.shopdark{ background:var(--bg); border:1px solid var(--border); border-radius:18px; padding:16px 16px 22px; margin-top:4px }
+.shopdark .market-hero{ border-bottom-color:var(--border) }
+/* richer price chips on the dark cards */
+.shopdark .schip.sell{ background:color-mix(in srgb,var(--accent) 24%,transparent); color:var(--accent-warm) }
+.shopdark .schip.lease{ background:color-mix(in srgb,#818cf8 22%,transparent); color:#a5b4fc }
+.shopdark .schip.free{ background:color-mix(in srgb,var(--live) 24%,transparent); color:#5ee893 }

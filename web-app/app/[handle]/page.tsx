@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { sb, isVisibleProfile } from '@/lib/supabase';
 import { formatCount } from '@/lib/format';
+import { LISTING_PUBLIC_COLS, type WebListing } from '@/lib/shop';
 import { Avatar, TierBadge, OpenCTA, NotFoundState } from '../components';
 import ProfileTabs from '../ProfileTabs';
 
@@ -50,13 +51,17 @@ export default async function ProfilePage({ params }: { params: { handle: string
   if (!isVisibleProfile(p)) return <NotFoundState title="Account unavailable" body="This account is private or no longer available." />;
 
   const db = sb();
-  const [postsRes, followersRes, followingRes, albumsRes] = await Promise.all([
+  const [postsRes, followersRes, followingRes, albumsRes, listingsRes, shopRes] = await Promise.all([
     db.from('posts').select('id,type,caption,media_url,thumbnail_url,cover_url,like_count,comment_count', { count: 'exact' })
       .eq('user_id', p.id).eq('is_public', true).is('archived_at', null).not('mature', 'is', true)
       .order('created_at', { ascending: false }).limit(60),
     db.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', p.id),
     db.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', p.id),
     db.from('albums').select('id,title,cover_url,created_at').eq('user_id', p.id).order('created_at', { ascending: false }),
+    // Shop listings — RLS returns only active, non-hidden, non-removed rows (anon key).
+    db.from('shop_listings').select(LISTING_PUBLIC_COLS).eq('user_id', p.id).eq('status', 'active').order('created_at', { ascending: false }).limit(48),
+    // Shop row — RLS returns it only when the shop is open (is_open), so a hit == open.
+    db.from('shops').select('name,bio,is_open').eq('user_id', p.id).maybeSingle(),
   ]);
   const posts = (postsRes.data || []) as any[];
   const badge = p.badge_show !== false ? p.badge_tier : null;
@@ -89,6 +94,10 @@ export default async function ProfilePage({ params }: { params: { handle: string
     .filter((pt) => pt.type && AUDIO.has(pt.type) && !trackPostIds.has(pt.id))
     .map((pt) => ({ id: pt.id, cover: pt.cover_url as string | null, label: (pt.caption || '').split('\n')[0].slice(0, 44) || 'Audio' }));
   const videos = posts.filter((pt) => pt.type && VIDEO.has(pt.type));
+
+  const listings = (listingsRes.data || []) as WebListing[];
+  const shopRow = (shopRes.data as { name: string | null; bio: string | null } | null) || null;
+  const shop = { open: !!shopRow, listings, name: shopRow?.name ?? null, bio: shopRow?.bio ?? null };
 
   return (
     <>
@@ -124,7 +133,7 @@ export default async function ProfilePage({ params }: { params: { handle: string
         </div>
       </section>
 
-      <ProfileTabs posts={posts} albums={albums} singles={singles} videos={videos} />
+      <ProfileTabs posts={posts} albums={albums} singles={singles} videos={videos} shop={shop} />
     </>
   );
 }

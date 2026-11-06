@@ -30,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </a>
             <SearchBox />
             <div className="top-actions">
+              <a className="navlink shoplink" href="/market">Shop</a>
               <button className="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
               </button>
@@ -47,7 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div className="bl"><Bell /> Laybell</div>
               <p>Real music, real artists. Albums, singles, films and live — not just a feed.</p>
             </div>
-            <div className="foot-col"><h4>Laybell</h4><a href={OPEN}>Get the app</a><a href="https://laybell.app/advertising.html">Advertise</a></div>
+            <div className="foot-col"><h4>Laybell</h4><a href="/market">Shop</a><a href={OPEN}>Get the app</a><a href="https://laybell.app/advertising.html">Advertise</a></div>
             <div className="foot-col"><h4>Legal</h4><a href="https://laybell.app/privacy.html">Privacy</a><a href="https://laybell.app/terms.html">Terms</a><a href="https://laybell.app/community.html">Guidelines</a><a href="https://laybell.app/payouts.html">Payouts</a></div>
             <div className="foot-bottom"><span>© 2026 Laybell LLC</span><span>English (US)</span></div>
           </div>

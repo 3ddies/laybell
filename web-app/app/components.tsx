@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { thumbFor, gradientFor, initial, formatCount, type GridPost } from '@/lib/format';
+import { saleTypes, listingPriceLabel, CATEGORY_LABEL, type WebListing } from '@/lib/shop';
 
 export function Avatar({ url, name, handle, tier, size = 168 }: {
   url?: string | null; name?: string | null; handle?: string | null; tier?: string | null; size?: number;
@@ -54,6 +55,32 @@ export function OpenCTA({ label = 'Open in Laybell', wide = false }: { label?: s
       <img className="logo-sm" src="/logo.png" alt="" />
       {label}
     </a>
+  );
+}
+
+export function ListingCard({ l, seller }: { l: WebListing; seller?: { username: string | null } | null }) {
+  const t = saleTypes(l);
+  const price = listingPriceLabel(l);
+  const free = price === 'Free';
+  return (
+    <Link className="scard" href={`/listing/${l.id}`}>
+      <div className="scover" style={!l.cover_url ? { background: gradientFor(l.id) } : undefined}>
+        {l.cover_url ? <img src={l.cover_url} alt="" loading="lazy" /> : (
+          <span className="scover-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M3 9h18M4.5 9 6 4.5A2 2 0 0 1 7.9 3h8.2a2 2 0 0 1 1.9 1.5L19.5 9M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M9 13a3 3 0 0 0 6 0"/></svg></span>
+        )}
+        <span className={`sprice${free ? ' free' : ''}`}>{price}</span>
+        {l.preview_url ? <span className="splay" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span> : null}
+      </div>
+      <div className="smeta">
+        <b className="stitle">{l.title}</b>
+        <span className="ssub">{CATEGORY_LABEL[l.category] || 'Digital good'}{l.genre ? ` · ${l.genre}` : ''}{seller?.username ? ` · @${seller.username}` : ''}</span>
+        <span className="schips">
+          {t.sell ? <i className="schip sell">Buy</i> : null}
+          {t.lease ? <i className="schip lease">Lease</i> : null}
+          {t.free ? <i className="schip free">Free</i> : null}
+        </span>
+      </div>
+    </Link>
   );
 }
 
