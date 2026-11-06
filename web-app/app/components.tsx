@@ -7,9 +7,11 @@ export function Avatar({ url, name, handle, tier, size = 168 }: {
 }) {
   const ring = tier === 'diamond' ? 'diamond' : tier === 'gold' ? 'gold' : 'plain';
   const pad = size > 120 ? 4 : 3;
+  // Size via CSS vars so a media query can shrink it responsively — an inline
+  // width/height would beat the stylesheet and never shrink on mobile.
   return (
-    <div className={`av-wrap ${ring}`} style={{ width: size, height: size, padding: pad }}>
-      <div className="av" style={{ fontSize: Math.round(size * 0.37) }}>
+    <div className={`av-wrap ${ring}`} style={{ ['--av-size' as any]: `${size}px`, ['--av-pad' as any]: `${pad}px` }}>
+      <div className="av">
         {url ? <img src={url} alt="" /> : initial(name, handle)}
       </div>
     </div>
