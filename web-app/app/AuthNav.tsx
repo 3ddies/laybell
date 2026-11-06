@@ -31,6 +31,7 @@ export default function AuthNav() {
       <Link className="navlink" href="/home">Home</Link>
       <Link className="navlink" href="/create">Create</Link>
       <Link className="navlink" href="/messages">Messages</Link>
+      <Link className="navlink" href="/purchases">Purchases</Link>
       {me?.username ? (
         <Link href={`/@${me.username}`} className="navav" title={`@${me.username}`}>
           {me.avatar_url ? <img src={me.avatar_url} alt="" /> : letter}

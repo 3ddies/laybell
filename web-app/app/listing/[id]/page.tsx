@@ -5,6 +5,7 @@ import { sb, isVisibleProfile } from '@/lib/supabase';
 import { formatCount, gradientFor } from '@/lib/format';
 import { LISTING_PUBLIC_COLS, CATEGORY_LABEL, dealRows, listingAppLink, type WebListing } from '@/lib/shop';
 import { TierBadge, NotFoundState } from '../../components';
+import ListingActions from './ListingActions';
 
 export const revalidate = 60;
 
@@ -81,19 +82,7 @@ export default async function ListingPage({ params }: { params: { id: string } }
             </div>
           ) : null}
 
-          <div className="ldeals">
-            {deals.map((d) => (
-              <div className={`ldeal ${d.kind}`} key={d.kind}>
-                <div className="ld-main"><b>{d.label}</b><span>{d.sub}</span></div>
-                <div className="ld-price">{d.price}</div>
-              </div>
-            ))}
-          </div>
-
-          <a className="btn btn-primary lbuy" href={listingAppLink(l.id)}>
-            <img className="logo-sm" src="/logo.png" alt="" />Get it in the app
-          </a>
-          <p className="lnote">Browse here, buy in the app — purchases are handled securely in Laybell.{stats.length ? ` · ${stats.join(' · ')}` : ''}</p>
+          <ListingActions deals={deals} listingId={l.id} appLink={listingAppLink(l.id)} note={stats.join(' · ')} />
 
           {l.description ? (
             <div className="ldesc"><h3>About this {cat.toLowerCase()}</h3><p>{l.description}</p></div>

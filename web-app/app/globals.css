@@ -420,3 +420,21 @@ footer.site .wrap{padding-block:30px 40px; display:flex; flex-wrap:wrap; gap:18p
 .shopdark .schip.sell{ background:color-mix(in srgb,var(--accent) 24%,transparent); color:var(--accent-warm) }
 .shopdark .schip.lease{ background:color-mix(in srgb,#818cf8 22%,transparent); color:#a5b4fc }
 .shopdark .schip.free{ background:color-mix(in srgb,var(--live) 24%,transparent); color:#5ee893 }
+
+/* Listing buy actions + Purchases / downloads */
+.lapp{display:block; text-align:center; color:var(--muted); font-size:13px; margin-top:4px; text-decoration:underline}
+.purchases{max-width:620px; margin:0 auto; padding-block:24px 48px; padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px))}
+.purchases h1{font-size:24px; margin:4px 2px 16px}
+.pbanner{padding:12px 14px; border-radius:12px; font-size:14px; font-weight:600; margin-bottom:16px}
+.pbanner.wait{background:var(--surface); color:var(--muted)}
+.pbanner.ok{background:color-mix(in srgb,var(--live) 16%,transparent); color:var(--live)}
+.pbanner.refund{background:color-mix(in srgb,var(--accent-warm) 20%,transparent); color:var(--accent-deep)}
+.pbanner.err{background:color-mix(in srgb,var(--like) 14%,transparent); color:var(--like)}
+.plist{display:flex; flex-direction:column; gap:10px}
+.prow{display:flex; align-items:center; gap:14px; padding:10px; border:1px solid var(--border); border-radius:14px; background:var(--surface-2)}
+.part{width:60px; height:60px; border-radius:10px; overflow:hidden; flex:0 0 auto; background:var(--surface)}
+.part img{width:100%; height:100%; object-fit:cover}
+.pinfo2{flex:1; min-width:0}
+.pinfo2 b{font-family:var(--f-display); font-weight:700; font-size:15px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.pinfo2 span{font-size:13px; color:var(--muted); display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.pdl{flex:0 0 auto; padding:9px 16px}
