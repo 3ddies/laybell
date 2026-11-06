@@ -1,11 +1,19 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { browserSb } from '@/lib/supabaseBrowser';
 
-export default function LoginPage() {
+// Only same-origin relative paths — block protocol-relative (//evil) and absolute
+// URLs so ?next can't be used as an open redirect.
+function safeNext(n: string | null): string {
+  if (n && n.startsWith('/') && !n.startsWith('//')) return n;
+  return '/home';
+}
+
+function LoginInner() {
   const router = useRouter();
   const sb = browserSb();
+  const dest = safeNext(useSearchParams().get('next'));
   const [mode, setMode] = useState<'in' | 'up'>('in');
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
@@ -14,8 +22,8 @@ export default function LoginPage() {
   const [ok, setOk] = useState<string | null>(null);
 
   useEffect(() => {
-    sb.auth.getSession().then(({ data }) => { if (data.session) router.replace('/home'); });
-  }, [sb, router]);
+    sb.auth.getSession().then(({ data }) => { if (data.session) router.replace(dest); });
+  }, [sb, router, dest]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -24,11 +32,11 @@ export default function LoginPage() {
       if (mode === 'in') {
         const { error } = await sb.auth.signInWithPassword({ email, password: pw });
         if (error) throw error;
-        router.replace('/home');
+        router.replace(dest);
       } else {
         const { data, error } = await sb.auth.signUp({ email, password: pw });
         if (error) throw error;
-        if (data.session) router.replace('/home');
+        if (data.session) router.replace(dest);
         else setOk('Check your email to confirm your account, then sign in.');
       }
     } catch (e: any) {
@@ -40,7 +48,7 @@ export default function LoginPage() {
 
   async function oauth(provider: 'google' | 'apple') {
     setErr(null);
-    const { error } = await sb.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.origin + '/home' } });
+    const { error } = await sb.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.origin + dest } });
     if (error) setErr(error.message + ' — the web URL may need adding to Supabase Auth redirect URLs.');
   }
 
@@ -85,5 +93,13 @@ export default function LoginPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<main className="auth"><div className="authcard" /></main>}>
+      <LoginInner />
+    </Suspense>
   );
 }

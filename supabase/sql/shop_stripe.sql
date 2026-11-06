@@ -130,6 +130,7 @@ declare
   v_sell boolean; v_lease boolean;
   v_price  int;
   v_intent public.shop_stripe_intents%rowtype;
+  v_prev_session text;
 begin
   if v_buyer is null then raise exception 'not_signed_in'; end if;
   if p_kind not in ('sell', 'lease') then raise exception 'bad_kind'; end if;  -- free=instant; offer=credits-only
@@ -171,6 +172,7 @@ begin
    order by created_at desc limit 1;
 
   if v_intent.id is not null then
+    v_prev_session := v_intent.session_id;   -- the caller expires this now-stale Stripe session
     update public.shop_stripe_intents
        set price_cents = v_price, session_id = null,
            expires_at  = now() + interval '24 hours'
@@ -182,7 +184,8 @@ begin
       returning * into v_intent;
   end if;
 
-  return jsonb_build_object('ok', true, 'intent_id', v_intent.id, 'price_cents', v_price);
+  return jsonb_build_object('ok', true, 'intent_id', v_intent.id, 'price_cents', v_price,
+                            'prev_session_id', v_prev_session);
 end $$;
 
 grant execute on function public.shop_begin_stripe_order(uuid, text) to authenticated;

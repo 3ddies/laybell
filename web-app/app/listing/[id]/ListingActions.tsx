@@ -63,7 +63,7 @@ export default function ListingActions({ listingId, deals, appLink, note }: { li
       {err ? <div className="authmsg err">{err}</div> : null}
 
       {authed === false ? (
-        <a className="btn btn-primary lbuy" href="/login">Log in to buy</a>
+        <a className="btn btn-primary lbuy" href={`/login?next=${encodeURIComponent(`/listing/${listingId}`)}`}>Log in to buy</a>
       ) : paid.length ? (
         paid.map((d) => (
           <button key={d.kind} className="btn btn-primary lbuy" disabled={!!busy || authed === null} onClick={() => buy(d.kind as 'sell' | 'lease')}>

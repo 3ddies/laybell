@@ -62,7 +62,14 @@ function PurchasesInner() {
       if (error || !path) throw error || new Error('no_path');
       const { data: signed, error: sErr } = await sb.storage.from('shop-files').createSignedUrl(path as string, 3600, { download: true });
       if (sErr || !signed?.signedUrl) throw sErr || new Error('no_url');
-      window.location.href = signed.signedUrl;
+      // The signed URL already carries content-disposition: attachment (download:true),
+      // so an anchor click downloads without unloading this SPA page/poll.
+      const a = document.createElement('a');
+      a.href = signed.signedUrl;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     } catch {
       alert('Could not start the download. Please try again.');
     } finally {

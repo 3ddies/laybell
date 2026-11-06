@@ -117,7 +117,14 @@ serve(async (req) => {
       // Couldn't deliver (sold out, price mismatch, slot taken, no intent, or a prior
       // failed attempt) → refund the card. Idempotency key on the event makes a retried
       // refund return Stripe's original refund rather than a second one.
-      if (res?.refund && pi) {
+      if (res?.refund) {
+        if (!pi) {
+          // Must refund but the event carried no PaymentIntent — we can't auto-refund, and
+          // retrying can't change that. Fail LOUD (never silently keep an undeliverable charge)
+          // so a human can refund it; the payment row stays outcome='failed' as the record.
+          console.error('REFUND OWED BUT NO payment_intent — MANUAL REFUND NEEDED', event.id, 'reason:', res.reason);
+          return json({ received: true, delivered: false, reason: res.reason ?? null, needs_manual_refund: true });
+        }
         try {
           await stripe('refunds', { payment_intent: pi, 'metadata[laybell_reason]': String(res.reason ?? 'undeliverable') }, 'POST', `refund_${event.id}`);
           await db.rpc('shop_stripe_mark_refunded', { p_event_id: event.id });

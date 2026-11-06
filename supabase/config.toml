@@ -42,3 +42,13 @@ verify_jwt = false
 # The one-time token in the URL is the credential.
 [functions.parent-consent-verify]
 verify_jwt = false
+
+# Stripe's servers call this web-shop payment webhook with a Stripe SIGNATURE in
+# the Stripe-Signature header — NOT a Supabase JWT. With verify_jwt on, the gateway
+# 401s it before the function runs: the buyer's card is charged, the beat is never
+# delivered, and the auto-refund-on-failure never fires either — silently, with no
+# logs (the same trap as revenuecat-webhook). The function authenticates every event
+# itself by HMAC-verifying the signature against STRIPE_WEBHOOK_SECRET.
+# NOTE: stripe-checkout is deliberately NOT here — it needs the buyer's JWT.
+[functions.stripe-webhook]
+verify_jwt = false

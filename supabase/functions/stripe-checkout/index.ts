@@ -111,6 +111,11 @@ serve(async (req) => {
     const priceCents = Math.floor(Number(begin.price_cents));
     if (!Number.isFinite(priceCents) || priceCents < 50) return json({ error: 'bad_price' });
 
+    // Expire the Checkout Session from any prior abandoned attempt on this reused intent,
+    // so a buyer can't complete two live sessions for one purchase. Best-effort.
+    const prevSession = (begin as any).prev_session_id as string | null;
+    if (prevSession) { try { await stripe(`checkout/sessions/${prevSession}/expire`); } catch { /* already expired/completed — fine */ } }
+
     // (2) Listing title/cover for a nice Stripe receipt (service-role read, public cols).
     const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
     const { data: listing } = await db
