@@ -29,6 +29,7 @@ export default function AuthNav() {
   return (
     <>
       <Link className="navlink" href="/home">Home</Link>
+      <Link className="navlink" href="/create">Create</Link>
       <Link className="navlink" href="/messages">Messages</Link>
       {me?.username ? (
         <Link href={`/@${me.username}`} className="navav" title={`@${me.username}`}>

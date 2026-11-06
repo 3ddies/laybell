@@ -2,6 +2,7 @@ import './globals.css';
 import type { Metadata } from 'next';
 import { Bricolage_Grotesque, Hanken_Grotesk } from 'next/font/google';
 import AuthNav from './AuthNav';
+import SearchBox from './SearchBox';
 
 const display = Bricolage_Grotesque({ subsets: ['latin'], variable: '--f-display', display: 'swap', weight: ['400', '600', '700', '800'] });
 const body = Hanken_Grotesk({ subsets: ['latin'], variable: '--f-body', display: 'swap', weight: ['400', '500', '600', '700', '800'] });
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a className="brand" href="/">
               <Bell /> Laybell
             </a>
+            <SearchBox />
             <div className="top-actions">
               <button className="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>

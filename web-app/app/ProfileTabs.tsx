@@ -42,7 +42,7 @@ export default function ProfileTabs({ posts, albums, singles, videos }: { posts:
                 <h2>Albums</h2>
                 <div className="shelf">
                   {albums.map((al) => (
-                    <Link key={al.id} href={al.firstTrackId ? `/p/${al.firstTrackId}` : '#'} className="album">
+                    <Link key={al.id} href={`/album/${al.id}`} className="album">
                       <div className="cover" style={!al.cover ? { background: gradientFor(al.id) } : undefined}>
                         {al.cover ? <img src={al.cover} alt="" /> : null}
                         <div className="ctitle">{al.title}</div>

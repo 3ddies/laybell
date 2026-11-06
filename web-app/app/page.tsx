@@ -15,7 +15,7 @@ export default function Home() {
         </p>
         <div style={{ display: 'flex', gap: 10, marginTop: 24, flexWrap: 'wrap' }}>
           <OpenCTA label="Get the app" />
-          <Link className="btn btn-ghost" href="/@3ddie">Browse a profile</Link>
+          <Link className="btn btn-ghost" href="/explore">Explore</Link>
         </div>
       </section>
 
