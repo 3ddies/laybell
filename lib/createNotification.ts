@@ -13,7 +13,7 @@ export async function createNotification({
   // 'studio_invite' is a studio-session invite dropped into a DM thread. Like
   // 'offer' it needs BOTH supabase/sql/studio_invite.sql (the notifications
   // CHECK constraint) and a send-push redeploy — either alone fails silently.
-  type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag' | 'offer' | 'studio_invite';
+  type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag' | 'offer' | 'studio_invite' | 'repost' | 'react';
   postId?: string | null;
 }) {
   if (userId === actorId) return; // Never notify yourself

@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
-import { COLORS, SPACING, RADIUS, type ThemePalette } from '../constants/theme';
-import { useThemedStyles } from '../contexts/ThemeContext';
+import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { tileImageUri, feedImageUri } from '../lib/mediaPreview';
 import { useTranslation } from '../contexts/LanguageContext';
 import { isNotifTypeEnabled } from '../lib/notificationPrefs';
 import { destForPushData } from '../lib/notificationRoute';
@@ -45,8 +46,8 @@ import StoryAvatar from '../components/StoryAvatar';
  * consent language, not a line in this file.
  */
 
-// Long enough to read a name and a few words; short enough not to sit on the UI.
-const SHOW_MS = 4200;
+// Long enough to read a name and a few words and glance at the thumbnail.
+const SHOW_MS = 8400;
 // Nothing arrives twice within this window — a burst of likes should be ONE
 // banner, not a stack of them fighting for the same strip of screen.
 const COOLDOWN_MS = 6000;
@@ -60,6 +61,11 @@ type Banner = {
   icon: any;
   tint: string;
   dest: { href: string; tab: boolean } | null;
+  // The post this is about — a small cover on the right, TikTok-style. Only
+  // post-centric events (a like, a comment, a new post, a mention, a tag) carry
+  // one; follows, messages and profile views have none and the card simply
+  // closes up around its absence.
+  thumbUrl?: string | null;
   // Messages buzz as they drop in; nothing else does.
   buzz?: boolean;
 };
@@ -76,7 +82,6 @@ function suppressedOn(pathname: string, type: string): boolean {
 }
 
 export default function ActivityBanner() {
-  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const pathname = usePathname();
   const { t } = useTranslation();
@@ -184,6 +189,9 @@ export default function ActivityBanner() {
               icon: 'add-circle',
               tint: COLORS.primary,
               dest: { href: `/post/${p.id}`, tab: false },
+              // The realtime row carries every post column, so its cover is in
+              // hand — no extra fetch for a new-post banner.
+              thumbUrl: feedImageUri(tileImageUri(p), 160) ?? null,
             });
           })
         // ── Source 3: a FRIEND viewed my profile (profile_views.sql) ────────
@@ -266,7 +274,12 @@ export default function ActivityBanner() {
       style={[
         styles.wrap,
         { top: insets.top + SPACING.xs },
-        { transform: [{ translateY: slide.interpolate({ inputRange: [-1, 0], outputRange: [-160, 0] }) }] },
+        {
+          // Fade in with the drop (and out with the retreat) — a soft arrival
+          // reads far more polished than a bare slide.
+          opacity: slide.interpolate({ inputRange: [-1, 0], outputRange: [0, 1], extrapolate: 'clamp' }),
+          transform: [{ translateY: slide.interpolate({ inputRange: [-1, 0], outputRange: [-160, 0] }) }],
+        },
       ]}
     >
       <TouchableOpacity
@@ -282,7 +295,7 @@ export default function ActivityBanner() {
       >
         <View style={styles.avatarWrap}>
           <StoryAvatar userId={banner.actorId ?? undefined} avatarUrl={banner.avatarUrl}
-                       name={banner.name} size={36} />
+                       name={banner.name} size={40} />
           <View style={[styles.iconBadge, { backgroundColor: banner.tint }]}>
             <Ionicons name={banner.icon} size={10} color="#FFFFFF" />
           </View>
@@ -291,8 +304,11 @@ export default function ActivityBanner() {
           <Text style={styles.name} numberOfLines={1}>{banner.name}</Text>
           <Text style={styles.text} numberOfLines={1}>{banner.text}</Text>
         </View>
+        {banner.thumbUrl ? (
+          <Image source={{ uri: banner.thumbUrl }} style={styles.thumb} contentFit="cover" transition={120} />
+        ) : null}
         <TouchableOpacity onPress={dismiss} hitSlop={10} style={styles.close}>
-          <Ionicons name="close" size={16} color={COLORS.textTertiary} />
+          <Ionicons name="close" size={16} color="#9A9AA0" />
         </TouchableOpacity>
       </TouchableOpacity>
     </Animated.View>
@@ -353,9 +369,26 @@ async function bannerForNotification(n: any, t: TFunc): Promise<Banner | null> {
     studio_invite:{ text: t('banner.invited'),   icon: 'mic',         tint: COLORS.primaryLight },
     song_used:    { text: t('banner.songUsed'),  icon: 'musical-notes', tint: COLORS.primaryLight },
     song_story:   { text: t('banner.songStory'), icon: 'musical-notes', tint: COLORS.primaryLight },
+    repost:       { text: t('banner.reposted'),  icon: 'repeat',        tint: COLORS.primary },
+    react:        { text: t('banner.reacted'),   icon: 'git-merge',     tint: COLORS.primaryLight },
+    sale:         { text: t('banner.sold'),      icon: 'bag-check',     tint: COLORS.success },
   };
   const c = copy[n.type];
   if (!c) return null;   // an unknown type is not worth interrupting anyone for
+
+  // The post's cover for the right-hand thumbnail, when this is about a post.
+  // A small copy (thumb_url) when the post has one, else the cover/poster bounded
+  // to ~160px so a 44pt tile never pulls a full-size upload. Best-effort: a post
+  // that's gone or archived just means a card without a thumbnail, never a
+  // dropped banner.
+  let thumbUrl: string | null = null;
+  if (n.post_id) {
+    const { data: post } = await supabase
+      .from('posts')
+      .select('type, media_url, thumbnail_url, cover_url, thumb_url, slides, archived_at')
+      .eq('id', n.post_id).maybeSingle();
+    if (post && !(post as any).archived_at) thumbUrl = feedImageUri(tileImageUri(post as any), 160) ?? null;
+  }
 
   return {
     key: `${n.type}:${n.actor_id}`,
@@ -364,32 +397,49 @@ async function bannerForNotification(n: any, t: TFunc): Promise<Banner | null> {
     name: who?.display_name || who?.username || t('notifications.someone'),
     text: c.text, icon: c.icon, tint: c.tint,
     dest: destForPushData({ type: n.type, postId: n.post_id }, null),
+    thumbUrl,
   };
 }
 
-const makeStyles = (colors: ThemePalette) => StyleSheet.create({
-  wrap: { position: 'absolute', left: SPACING.md, right: SPACING.md, zIndex: 9999 },
+// Always a white card, in BOTH light and dark mode — a clean notification pill
+// that reads identically regardless of the app theme. Colors are therefore
+// hardcoded (not theme tokens): near-black text on white, a white badge ring.
+const styles = StyleSheet.create({
+  // Near edge-to-edge: only a small gutter each side, so the card reads WIDE.
+  wrap: { position: 'absolute', left: SPACING.sm, right: SPACING.sm, zIndex: 9999 },
   card: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    backgroundColor: colors.surface, borderRadius: RADIUS.lg,
-    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.sm,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
-    // Lifted off the screen so it reads as arriving over the app rather than
-    // as part of whatever is underneath it.
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm + 4,
+    backgroundColor: '#FFFFFF', borderRadius: RADIUS.lg,
+    paddingVertical: 13, paddingHorizontal: 15,
+    // No hard outline — just a whisper-thin edge to stay crisp on a white
+    // background, and a soft, lifted shadow so the card POPS off the feed on
+    // both themes without ever looking heavy.
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.08)',
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } },
-      android: { elevation: 8 },
+      ios: { shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 24, shadowOffset: { width: 0, height: 12 } },
+      android: { elevation: 14 },
     }),
   },
-  avatarWrap: { position: 'relative', width: 36, height: 36 },
+  avatarWrap: { position: 'relative', width: 40, height: 40 },
   iconBadge: {
     position: 'absolute', bottom: -2, right: -2,
     width: 16, height: 16, borderRadius: 8,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: colors.surface,
+    borderWidth: 1.5, borderColor: '#FFFFFF',
+    // Lifts the emblem off the avatar like a crisp sticker.
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 2.5, shadowOffset: { width: 0, height: 1 } },
+      android: { elevation: 3 },
+    }),
   },
   body: { flex: 1 },
-  name: { color: colors.text, fontWeight: '700', fontSize: 13 },
-  text: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
+  name: { color: '#0B0B0F', fontWeight: '800', fontSize: 15, letterSpacing: -0.2, lineHeight: 18 },
+  text: { color: '#6B6B70', fontSize: 13, fontWeight: '500', letterSpacing: -0.1, marginTop: 1, lineHeight: 16 },
+  // The post cover on the right (TikTok-style). A neutral base while it loads and
+  // a hairline edge so the cover reads crisp against the white card.
+  thumb: {
+    width: 44, height: 44, borderRadius: 12, backgroundColor: '#ECECEE',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.08)',
+  },
   close: { padding: SPACING.xs },
 });

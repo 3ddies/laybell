@@ -13,6 +13,8 @@ const ACTIONS: Record<string, (name: string) => string> = {
   tag:        name => `${name} tagged you in a post.`,
   song_used:  name => `${name} used your audio in a post.`,
   song_story: name => `${name} used your audio in their story.`,
+  repost:     name => `${name} reposted your post.`,
+  react:      name => `${name} reacted to your post.`,
   // A shop buy-offer. It names the sender and stops there, ON PURPOSE: the
   // amount someone is willing to pay for a beat is between the two of them, and
   // a lock screen is read by whoever is holding the phone. The figure lives on

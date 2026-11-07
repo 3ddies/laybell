@@ -75,7 +75,10 @@ export function destForPushData(data: any, selfId?: string | null): Dest | null 
       : { href: '/live', tab: false };
   }
 
-  // like / comment / mention / tag / song_used — all carry the post.
+  // A shop sale → the wallet, where the earning lands. No post is involved.
+  if (type === 'sale') return { href: '/wallet', tab: false };
+
+  // like / comment / repost / react / mention / tag / song_used — all carry the post.
   if (data?.postId) return { href: `/post/${data.postId}`, tab: false };
 
   // follow / friend / message / offer, and anything unrecognised.
