@@ -52,6 +52,7 @@ import { UploadQueueProvider, useUploadQueue } from '../contexts/UploadQueueCont
 import CaptionCaptureHost from '../components/CaptionCaptureHost';
 import VideoSavedToast from '../components/VideoSavedToast';
 import { CastProvider } from '../contexts/CastContext';
+import { StickerCaptureProvider } from '../contexts/StickerCaptureContext';
 import { StoryUploadProvider, useStoryUpload } from '../contexts/StoryUploadContext';
 import OfflineBanner from '../components/OfflineBanner';
 import { useListenMode } from '../contexts/ListenModeContext';
@@ -846,12 +847,14 @@ function RootLayout() {
                                     <UploadQueueProvider>
                                       <StoryUploadProvider>
                                         <CastProvider>
+                                          <StickerCaptureProvider>
                                           <AppContent />
                                           {/* Sibling of the app content (not a
                                               wrapper) so it overlays every screen
                                               without affecting any layout. */}
                                           <OfflineBanner />
                                           <PremiumGateHost />
+                                          </StickerCaptureProvider>
                                         </CastProvider>
                                       </StoryUploadProvider>
                                     </UploadQueueProvider>

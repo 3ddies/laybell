@@ -19,6 +19,8 @@ import StickerLayer, {
   type Sticker, type CaptionStyle, type StickerBg, type StickerFont,
 } from './StickerLayer';
 import { LinkStickerContent } from './LinkSticker';
+import SavedStickerPicker from './SavedStickerPicker';
+import { stickerLiftAvailable, getStickerAspect } from '../lib/stickers';
 import { PollStickerContent } from './PollSticker';
 import { MusicStickerContent } from './MusicSticker';
 import { CommunityStickerContent } from './CommunitySticker';
@@ -170,6 +172,7 @@ export default function StoryEditor({
     isPost ? [{ id: 'post', kind: 'post', text: '', x: 0.5, y: 0.5, scale: 1, rotation: 0 }] : [],
   );
   const [stickerSheet, setStickerSheet] = useState(false);
+  const [savedStickersOpen, setSavedStickersOpen] = useState(false);
   const [linkDraft, setLinkDraft] = useState<{ id: string | null; url: string; title: string } | null>(null);
   const [pollDraft, setPollDraft] = useState<{ id: string | null; pollId: string; question: string; options: string[] } | null>(null);
   const [strokes, setStrokes] = useState<DrawStroke[]>([]);
@@ -560,6 +563,16 @@ export default function StoryEditor({
   }, []);
   const openPollDraft = useCallback(() => {
     setPollDraft({ id: null, pollId: `pl_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, question: '', options: ['', ''] });
+  }, []);
+  // Drop a saved cutout sticker onto the story (reuses the 'photo' sticker kind — it bakes
+  // and uploads exactly like a library photo; the cutout's transparency just shows through).
+  const addCutoutSticker = useCallback(async (uri: string) => {
+    const ratio = await getStickerAspect(uri).catch(() => 1);
+    const long = 190;
+    const w = ratio >= 1 ? long : Math.round(long * ratio);
+    const h = ratio >= 1 ? Math.round(long / ratio) : long;
+    const id = `st${stickerIdRef.current++}`;
+    setStickers((prev) => [...prev, { id, kind: 'photo', uri, w, h, text: '', x: 0.5, y: 0.5, scale: 1, rotation: 0 }]);
   }, []);
   const commitPoll = useCallback(() => {
     if (!pollDraft) return;
@@ -1038,6 +1051,12 @@ export default function StoryEditor({
                     <Text style={styles.trayPillText}>{t(it.label)}</Text>
                   </TouchableOpacity>
                 ))}
+              {stickerLiftAvailable() && (
+                <TouchableOpacity style={styles.trayPill} activeOpacity={0.85} onPress={() => { setStickerSheet(false); setSavedStickersOpen(true); }}>
+                  <Ionicons name="color-wand" size={18} color="#EAB308" />
+                  <Text style={styles.trayPillText}>Cutouts</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.trayPreview} activeOpacity={0.85} onPress={() => { setStickerSheet(false); addSliderSticker(t('storyCamera.sliderDefaultPrompt'), STICKER_EMOJIS[0]); }}>
                 <EmojiSliderContent compact prompt={t('storyCamera.sliderDefaultPrompt')} emoji={STICKER_EMOJIS[0]} />
               </TouchableOpacity>
@@ -1048,6 +1067,9 @@ export default function StoryEditor({
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      {/* Saved cutout stickers (press-and-hold a photo in the feed makes them). */}
+      <SavedStickerPicker visible={savedStickersOpen} onClose={() => setSavedStickersOpen(false)} onPick={addCutoutSticker} />
 
       {/* Community picker. */}
       <Modal visible={communityPickerOpen} transparent animationType="slide" onRequestClose={() => setCommunityPickerOpen(false)}>

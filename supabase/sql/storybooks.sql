@@ -4,8 +4,12 @@
 --
 --   npx supabase db query --remote --yes -f supabase/sql/storybooks.sql
 --
--- v1 is MANUAL books built from stories you've already posted. The kind/period
--- columns are seeded now for a later AUTO monthly/yearly "yearbook" (kind='yearbook').
+-- Books are either MANUAL (built from stories you've posted) or AUTO RECAPS the app
+-- compiles from your stories: a "<Month Year> Recap" per completed month and a
+-- "<Year> Recap" per completed year — both kind='yearbook', keyed by `period`
+-- ('YYYY-MM' or 'YYYY'). The unique index on (user_id, period) keeps recaps idempotent
+-- (a re-run or a second device updates in place, never duplicates). Compiled client-side
+-- on the owner's shelf (lib/storybooks.ensureAutoRecaps); no server cron required.
 --
 -- MEDIA: items SNAPSHOT the story's media_url from the PUBLIC 'stories' bucket
 -- (getPublicUrl). That URL keeps resolving after the source story expires or is
@@ -24,8 +28,11 @@ create table if not exists public.storybooks (
   period      text,                               -- yearbooks only: 'YYYY-MM' or 'YYYY'
   position    integer not null default 0,         -- order on the profile shelf
   created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
+  updated_at  timestamptz not null default now(),
+  archived_at timestamptz                          -- soft-hidden from the shelf (and forced private); NULL = active
 );
+-- For databases created before archiving existed.
+alter table public.storybooks add column if not exists archived_at timestamptz;
 create index if not exists storybooks_user_idx on public.storybooks(user_id, position);
 -- One auto-yearbook per (user, period), so recompiling updates instead of duplicating.
 create unique index if not exists storybooks_yearbook_uq

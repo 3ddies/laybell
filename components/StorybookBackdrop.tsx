@@ -25,7 +25,12 @@ const FADE_MS = 900;
 const BRAND = ['#2A1206', '#121016', '#0E0E12'] as const;
 
 export default function StorybookBackdrop({ items }: { items: BackdropItem[] }) {
-  const its = items.slice(0, 3);
+  // Only usable stories (a real media URL) count toward the slideshow, so a missing or
+  // blocked story can never leave a blank layer behind the sheet.
+  const its = (items ?? []).filter((i) => i && typeof i.url === 'string' && i.url.length > 0).slice(0, 3);
+  // Three distinct stories are needed for the cross-fade to read as a slideshow. With
+  // fewer — or when the media simply can't load — we DOWNGRADE to the brand gradient +
+  // scrim below (always rendered), which keeps the sheet perfectly legible on its own.
   const enough = its.length >= 3;
   const [index, setIndex] = useState(0);
 
@@ -72,8 +77,11 @@ export default function StorybookBackdrop({ items }: { items: BackdropItem[] }) 
           )}
         </Animated.View>
       ))}
-      {/* Blur the composite, then a dark scrim (stronger top & bottom) for legibility */}
-      <BlurView intensity={48} tint="dark" style={StyleSheet.absoluteFill} />
+      {/* Blur the composite only when there's real imagery to blur; the gradient-only
+          fallback skips it (nothing to blur, and it avoids any BlurView cost/quirk there).
+          Even if BlurView renders nothing on a given device, the scrim below still carries
+          legibility, so the sheet is never unreadable. */}
+      {enough ? <BlurView intensity={48} tint="dark" style={StyleSheet.absoluteFill} /> : null}
       <LinearGradient
         colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.72)'] as const}
         locations={[0, 0.45, 1] as const}

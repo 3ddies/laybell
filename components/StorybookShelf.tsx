@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, Pressable, Alert, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useThemedStyles } from '../contexts/ThemeContext';
 import { SPACING, type ThemePalette } from '../constants/theme';
-import { fetchStorybooks, fetchStorybookFull, updateStorybook, deleteStorybook, type Storybook } from '../lib/storybooks';
+import { fetchStorybooks, fetchStorybookFull, updateStorybook, deleteStorybook, archiveStorybook, ensureAutoRecaps, type Storybook } from '../lib/storybooks';
 import type { SourceRect } from '../lib/stories';
 
 /**
@@ -37,6 +37,18 @@ export default function StorybookShelf({ userId, isOwn }: { userId: string; isOw
 
   // Refetch on focus so a book created/edited elsewhere shows up on return.
   useFocusEffect(load);
+
+  // Compile the owner's auto recaps (monthly "<Month Year> Recap" + yearly "<Year> Recap")
+  // once per session, then refresh the shelf so any new ones appear. Best-effort — it
+  // self-degrades to nothing if the tables aren't set up or there's nothing to compile.
+  useEffect(() => {
+    if (!isOwn || !userId) return;
+    let alive = true;
+    ensureAutoRecaps(userId).then((created) => {
+      if (created && alive) fetchStorybooks(userId).then((b) => { if (alive) setBooks(b); });
+    });
+    return () => { alive = false; };
+  }, [isOwn, userId]);
 
   const openMenu = useCallback((b: Storybook) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -70,7 +82,7 @@ export default function StorybookShelf({ userId, isOwn }: { userId: string; isOw
       ]);
     }
     setOpeningId(null);
-    router.push({ pathname: '/storybook/[id]', params: { id: b.id, ...(rect ? { src: JSON.stringify(rect) } : {}) } });
+    router.push({ pathname: '/storybook/[id]', params: { id: b.id, ...(rect ? { src: JSON.stringify(rect) } : {}), books: JSON.stringify(books.map((x) => x.id)) } });
   }, [openingId, router]);
 
   const edit = useCallback((b: Storybook) => {
@@ -86,6 +98,15 @@ export default function StorybookShelf({ userId, isOwn }: { userId: string; isOw
     const ok = await updateStorybook(b.id, { is_public: next });
     if (!ok) setBooks((prev) => prev.map((x) => (x.id === b.id ? { ...x, is_public: b.is_public } : x)));
   }, []);
+
+  // Archive: hide it from the shelf and force it private (the row + media stay, so it can be
+  // restored later). Optimistically removes it; reverts if the write fails.
+  const archiveBook = useCallback(async (b: Storybook) => {
+    setMenu(null);
+    setBooks((prev) => prev.filter((x) => x.id !== b.id));
+    const ok = await archiveStorybook(b.id);
+    if (!ok) { load(); Alert.alert("Couldn't archive", 'Please try again.'); }
+  }, [load]);
 
   const confirmDelete = useCallback((b: Storybook) => {
     setMenu(null);
@@ -179,7 +200,7 @@ export default function StorybookShelf({ userId, isOwn }: { userId: string; isOw
 
                 <TouchableOpacity style={styles.action} onPress={() => edit(menu)}>
                   <Ionicons name="create-outline" size={22} color={styles.actionLabel.color} />
-                  <Text style={styles.actionLabel}>Edit storybook</Text>
+                  <Text style={styles.actionLabel}>Edit</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.action} onPress={() => togglePublic(menu)}>
@@ -187,9 +208,14 @@ export default function StorybookShelf({ userId, isOwn }: { userId: string; isOw
                   <Text style={styles.actionLabel}>{menu.is_public ? 'Make private' : 'Make public'}</Text>
                 </TouchableOpacity>
 
+                <TouchableOpacity style={styles.action} onPress={() => archiveBook(menu)}>
+                  <Ionicons name="archive-outline" size={22} color={styles.actionLabel.color} />
+                  <Text style={styles.actionLabel}>Archive</Text>
+                </TouchableOpacity>
+
                 <TouchableOpacity style={styles.action} onPress={() => confirmDelete(menu)}>
                   <Ionicons name="trash-outline" size={22} color={DANGER} />
-                  <Text style={[styles.actionLabel, { color: DANGER }]}>Delete storybook</Text>
+                  <Text style={[styles.actionLabel, { color: DANGER }]}>Delete</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.cancel} onPress={() => setMenu(null)}>

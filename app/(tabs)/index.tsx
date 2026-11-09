@@ -161,6 +161,7 @@ import { supabase } from '../../lib/supabase';
 import { bumpBadge } from '../../lib/badges';
 import { SPACING, RADIUS, SHADOWS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useStickerCapture } from '../../contexts/StickerCaptureContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { timeAgo } from '../../lib/timeAgo';
 import { useNowPlaying, useVideoMuted, useAudioControls, type Track } from '../../contexts/AudioContext';
@@ -382,6 +383,9 @@ const PostCard = memo(function PostCard({
   // know it was part of a zoom and not an intent to open the post.
   const [zooming, setZooming] = useState(false);
   const gestureSincePress = useRef(false);
+  // Press-and-hold a photo to lift its subject into a sticker (Threads-style). Only shown
+  // when the build + device support the on-device cutout (modules/laybell-subject-lift).
+  const { capture: captureSticker, available: stickerAvail } = useStickerCapture();
   // Recycled into a different post mid-pinch: clear the lift, and release the
   // feed's scroll lock, or the list would stay frozen with no gesture running.
   // Where this card's video has reached, and how long it runs, in ms. A REF, not
@@ -484,6 +488,14 @@ const PostCard = memo(function PostCard({
             if (gestureSincePress.current) return;
             onMediaTap(() => imgRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h })));
           }}
+          // Press-and-hold the photo → lift its subject into a saved sticker. Uses the
+          // already-cached display image, so there's no extra download.
+          onLongPress={stickerAvail && item.media_url ? () => {
+            if (gestureSincePress.current) return;
+            const u = feedImageUri(item.media_url!);
+            if (u) captureSticker(u);
+          } : undefined}
+          delayLongPress={350}
           // Lifted over its neighbours only WHILE pinching. FlashList cells are
           // siblings, so at rest z-order is paint order and a zoomed image would
           // slide under the next post. Applied transiently because a permanently

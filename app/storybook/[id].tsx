@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
-import { fetchStorybookFull, getCachedStorybookFull, type StorybookFull, type StorybookItem } from '../../lib/storybooks';
+import { fetchStorybookFull, fetchStorybooks, getCachedStorybookFull, type StorybookFull, type StorybookItem } from '../../lib/storybooks';
 import type { SourceRect } from '../../lib/stories';
 import AppVideo from '../../components/AppVideo';
 
@@ -29,7 +29,7 @@ const DISMISS_DY = 140; // pull down past this → dismiss (matches the story vi
 type Segment = { item: StorybookItem; chapterIndex: number; chapterTitle: string | null; firstOfChapter: boolean };
 
 export default function StorybookViewer() {
-  const { id, src } = useLocalSearchParams<{ id: string; src?: string }>();
+  const { id, src, books } = useLocalSearchParams<{ id: string; src?: string; books?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -43,6 +43,15 @@ export default function StorybookViewer() {
   // The shelf pre-loads the book, so it's usually already cached here — open straight
   // into it (no in-viewer data spinner, no black flash).
   const cached = getCachedStorybookFull(String(id));
+  // The book currently open. It switches to the next/previous book at the ends, so you walk
+  // a profile's whole shelf like going from one story to the next.
+  const [curId, setCurId] = useState(String(id));
+  // The shelf's book order (ids). Seeded from the `books` param for instant next/prev, then
+  // refreshed from the owner's live list (RLS-scoped exactly like the shelf).
+  const [seq, setSeq] = useState<string[]>(() => {
+    try { const p = books ? JSON.parse(books) : null; if (Array.isArray(p) && p.length) return p.map(String); } catch {}
+    return [String(id)];
+  });
   const [book, setBook] = useState<StorybookFull | null>(cached);
   const [owner, setOwner] = useState<{ username: string; display_name: string; avatar_url: string | null } | null>(null);
   const [loading, setLoading] = useState(!cached);
@@ -83,17 +92,22 @@ export default function StorybookViewer() {
     }).start();
   }, [expand, srcRect]);
 
+  // Who's viewing — for isOwn; fetched once, not per book.
+  useEffect(() => { supabase.auth.getUser().then(({ data }) => setMe(data.user?.id ?? null)); }, []);
+
+  // Load the current book (and reset playback) whenever it changes — the initial open, or a
+  // switch to the next/previous book.
   useEffect(() => {
     let alive = true;
+    setIndex(0); setFirstReady(false); setMediaFailed(false); setShowVeil(false); setPaused(false);
+    anim.setValue(0); progressRef.current = 0;
+    const cachedNow = getCachedStorybookFull(curId);
+    if (cachedNow) { setBook(cachedNow); setLoading(false); } else { setBook(null); setLoading(true); }
     (async () => {
-      const [{ data: { user } }, full] = await Promise.all([
-        supabase.auth.getUser(),
-        fetchStorybookFull(String(id)),
-      ]);
+      const full = await fetchStorybookFull(curId);
       if (!alive) return;
-      setMe(user?.id ?? null);
       if (full) setBook(full); // a refetch that returns null (blip) keeps the cached book
-      const b2 = full ?? getCachedStorybookFull(String(id));
+      const b2 = full ?? getCachedStorybookFull(curId);
       if (b2) {
         const { data: prof } = await supabase
           .from('profiles').select('username, display_name, avatar_url').eq('id', b2.user_id).maybeSingle();
@@ -102,7 +116,33 @@ export default function StorybookViewer() {
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [id]);
+  }, [curId, anim]);
+
+  // The owner's books in shelf order, so the end of one book advances to the next (story-to-
+  // story). RLS scopes it like the shelf: a visitor gets public books, the owner gets all.
+  useEffect(() => {
+    const uid = book?.user_id;
+    if (!uid) return;
+    let alive = true;
+    fetchStorybooks(uid).then((bs) => { if (alive && bs.length) setSeq(bs.map((b) => b.id)); });
+    return () => { alive = false; };
+  }, [book?.user_id]);
+
+  // Warm the NEXT book (its data + first frame) so stepping into it is instant, not grey.
+  useEffect(() => {
+    const i = seq.indexOf(curId);
+    const nextId = i >= 0 && i < seq.length - 1 ? seq[i + 1] : null;
+    if (!nextId) return;
+    let alive = true;
+    (async () => {
+      const full = await fetchStorybookFull(nextId);
+      if (!alive || !full) return;
+      const seg = full.chapters.flatMap((c) => c.items)[0];
+      const url = seg ? (seg.media_type === 'video' ? seg.thumbnail_url : seg.media_url) : null;
+      if (url) Image.prefetch(url).catch(() => {});
+    })();
+    return () => { alive = false; };
+  }, [curId, seq]);
 
   // Flatten chapters → a single ordered list of segments, tagging chapter boundaries.
   const segments = useMemo<Segment[]>(() => {
@@ -166,14 +206,20 @@ export default function StorybookViewer() {
   }, [srcRect, router, expand, panY]);
 
   const goNext = useCallback(() => {
-    if (index >= segments.length - 1) { close(); return; }  // past the last → close
-    setIndex(index + 1);
-  }, [index, segments.length, close]);
+    if (index < segments.length - 1) { setIndex(index + 1); return; }
+    // End of this book → step to the next one, like going from story to story.
+    const i = seq.indexOf(curId);
+    if (i >= 0 && i < seq.length - 1) { anim.setValue(0); setCurId(seq[i + 1]); return; }
+    close(); // last book → close
+  }, [index, segments.length, seq, curId, anim, close]);
 
   const goPrev = useCallback(() => {
     anim.setValue(0);
-    setIndex((i) => Math.max(0, i - 1));
-  }, [anim]);
+    if (index > 0) { setIndex((p) => Math.max(0, p - 1)); return; }
+    // At the first item → step back to the previous book (its first item).
+    const i = seq.indexOf(curId);
+    if (i > 0) setCurId(seq[i - 1]);
+  }, [index, seq, curId, anim]);
 
   // Pull-DOWN to dismiss, like a regular story. Horizontal / upward drags are IGNORED — a
   // story doesn't exit on a side swipe (the native back-gesture is off for this route too).

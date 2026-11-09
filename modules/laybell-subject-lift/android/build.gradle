@@ -1,0 +1,24 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+// Laybell's local subject lifter (see ../index.ts). The Expo module plugin supplies
+// Kotlin, expo-modules-core and the SDK levels; namespace and versionName are required
+// by its publishing step.
+group = 'expo.modules.laybellsubjectlift'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.laybellsubjectlift"
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // ML Kit on-device Subject Segmentation — free, no cloud. The model is fetched once
+  // through Google Play Services on first use.
+  implementation 'com.google.mlkit:segmentation-subject:16.0.0-beta1'
+}
