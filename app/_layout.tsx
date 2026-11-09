@@ -435,6 +435,20 @@ function AppContent() {
             contentStyle: { backgroundColor: 'transparent' },
           }}
         />
+        {/* Storybook viewer (profile highlights): a story-style player. Transparent modal
+            so the profile stays live behind it for the swipe-down-to-dismiss, and the native
+            back-gesture is OFF — the viewer owns a pull-DOWN dismiss, like a regular story,
+            and must NOT exit on a side swipe. */}
+        <Stack.Screen
+          name="storybook/[id]"
+          options={{
+            presentation: 'transparentModal',
+            animation: 'none',
+            gestureEnabled: false,
+            fullScreenGestureEnabled: false,
+            contentStyle: { backgroundColor: 'transparent' },
+          }}
+        />
         {/* Remix / Sequence compose (a camera flow): a normal opaque push, but
             the back-swipe is OFF so a stray drag can't leave mid-recording. */}
         <Stack.Screen name="remix/[id]" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />

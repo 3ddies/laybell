@@ -30,6 +30,7 @@ import { type FeaturedItem, resolveFeatured } from '../../lib/musicFeatured';
 import FeaturedRotator from '../../components/FeaturedRotator';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import StoryAvatar from '../../components/StoryAvatar';
+import StorybookShelf from '../../components/StorybookShelf';
 import { openAvatarViewer } from '../../lib/imageViewer';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import ProfileQRModal from '../../components/ProfileQRModal';
@@ -996,6 +997,9 @@ export default function PublicProfileScreen() {
           </TouchableOpacity>
         ) : null}
       </View>
+
+      {/* Storybooks — their public highlight shelf, just under the bio */}
+      {id ? <StorybookShelf userId={String(id)} isOwn={isOwnProfile} /> : null}
 
       {/* Shop (only when this user has an open shop) — above Follow / Message */}
       {!isOwnProfile && hasShop && (
