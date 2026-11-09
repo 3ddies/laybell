@@ -5,6 +5,7 @@ import {
 // expo-image: decodes at displayed size + memory-caches, so the large album art
 // paints instantly when the sheet re-opens instead of re-decoding from disk.
 import { Image as ExpoImage } from 'expo-image';
+import { useStickerHold } from '../lib/useStickerHold';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -512,6 +513,8 @@ export default function NowPlaying() {
   // Use the retained track so the exit animation can keep painting after the
   // queue clears currentTrack (song ended).
   const track = currentTrack ?? lastTrackRef.current;
+  // Press-and-hold the big album art to lift its subject into a sticker (Threads-style).
+  const artHold = useStickerHold(track?.cover);
   if (!render || !track) return null;
   const pid = track.id;
   // Render-phase reset (repo convention, same as the FlashList recycling
@@ -769,7 +772,16 @@ export default function NowPlaying() {
                     {track.cover ? (
                       // Tapping the art opens the full-bleed listening view. Only
                       // when there IS art — the placeholder has nothing to pan.
-                      <TouchableOpacity activeOpacity={0.9} onPress={() => setImmersive(true)} accessibilityRole="button" accessibilityLabel={t('a11y.play')}>
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => setImmersive(true)}
+                        onLayout={artHold.onLayout}
+                        onPressIn={artHold.onPressIn}
+                        onLongPress={artHold.enabled ? artHold.onLongPress : undefined}
+                        delayLongPress={artHold.delayLongPress}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('a11y.play')}
+                      >
                         <ExpoImage source={{ uri: track.cover }} style={styles.art} contentFit="cover" cachePolicy="memory-disk" transition={250} />
                       </TouchableOpacity>
                     ) : (
