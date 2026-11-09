@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import { liftPreview, saveLiftedSticker, stickerLiftAvailable } from '../lib/stickers';
+import type { LiftPoint } from '../modules/laybell-subject-lift';
 
 // Press-and-hold any image → lift its subject into a sticker (Threads-style). This host is
 // mounted once app-wide; `useStickerCapture().capture(uri)` opens it over whatever's on
@@ -13,7 +14,7 @@ import { liftPreview, saveLiftedSticker, stickerLiftAvailable } from '../lib/sti
 
 type Phase = 'lifting' | 'preview' | 'none' | 'saved';
 
-type Ctx = { capture: (sourceUri: string) => void; available: boolean };
+type Ctx = { capture: (sourceUri: string, point?: LiftPoint) => void; available: boolean };
 const StickerCaptureCtx = createContext<Ctx>({ capture: () => {}, available: false });
 export const useStickerCapture = () => useContext(StickerCaptureCtx);
 
@@ -34,14 +35,14 @@ export function StickerCaptureProvider({ children }: { children: React.ReactNode
     setPreview(null);
   }, []);
 
-  const capture = useCallback((sourceUri: string) => {
+  const capture = useCallback((sourceUri: string, point?: LiftPoint) => {
     if (!sourceUri || !stickerLiftAvailable()) return;
     const req = ++reqRef.current;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setPreview(null);
     setPhase('lifting');
     setOpen(true);
-    liftPreview(sourceUri).then((out) => {
+    liftPreview(sourceUri, point).then((out) => {
       if (req !== reqRef.current) { discardTemp(out); return; } // superseded by a newer press
       if (out) { setPreview(out); setPhase('preview'); }
       else { setPhase('none'); setTimeout(() => { if (req === reqRef.current) close(); }, 1300); }

@@ -383,6 +383,9 @@ const PostCard = memo(function PostCard({
   // know it was part of a zoom and not an intent to open the post.
   const [zooming, setZooming] = useState(false);
   const gestureSincePress = useRef(false);
+  // Normalized (0..1, top-left) touch point of the last press on the photo, so a
+  // press-and-hold lifts the subject UNDER the finger, not the whole foreground.
+  const pressPt = useRef({ x: 0.5, y: 0.5 });
   // Press-and-hold a photo to lift its subject into a sticker (Threads-style). Only shown
   // when the build + device support the on-device cutout (modules/laybell-subject-lift).
   const { capture: captureSticker, available: stickerAvail } = useStickerCapture();
@@ -483,7 +486,16 @@ const PostCard = memo(function PostCard({
           activeOpacity={1}
           // Cleared on every fresh press so a pinch can mark itself and the tap
           // that ends it knows not to open the post.
-          onPressIn={() => { gestureSincePress.current = false; }}
+          onPressIn={(e) => {
+            gestureSincePress.current = false;
+            const { locationX, locationY } = e.nativeEvent;
+            const asp = aspectToNumber(item.aspect_ratio, 1) || 1;
+            const h = SCREEN_W / asp;
+            pressPt.current = {
+              x: Math.min(1, Math.max(0, locationX / SCREEN_W)),
+              y: h > 0 ? Math.min(1, Math.max(0, locationY / h)) : 0.5,
+            };
+          }}
           onPress={() => {
             if (gestureSincePress.current) return;
             onMediaTap(() => imgRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h })));
@@ -493,7 +505,8 @@ const PostCard = memo(function PostCard({
           onLongPress={stickerAvail && item.media_url ? () => {
             if (gestureSincePress.current) return;
             const u = feedImageUri(item.media_url!);
-            if (u) captureSticker(u);
+            console.log('[STK] feed hold; pt=', pressPt.current, 'uri=', !!u);
+            if (u) captureSticker(u, pressPt.current);
           } : undefined}
           delayLongPress={350}
           // Lifted over its neighbours only WHILE pinching. FlashList cells are

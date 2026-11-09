@@ -38,6 +38,24 @@ private func cgOrientation(_ o: UIImage.Orientation) -> CGImagePropertyOrientati
   }
 }
 
+// Which instance sits under a normalized (top-left origin, 0...1) point, or nil for
+// background. Vision's instanceMask is a one-component buffer whose pixel value is the
+// instance index (0 = background), in the same oriented space as the cutout.
+@available(iOS 17.0, *)
+private func instanceIndex(at nx: Double, _ ny: Double, in observation: VNInstanceMaskObservation) -> Int? {
+  let mask = observation.instanceMask
+  guard CVPixelBufferLockBaseAddress(mask, .readOnly) == kCVReturnSuccess else { return nil }
+  defer { CVPixelBufferUnlockBaseAddress(mask, .readOnly) }
+  let w = CVPixelBufferGetWidth(mask)
+  let h = CVPixelBufferGetHeight(mask)
+  guard w > 0, h > 0, let base = CVPixelBufferGetBaseAddress(mask) else { return nil }
+  let bpr = CVPixelBufferGetBytesPerRow(mask)
+  let px = min(max(Int(nx * Double(w)), 0), w - 1)
+  let py = min(max(Int(ny * Double(h)), 0), h - 1)
+  let value = base.load(fromByteOffset: py * bpr + px, as: UInt8.self)
+  return value > 0 ? Int(value) : nil
+}
+
 public class LaybellSubjectLiftModule: Module {
   public func definition() -> ModuleDefinition {
     Name("LaybellSubjectLift")
@@ -49,7 +67,7 @@ public class LaybellSubjectLiftModule: Module {
 
     // Heavy work off the JS thread. Resolves with a file:// PNG (transparent, cropped to
     // the subject), or nil when there's no subject or the OS is too old.
-    AsyncFunction("liftSubject") { (uri: String, outputUri: String) -> String? in
+    AsyncFunction("liftSubject") { (uri: String, outputUri: String, pointX: Double, pointY: Double) -> String? in
       guard #available(iOS 17.0, *) else { return nil }
 
       guard let data = try? Data(contentsOf: fileURL(uri)),
@@ -70,10 +88,21 @@ public class LaybellSubjectLiftModule: Module {
         return nil // no subject to cut out
       }
 
+      // With a touch point on a subject, lift JUST that instance (different areas →
+      // different stickers, like iOS's own subject lift). A point on the background —
+      // or none given (pointX < 0) — falls back to every instance so the gesture
+      // still yields a cutout.
+      var instances = result.allInstances
+      if pointX >= 0, pointY >= 0,
+         let picked = instanceIndex(at: pointX, pointY, in: result),
+         result.allInstances.contains(picked) {
+        instances = IndexSet(integer: picked)
+      }
+
       let pixelBuffer: CVPixelBuffer
       do {
         pixelBuffer = try result.generateMaskedImage(
-          ofInstances: result.allInstances,
+          ofInstances: instances,
           from: handler,
           croppedToInstancesExtent: true
         )

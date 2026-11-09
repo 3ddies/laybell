@@ -10,26 +10,35 @@ import { NativeModule, requireOptionalNativeModule } from 'expo';
 // imports this. Callers check subjectLiftAvailable() and simply don't offer it otherwise.
 // No OTA on this project — it only appears after a rebuild.
 
+/** A normalized touch point (0..1, top-left origin) marking which subject to lift. */
+export type LiftPoint = { x: number; y: number };
+
 declare class LaybellSubjectLiftModule extends NativeModule {
   /** True when this device/OS can actually lift subjects (iOS 17+; Android via ML Kit). */
   isSupported(): boolean;
   /**
-   * Cut the main subject(s) out of the image at `uri` into a transparent PNG written to
-   * `outputUri`. Resolves with the PNG's file:// uri, or null when nothing could be cut
-   * out (no clear subject) or the OS is too old.
+   * Cut a subject out of the image at `uri` into a transparent PNG written to `outputUri`.
+   * `pointX`/`pointY` are a normalized (0..1, top-left) touch point: the subject under it
+   * is lifted, so different areas give different stickers. Pass -1/-1 to lift the whole
+   * foreground. Resolves with the PNG's file:// uri, or null when nothing could be cut out.
    */
-  liftSubject(uri: string, outputUri: string): Promise<string | null>;
+  liftSubject(uri: string, outputUri: string, pointX: number, pointY: number): Promise<string | null>;
 }
 
 // null on every binary built before the module existed.
 const native = requireOptionalNativeModule<LaybellSubjectLiftModule>('LaybellSubjectLift');
+// TEMP DEBUG (sticker branch only — strip before shipping): confirm the native module linked.
+console.log('[STK] module import; native =', !!native);
 
 /** Whether this build AND device can lift subjects. False → never offer "make a sticker". */
 export function subjectLiftAvailable(): boolean {
-  if (!native) return false;
+  if (!native) { console.log('[STK] avail=false — native is null (old build or not registered)'); return false; }
   try {
-    return typeof native.isSupported === 'function' && native.isSupported() === true;
-  } catch {
+    const ok = typeof native.isSupported === 'function' && native.isSupported() === true;
+    console.log('[STK] avail=', ok, '— native present, isSupported() =', ok);
+    return ok;
+  } catch (e) {
+    console.log('[STK] avail=false — isSupported() threw:', String(e));
     return false;
   }
 }
@@ -39,10 +48,12 @@ export function subjectLiftAvailable(): boolean {
  * written file's uri, or null when there's no subject to cut out, the source can't be read,
  * or the build/device doesn't support it. Never throws — callers fall back gracefully.
  */
-export async function liftSubject(uri: string, outputUri: string): Promise<string | null> {
+export async function liftSubject(uri: string, outputUri: string, point?: LiftPoint): Promise<string | null> {
   if (!native) return null;
+  const px = point && point.x >= 0 && point.x <= 1 ? point.x : -1;
+  const py = point && point.y >= 0 && point.y <= 1 ? point.y : -1;
   try {
-    const out = await native.liftSubject(uri, outputUri);
+    const out = await native.liftSubject(uri, outputUri, px, py);
     return out ?? null;
   } catch {
     return null;

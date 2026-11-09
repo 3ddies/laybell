@@ -27,7 +27,7 @@ class LaybellSubjectLiftModule : Module() {
     // call just fails and the JS side treats it as "no cutout".
     Function("isSupported") { true }
 
-    AsyncFunction("liftSubject") { uri: String, outputUri: String, promise: Promise ->
+    AsyncFunction("liftSubject") { uri: String, outputUri: String, pointX: Double, pointY: Double, promise: Promise ->
       val ctx = appContext.reactContext
       if (ctx == null) {
         promise.reject(CodedException("no application context"))
@@ -39,21 +39,45 @@ class LaybellSubjectLiftModule : Module() {
         return@AsyncFunction
       }
       try {
+        // Multiple subjects (each with its own bitmap + bounding box) so a touch point
+        // can pick ONE, plus the foreground composite as a fallback when no point lands
+        // on a subject.
         val options = SubjectSegmenterOptions.Builder()
           .enableForegroundBitmap()
+          .enableMultipleSubjects(
+            SubjectSegmenterOptions.SubjectResultOptions.Builder()
+              .enableSubjectBitmap()
+              .build()
+          )
           .build()
         val segmenter = SubjectSegmentation.getClient(options)
         val input = InputImage.fromBitmap(src, 0)
         segmenter.process(input)
           .addOnSuccessListener { result ->
-            val fg = result.foregroundBitmap
-            if (fg == null) {
+            // With a touch point on a subject, cut out JUST that subject (different areas
+            // → different stickers, like iOS's own subject lift). When several boxes
+            // overlap the point, take the smallest (most specific). A point on the
+            // background — or none given (pointX < 0) — falls back to the whole foreground.
+            val subjects = result.subjects
+            var picked: Bitmap? = null
+            if (pointX >= 0 && pointY >= 0 && subjects.isNotEmpty()) {
+              val tx = (pointX * src.width).toInt()
+              val ty = (pointY * src.height).toInt()
+              picked = subjects
+                .filter { tx >= it.startX && tx < it.startX + it.width && ty >= it.startY && ty < it.startY + it.height }
+                .minByOrNull { it.width.toLong() * it.height.toLong() }
+                ?.bitmap
+            }
+            val outBmp = picked
+              ?: (if (subjects.size == 1) subjects[0].bitmap else result.foregroundBitmap)
+            if (outBmp == null) {
+              segmenter.close()
               promise.resolve(null) // no subject
               return@addOnSuccessListener
             }
             try {
               val out = fileFromUri(outputUri)
-              FileOutputStream(out).use { fg.compress(Bitmap.CompressFormat.PNG, 100, it) }
+              FileOutputStream(out).use { outBmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
               promise.resolve(Uri.fromFile(out).toString())
             } catch (e: Exception) {
               promise.reject(CodedException("could not write png: ${e.message}"))

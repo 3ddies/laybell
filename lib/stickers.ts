@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image as RNImage } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Image as ExpoImage } from 'expo-image';
-import { liftSubject, subjectLiftAvailable } from '../modules/laybell-subject-lift';
+import { liftSubject, subjectLiftAvailable, type LiftPoint } from '../modules/laybell-subject-lift';
 
 // The user's saved "cutout" stickers — subjects lifted out of photos (Threads-style), kept
 // on-device for reuse in the composer. Everything here is local and free: the cutout runs
@@ -53,7 +53,7 @@ async function ensureLocal(uri: string): Promise<string | null> {
  * or null when there's no clear subject, the source can't be read, or the build/device
  * doesn't support it. Never throws.
  */
-export async function captureSubjectSticker(sourceUri: string): Promise<SavedSticker | null> {
+export async function captureSubjectSticker(sourceUri: string, point?: LiftPoint): Promise<SavedSticker | null> {
   if (!subjectLiftAvailable()) return null;
   try {
     await ensureDir();
@@ -61,7 +61,7 @@ export async function captureSubjectSticker(sourceUri: string): Promise<SavedSti
     if (!local) return null;
     const id = `stk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const out = `${DIR}${id}.png`;
-    const lifted = await liftSubject(local, out);
+    const lifted = await liftSubject(local, out, point);
     if (!lifted) return null;
     const sticker: SavedSticker = { id, uri: lifted, createdAt: Date.now() };
     const list = await getSavedStickers();
@@ -78,13 +78,13 @@ export async function captureSubjectSticker(sourceUri: string): Promise<SavedSti
  * Returns the temp file uri, or null if nothing could be cut out. Pair with saveLiftedSticker
  * (keep) or let the cache file be discarded (cancel).
  */
-export async function liftPreview(sourceUri: string): Promise<string | null> {
+export async function liftPreview(sourceUri: string, point?: LiftPoint): Promise<string | null> {
   if (!subjectLiftAvailable()) return null;
   try {
     const local = await ensureLocal(sourceUri);
     if (!local) return null;
     const tmp = `${FileSystem.cacheDirectory}lift_preview_${Date.now()}.png`;
-    return await liftSubject(local, tmp);
+    return await liftSubject(local, tmp, point);
   } catch {
     return null;
   }

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, ScrollView, TouchableOpacity, StyleSheet, Text,
-  type NativeSyntheticEvent, type NativeScrollEvent,
+  type NativeSyntheticEvent, type NativeScrollEvent, type GestureResponderEvent,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { MEDIA_FADE_MS } from '../lib/mediaPreview';
@@ -9,6 +9,7 @@ import AppVideo from './AppVideo';
 import { Ionicons } from '@expo/vector-icons';
 import { RADIUS } from '../constants/theme';
 import { useTabSwipeControl } from '../contexts/PagerContext';
+import { useStickerCapture } from '../contexts/StickerCaptureContext';
 import { trackVideoProgress } from '../lib/viewTracker';
 import { type Slide, slideFit } from '../lib/slideshow';
 
@@ -96,6 +97,14 @@ export default function SlideshowCarousel({
   const scrollRef = useRef<ScrollView>(null);
   const didInit = useRef(false);
   const setTabSwipe = useTabSwipeControl();
+  // Press-and-hold an IMAGE slide to lift its subject into a sticker (Threads-style),
+  // same as single-image feed posts. Only when the build+device support it; video
+  // slides can't be lifted. Routed through the SAME per-slide touchable as tap/open
+  // (never a stacked layer — that's what broke the swipe here before).
+  const { capture: captureSticker, available: stickerAvail } = useStickerCapture();
+  // Normalized (0..1) touch point on the slide last pressed, so the hold lifts the
+  // subject under the finger. One ref is enough — only one slide is pressed at a time.
+  const slidePt = useRef({ x: 0.5, y: 0.5 });
   const cbRef = useRef(onVideoAudioActiveChange);
   cbRef.current = onVideoAudioActiveChange;
 
@@ -194,8 +203,27 @@ export default function SlideshowCarousel({
               )}
             </View>
           );
-          return onSlidePress ? (
-            <TouchableOpacity key={i} activeOpacity={onTap ? 1 : 0.95} onPress={() => onSlidePress(i)}>
+          // Image slides get a press-and-hold → subject lift; video slides can't be lifted.
+          const canLift = stickerAvail && !isVideo && !!s.url;
+          const onSlideIn = (e: GestureResponderEvent) => {
+            const { locationX, locationY } = e.nativeEvent;
+            slidePt.current = {
+              x: width > 0 ? Math.min(1, Math.max(0, locationX / width)) : 0.5,
+              y: height > 0 ? Math.min(1, Math.max(0, locationY / height)) : 0.5,
+            };
+          };
+          const onLong = canLift
+            ? () => { const p = slidePt.current; console.log('[STK] slide hold; i=', i, 'pt=', p); captureSticker(s.url, p); }
+            : undefined;
+          return (onSlidePress || onLong) ? (
+            <TouchableOpacity
+              key={i}
+              activeOpacity={onTap ? 1 : 0.95}
+              onPressIn={onLong ? onSlideIn : undefined}
+              onPress={onSlidePress ? () => onSlidePress(i) : undefined}
+              onLongPress={onLong}
+              delayLongPress={350}
+            >
               {body}
             </TouchableOpacity>
           ) : (
