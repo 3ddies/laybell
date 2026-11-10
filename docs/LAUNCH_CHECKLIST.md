@@ -18,36 +18,49 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ---
 
-## 0.0 ✅ THE CURRENT STATE — updated 2026-11-09
+## 0.0 ✅ THE CURRENT STATE — updated 2026-11-10
 
-**1.1.4 is PREP-COMPLETE in the repo, awaiting the native build.** This is a **native**
-build (new on-device module `modules/laybell-subject-lift`) — **no OTA**, so a rebuild is
-mandatory. It carries **subject-lift stickers** (press-and-hold any image → cut its subject
-into a sticker; stickers land in "My GIFs" and send transparently in comments/DMs),
-**storybooks** (chaptered story highlights on the profile, with archive + make-public), and
-the **archive UX polish** (shared long-press options sheet for archived storybooks + stories;
-iOS-style plain-word tabs). Feature work committed **`c572e1c`** on
-`feature/subject-lift-stickers` (branch also carries `f5fa11c` storybooks). `app.json` bumped
-to **1.1.4** (production profile `autoIncrement:true` → EAS mints the build number). Full
-What's New + submit steps: **`docs/RELEASE_NOTES_1.1.4.md`**.
+**1.1.4 is SUBMITTED to BOTH stores and IN REVIEW** (2026-11-10). It **supersedes 1.1.2**
+(which never shipped). This was a **native** build (new on-device module
+`modules/laybell-subject-lift`, no OTA). It carries **subject-lift stickers** (press-and-hold
+any image → cut its subject into a transparent sticker; stickers land in "My GIFs" and send
+transparently in comments/DMs), **storybooks** (chaptered story highlights on the profile,
+with archive + make-public), and the **archive UX polish**. Merged to `dev` via PRs #1–#3
+(final merge `dca8b8c`). Full What's New: **`docs/RELEASE_NOTES_1.1.4.md`**.
 
-**Pre-build gate run 2026-11-09:** 🧹 app typecheck **0** (the only `tsc` output is the
-separate `web-app/` Next project + Deno globals under `supabase/functions/**`, neither in the
-mobile bundle); 💰 **no money code touched this release** (stickers / GIF-library upload /
-storybook archiving / tab restyle are all non-money) → re-confirm `global_sum_must_be_0`=0 +
-**demo money OFF** at submit; 🗄️ **no new SQL objects or edge functions** — the one server
-dependency is deploying the already-written **`supabase/sql/storybooks.sql`** (for
-`archived_at` + the storybook tables); `user_gifs.kind='sticker'` needs **no migration**.
-Temporary `[STK]` debug logs stripped; new archive strings routed through i18n (English keys).
+- **iOS build 25** → `eas submit` (stored ASC key `5GPD4R9QBU`, no 2FA) → ASC version 1.1.4
+  created, build attached, metadata carried from 1.1.1, What's New pasted, **Submitted →
+  "Waiting for Review"** (≤48h; email on decision). **No new IAPs.**
+- **Android vc22** → `eas submit` (DRAFT) → Play. ⚠️ A stale **"1.1.2" draft (vc19)** already
+  sat in the production track, and eas submit replaced its BUNDLE with vc22 but KEPT the old
+  release NAME; verified only vc22 was in it (live vc18/1.1.1 NOT included), **renamed it
+  "1.1.4 (22)", added `<en-US>` release notes**, then Publishing overview → "Submit 1 change
+  for review" → "Send changes for review". **Managed-publishing OFF → auto-publishes FULL
+  rollout on approval**; a quick-checks gate (~14 min) holds transmission first.
 
-**⏳ OWNER'S REMAINING STEPS for 1.1.4 (in order):**
-1. **Deploy `supabase/sql/storybooks.sql`** (and confirm `user_gifs.sql` is live — it backs the existing My GIFs tab).
-2. **Merge** `feature/subject-lift-stickers` → `dev`. ⚠️ **Sequence against 1.1.2 first** — 1.1.2 is still pending at the stores (below); decide whether 1.1.4 ships after it or supersedes it before merging, so dev's `app.json` version doesn't collide mid-submission.
-3. **Native EAS production build** (iOS + Android).
-4. **iOS** → ASC (app `6795675871`) create 1.1.4, select the build, paste What's New, keep reviewer demo notes, Submit (no new IAPs). **Android** → `eas submit -p android --profile production` → roll out. ⚠️ Confirm demo money OFF before any Submit.
-5. **Device-test once storybooks.sql is live:** save a sticker → it appears in My GIFs → sends transparent in a comment; storybook archive long-press menu + make-public-moves-to-profile.
+**Build note:** the Android native module took **3 EAS tries** — (1) wrong ML Kit Maven
+coordinate (`com.google.android.gms:play-services-mlkit-subject-segmentation`, NOT
+`com.google.mlkit:segmentation-subject`), (2) a `com.google.mlkit.vision.DEPENDENCIES`
+manifest meta-data conflict with expo-dev-launcher's `barcode_ui`. Fixed in `0612829` (manifest
+dropped — optional); detail in memory `local-native-modules`. iOS (Vision) built first try.
+**`storybooks.sql` was DEPLOYED to prod** this session (idempotent; tables + `archived_at`).
+Money: **no money code touched** this release; demo money clear by provenance (no demo SQL ran).
 
-**Prior 1.1.x state (from memory, still true):** **1.1.1 LIVE on both stores** (approved 2026-11-05; Android vc18 / iOS b23) — ⚠️ Play production availability is still **1 country/region** (expand via Production→Countries/regions). **1.1.2 is PENDING submission** (iOS at ASC, Android draft in Play production awaiting rollout) — reconcile with 1.1.4 per step 2. SBP submitted (keep full 15%; flip `STORE_COMMISSION_RATE`→0.15 only on the effective date, §0.3).
+**⏳ OWNER'S REMAINING STEPS:**
+1. **Await store approvals** (both email you). iOS auto-releases on approval; Android
+   auto-publishes (full rollout) on approval.
+2. **Device-test when live:** save a sticker → it appears in My GIFs → sends transparent in a
+   comment; storybook archive long-press menu + make-public-moves-to-profile.
+3. **iOS screenshot refresh (DEFERRED by owner):** the iOS listing still carries the old
+   **8-frame** set including the dropped **"Begging cat type beat" joke frame #6**; the current
+   source set is 7 frames (`store/screenshots/appstore/01-07.png`). Refresh "at a different
+   time" — memory `store-screenshots` has the how + the ASC per-image-delete gotcha.
+
+**Still-true prior state:** **1.1.1 LIVE both stores** (approved 2026-11-05; Android vc18 /
+iOS b23) — ⚠️ Play production availability is still **1 country/region** (expand via
+Production→Countries/regions); ⚠️ the **@laybell active-status test-gate is still LIVE** (only
+@3ddie sees it — remove in `active_status.sql`). SBP: keep full 15%; flip
+`STORE_COMMISSION_RATE`→0.15 only on the effective date (§0.3).
 
 ---
 
