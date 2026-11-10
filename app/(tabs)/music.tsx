@@ -6,6 +6,7 @@ import {
 // expo-image: memory-caches decoded covers (RN Image re-decodes on every mount).
 import { Image as ExpoImage } from 'expo-image';
 import { coverFade } from '../../lib/coverFade';
+import { useStickerHold } from '../../lib/useStickerHold';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { chromeScrollProps } from '../../lib/feedChrome';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
@@ -344,6 +345,8 @@ export default function MusicScreen() {
   const [top20Expanded, setTop20Expanded]       = useState(false);
   // "Hot Albums" rail — best-performing albums by summed track streams.
   const [hotAlbums, setHotAlbums]               = useState<any[]>([]);
+  // Press-and-hold the big "Hottest Album" hero art to lift its subject (Threads-style).
+  const hotAlbumHold = useStickerHold(hotAlbums[0]?.cover);
   const [forYouTracks, setForYouTracks]         = useState<any[]>([]);
   const [todaysPick, setTodaysPick]             = useState<any | null>(null);
   const [discoverLoading, setDiscoverLoading]   = useState(true);
@@ -1416,6 +1419,10 @@ export default function MusicScreen() {
                     activeOpacity={0.92}
                     style={styles.hotAlbumBig}
                     onPress={() => router.push(`/album/${hotAlbums[0].id}`)}
+                    onLayout={hotAlbumHold.onLayout}
+                    onPressIn={hotAlbumHold.onPressIn}
+                    onLongPress={hotAlbumHold.enabled ? hotAlbumHold.onLongPress : undefined}
+                    delayLongPress={hotAlbumHold.delayLongPress}
                   >
                     {hotAlbums[0].cover ? (
                       <ExpoImage source={{ uri: hotAlbums[0].cover }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" transition={coverFade(hotAlbums[0].cover)} />

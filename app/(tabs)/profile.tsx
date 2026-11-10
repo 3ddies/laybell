@@ -29,6 +29,7 @@ import FeaturedRotator from '../../components/FeaturedRotator';
 import { useStories } from '../../contexts/StoriesContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
+import StorybookShelf from '../../components/StorybookShelf';
 import PageHealthMeter, { type PageHealthMeterHandle } from '../../components/PageHealthMeter';
 import ProfileQRModal from '../../components/ProfileQRModal';
 import AccountSwitcher from '../../components/AccountSwitcher';
@@ -1200,6 +1201,9 @@ export default function ProfileScreen() {
           </View>
         </View>
       </View>
+
+      {/* Storybooks — your highlight shelf, just under the bio */}
+      {profile?.id ? <StorybookShelf userId={profile.id} isOwn /> : null}
 
       {/* Action buttons */}
       <View style={styles.actionButtons}>

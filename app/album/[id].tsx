@@ -4,6 +4,7 @@ import {
   KeyboardAvoidingView, TouchableWithoutFeedback, Keyboard, Platform,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
+import { useStickerHold } from '../../lib/useStickerHold';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -101,6 +102,8 @@ export default function AlbumScreen() {
 
   const isOwn = !!album && album.user_id === uid;
   const cover = album ? albumCover({ ...album, tracks }) : null;
+  // Press-and-hold the album art to lift its subject into a sticker (Threads-style).
+  const coverHold = useStickerHold(cover);
 
   // Admin pin: feature / unfeature this album in the Music tab's Hottest-Album slot
   // (exclusive — the RPC clears any other). Optimistic; reverts if the write fails.
@@ -288,7 +291,15 @@ export default function AlbumScreen() {
           <>
             <View style={styles.header}>
               {cover ? (
-                <ExpoImage source={{ uri: cover }} style={styles.cover} contentFit="cover" cachePolicy="memory-disk" transition={coverFade(cover)} />
+                <TouchableOpacity
+                  activeOpacity={1}
+                  onLayout={coverHold.onLayout}
+                  onPressIn={coverHold.onPressIn}
+                  onLongPress={coverHold.enabled ? coverHold.onLongPress : undefined}
+                  delayLongPress={coverHold.delayLongPress}
+                >
+                  <ExpoImage source={{ uri: cover }} style={styles.cover} contentFit="cover" cachePolicy="memory-disk" transition={coverFade(cover)} />
+                </TouchableOpacity>
               ) : (
                 <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.cover}>
                   <Ionicons name="disc" size={30} color={colors.primary} />

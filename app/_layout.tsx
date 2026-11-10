@@ -52,6 +52,7 @@ import { UploadQueueProvider, useUploadQueue } from '../contexts/UploadQueueCont
 import CaptionCaptureHost from '../components/CaptionCaptureHost';
 import VideoSavedToast from '../components/VideoSavedToast';
 import { CastProvider } from '../contexts/CastContext';
+import { StickerCaptureProvider } from '../contexts/StickerCaptureContext';
 import { StoryUploadProvider, useStoryUpload } from '../contexts/StoryUploadContext';
 import OfflineBanner from '../components/OfflineBanner';
 import { useListenMode } from '../contexts/ListenModeContext';
@@ -432,6 +433,20 @@ function AppContent() {
             presentation: 'transparentModal',
             animation: 'none',
             gestureEnabled: false,
+            contentStyle: { backgroundColor: 'transparent' },
+          }}
+        />
+        {/* Storybook viewer (profile highlights): a story-style player. Transparent modal
+            so the profile stays live behind it for the swipe-down-to-dismiss, and the native
+            back-gesture is OFF — the viewer owns a pull-DOWN dismiss, like a regular story,
+            and must NOT exit on a side swipe. */}
+        <Stack.Screen
+          name="storybook/[id]"
+          options={{
+            presentation: 'transparentModal',
+            animation: 'none',
+            gestureEnabled: false,
+            fullScreenGestureEnabled: false,
             contentStyle: { backgroundColor: 'transparent' },
           }}
         />
@@ -832,12 +847,14 @@ function RootLayout() {
                                     <UploadQueueProvider>
                                       <StoryUploadProvider>
                                         <CastProvider>
+                                          <StickerCaptureProvider>
                                           <AppContent />
                                           {/* Sibling of the app content (not a
                                               wrapper) so it overlays every screen
                                               without affecting any layout. */}
                                           <OfflineBanner />
                                           <PremiumGateHost />
+                                          </StickerCaptureProvider>
                                         </CastProvider>
                                       </StoryUploadProvider>
                                     </UploadQueueProvider>

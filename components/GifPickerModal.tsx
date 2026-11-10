@@ -165,9 +165,12 @@ export default function GifPickerModal({
               }
               renderItem={({ item }) => {
                 const ratio = item.w && item.h ? item.w / item.h : 1;
+                // Stickers are transparent cutouts: no opaque tile behind them (it
+                // reads as a grey box), and `contain` so they're never cropped.
+                const isSticker = item.kind === 'sticker';
                 return (
                   <TouchableOpacity activeOpacity={0.8} onPress={() => { onSelect({ id: item.id, url: item.url, preview: item.url, w: item.w, h: item.h, src: item.sourcePostId }); onClose(); }} onLongPress={() => removeLibraryGif(item)} delayLongPress={300}>
-                    <Image source={{ uri: item.url }} style={{ width: colW, height: colW / (ratio || 1), borderRadius: RADIUS.md, backgroundColor: colors.surfaceLight }} contentFit="cover" />
+                    <Image source={{ uri: item.url }} style={{ width: colW, height: colW / (ratio || 1), borderRadius: RADIUS.md, backgroundColor: isSticker ? 'transparent' : colors.surfaceLight }} contentFit={isSticker ? 'contain' : 'cover'} />
                   </TouchableOpacity>
                 );
               }}

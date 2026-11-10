@@ -31,6 +31,7 @@ import { isPostSpotlighted } from '../lib/spotlight';
 import { fetchFeatures, type Feature } from '../lib/features';
 import SongCardTitle from './SongCardTitle';
 import OriginalArtistCredit from './OriginalArtistCredit';
+import { useStickerHold } from '../lib/useStickerHold';
 
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 // Full-width art (capped at 300): at rest the header fills the screen down to
@@ -266,6 +267,10 @@ export default function NowPlaying() {
   const [render, setRender] = useState(false);
   // Full-bleed listening view, opened by tapping the artwork below.
   const [immersive, setImmersive] = useState(false);
+  // Press-and-hold the big now-playing cover to lift its subject into a sticker
+  // (Threads-style) — same as the album surfaces. A stationary long-press fires
+  // the lift instead of tap-to-immersive, and won't trip the sheet's drag.
+  const artHold = useStickerHold(currentTrack?.cover);
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
   // When a song ENDS, the sheet fades + gently scales down in place (a manual
   // dismiss still slides) so the auto-exit feels clean rather than abrupt.
@@ -769,7 +774,16 @@ export default function NowPlaying() {
                     {track.cover ? (
                       // Tapping the art opens the full-bleed listening view. Only
                       // when there IS art — the placeholder has nothing to pan.
-                      <TouchableOpacity activeOpacity={0.9} onPress={() => setImmersive(true)} accessibilityRole="button" accessibilityLabel={t('a11y.play')}>
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => setImmersive(true)}
+                        onLayout={artHold.onLayout}
+                        onPressIn={artHold.onPressIn}
+                        onLongPress={artHold.enabled ? artHold.onLongPress : undefined}
+                        delayLongPress={artHold.delayLongPress}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('a11y.play')}
+                      >
                         <ExpoImage source={{ uri: track.cover }} style={styles.art} contentFit="cover" cachePolicy="memory-disk" transition={250} />
                       </TouchableOpacity>
                     ) : (

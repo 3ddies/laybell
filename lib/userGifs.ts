@@ -1,7 +1,9 @@
 // Laybell GIF library — a user's saved + created GIFs. See user_gifs.sql.
 import { supabase } from './supabase';
 
-export type UserGif = { id: string; url: string; w: number; h: number; kind: 'saved' | 'created'; sourcePostId?: string };
+// `sticker` = a subject-lift cutout the user saved (see lib/stickers.ts), uploaded
+// so it can be used in comments/DMs like any GIF. It renders in the same grid.
+export type UserGif = { id: string; url: string; w: number; h: number; kind: 'saved' | 'created' | 'sticker'; sourcePostId?: string };
 
 // A user's library, newest first. Returns [] pre-migration (missing table).
 export async function fetchUserGifs(userId: string): Promise<UserGif[]> {
@@ -16,7 +18,7 @@ export async function fetchUserGifs(userId: string): Promise<UserGif[]> {
 // Add a GIF to the library (upsert on user_id+url so re-saving is a no-op).
 // Returns null on success, or the DB error message (e.g. table not migrated yet).
 export async function addUserGif(
-  userId: string, gif: { url: string; w?: number; h?: number; kind: 'saved' | 'created'; sourcePostId?: string },
+  userId: string, gif: { url: string; w?: number; h?: number; kind: 'saved' | 'created' | 'sticker'; sourcePostId?: string },
 ): Promise<string | null> {
   const { error } = await supabase
     .from('user_gifs')

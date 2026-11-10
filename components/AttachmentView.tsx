@@ -24,11 +24,16 @@ export default function AttachmentView({
   const MAX_H = 300, MIN_H = 80;
   if (height > MAX_H) { height = MAX_H; width = Math.min(maxWidth, height * ratio); }
   if (height < MIN_H) { height = MIN_H; width = Math.min(maxWidth, height * ratio); }
+  // A PNG attachment can be transparent — a lifted-subject sticker, or a
+  // transparent image. Painting the usual opaque placeholder behind it turns its
+  // transparency into a grey box, so give PNGs a transparent backing and `contain`
+  // them (never crop a cutout). GIFs/JPEGs are opaque and keep the placeholder.
+  const transparent = /\.png(\?|$)/i.test(url);
   const img = (
     <Image
       source={{ uri: url }}
-      style={{ width, height, borderRadius: radius, backgroundColor: colors.surfaceLight }}
-      contentFit="cover"
+      style={{ width, height, borderRadius: radius, backgroundColor: transparent ? 'transparent' : colors.surfaceLight }}
+      contentFit={transparent ? 'contain' : 'cover'}
       transition={120}
     />
   );

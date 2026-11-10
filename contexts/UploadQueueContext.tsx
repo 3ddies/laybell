@@ -570,6 +570,17 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         for (const t of job.taggedIds) {
           if (t !== job.userId) createNotification({ userId: t, actorId: job.userId, type: 'tag', postId });
         }
+        // A React/remix of someone else's post → tell the original author, with the
+        // NEW post so tapping it opens the composition. Best-effort owner lookup.
+        if (job.sourcePostId && job.compositionKind) {
+          try {
+            const { data: src } = await supabase.from('posts').select('user_id').eq('id', job.sourcePostId).maybeSingle();
+            const srcOwner = (src as any)?.user_id;
+            if (srcOwner && srcOwner !== job.userId) {
+              createNotification({ userId: srcOwner, actorId: job.userId, type: 'react', postId });
+            }
+          } catch {}
+        }
         if (job.spotlight) { try { await activateCampaign(job.spotlight.campaignId, postId, job.spotlight.days); } catch {} }
       }
 
