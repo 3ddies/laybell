@@ -18,7 +18,43 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ---
 
-## 0.0 ✅ THE CURRENT STATE — updated 2026-10-25
+## 0.0 ✅ THE CURRENT STATE — updated 2026-11-09
+
+**1.1.4 is PREP-COMPLETE in the repo, awaiting the native build.** This is a **native**
+build (new on-device module `modules/laybell-subject-lift`) — **no OTA**, so a rebuild is
+mandatory. It carries **subject-lift stickers** (press-and-hold any image → cut its subject
+into a sticker; stickers land in "My GIFs" and send transparently in comments/DMs),
+**storybooks** (chaptered story highlights on the profile, with archive + make-public), and
+the **archive UX polish** (shared long-press options sheet for archived storybooks + stories;
+iOS-style plain-word tabs). Feature work committed **`c572e1c`** on
+`feature/subject-lift-stickers` (branch also carries `f5fa11c` storybooks). `app.json` bumped
+to **1.1.4** (production profile `autoIncrement:true` → EAS mints the build number). Full
+What's New + submit steps: **`docs/RELEASE_NOTES_1.1.4.md`**.
+
+**Pre-build gate run 2026-11-09:** 🧹 app typecheck **0** (the only `tsc` output is the
+separate `web-app/` Next project + Deno globals under `supabase/functions/**`, neither in the
+mobile bundle); 💰 **no money code touched this release** (stickers / GIF-library upload /
+storybook archiving / tab restyle are all non-money) → re-confirm `global_sum_must_be_0`=0 +
+**demo money OFF** at submit; 🗄️ **no new SQL objects or edge functions** — the one server
+dependency is deploying the already-written **`supabase/sql/storybooks.sql`** (for
+`archived_at` + the storybook tables); `user_gifs.kind='sticker'` needs **no migration**.
+Temporary `[STK]` debug logs stripped; new archive strings routed through i18n (English keys).
+
+**⏳ OWNER'S REMAINING STEPS for 1.1.4 (in order):**
+1. **Deploy `supabase/sql/storybooks.sql`** (and confirm `user_gifs.sql` is live — it backs the existing My GIFs tab).
+2. **Merge** `feature/subject-lift-stickers` → `dev`. ⚠️ **Sequence against 1.1.2 first** — 1.1.2 is still pending at the stores (below); decide whether 1.1.4 ships after it or supersedes it before merging, so dev's `app.json` version doesn't collide mid-submission.
+3. **Native EAS production build** (iOS + Android).
+4. **iOS** → ASC (app `6795675871`) create 1.1.4, select the build, paste What's New, keep reviewer demo notes, Submit (no new IAPs). **Android** → `eas submit -p android --profile production` → roll out. ⚠️ Confirm demo money OFF before any Submit.
+5. **Device-test once storybooks.sql is live:** save a sticker → it appears in My GIFs → sends transparent in a comment; storybook archive long-press menu + make-public-moves-to-profile.
+
+**Prior 1.1.x state (from memory, still true):** **1.1.1 LIVE on both stores** (approved 2026-11-05; Android vc18 / iOS b23) — ⚠️ Play production availability is still **1 country/region** (expand via Production→Countries/regions). **1.1.2 is PENDING submission** (iOS at ASC, Android draft in Play production awaiting rollout) — reconcile with 1.1.4 per step 2. SBP submitted (keep full 15%; flip `STORE_COMMISSION_RATE`→0.15 only on the effective date, §0.3).
+
+---
+
+> **Everything below is prior-release history (1.0.8 → 1.0.9 and earlier).** It still reads as
+> "current"/"BUILDING" where it was true at the time; the block above is the live state.
+
+## 0.0-history ✅ THE CURRENT STATE — updated 2026-10-25
 
 **One-line status:** **1.0.9 is BUILDING on iOS + Android** (EAS `production`, commit `785da2d` on `dev`, started 2026-10-25) — the full 1.0.9 feature set committed in one go: Stories sticker suite (poll/countdown/music/location+temperature/link/info/community/shop), emoji reactions + slider, collage + boomerang cameras, a new story editor + effects tray, Skia GPU color filters, the **posting-UX overhaul** (a just-posted video hands off to its REAL feed card so it autoplays WITH its song for ANY aspect — forced on-screen so short horizontal clips start too — plus an iOS uploading toast, a confetti + View/Share celebration, and short-upload retry resilience that killed the spurious "Could not start the video upload"), **delete-everywhere** sync (feed/profile/explore/reel), an online-status dot, and a page-health meter. **1.0.8 already SHIPPED to both stores (iOS approved 2026-10-13, Android live 2026-10-08).** Pre-build gates GREEN (2026-10-25): 💰 money `global_sum_must_be_0`=0, no ledger violations, no negative balances (demo money OFF; 1 post + 4 user reports are non-blocking moderation); 🗄️ schema **NO DRIFT** — the 3 new migrations (`active_status`, `story_poll_votes`, `story_views_retention`) are already live in prod; 🧩 **all 27 edge functions deployed/ACTIVE** incl. the new `weather` (temperature stickers), no deploy drift; 🧹 app typecheck **0**. Native: `./plugins/withMediaRouterPin` config plugin + expanded location-permission copy → genuine native rebuild. **What's New + submit steps: `docs/RELEASE_NOTES_1.0.9.md`.** ⏳ **OWNER'S REMAINING STEP (after the EAS builds finish):** iOS → ASC (app `6795675871`) create the 1.0.9 version, select the build, paste What's New, keep the reviewer demo notes, Submit (no new IAPs this release); Android → `eas submit -p android --profile production` (uploads a draft to the production track) then roll out in Play Console, or upload the `.aab`. ⚠️ **Re-confirm demo money OFF before any Submit.**
 
