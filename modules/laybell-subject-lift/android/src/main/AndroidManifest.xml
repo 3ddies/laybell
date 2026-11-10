@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    Subject-lift's ML Kit model. Declaring it here makes Google Play download the
+    on-device Subject Segmentation model right after the app is installed, so the first
+    sticker lift is instant instead of waiting on (or silently failing) a cold
+    first-use model fetch. Namespace comes from build.gradle, so no package attribute.
+  -->
+  <application>
+    <meta-data
+      android:name="com.google.mlkit.vision.DEPENDENCIES"
+      android:value="subject_segment" />
+  </application>
+</manifest>

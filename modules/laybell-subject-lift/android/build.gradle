@@ -19,6 +19,9 @@ android {
 
 dependencies {
   // ML Kit on-device Subject Segmentation — free, no cloud. The model is fetched once
-  // through Google Play Services on first use.
-  implementation 'com.google.mlkit:segmentation-subject:16.0.0-beta1'
+  // through Google Play Services (see AndroidManifest meta-data). This API ships ONLY as
+  // the Play-Services-delivered artifact (com.google.android.gms:play-services-mlkit-*),
+  // not the standalone com.google.mlkit namespace; the import package is still
+  // com.google.mlkit.vision.segmentation.subject.
+  implementation 'com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1'
 }
