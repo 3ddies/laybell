@@ -10,6 +10,7 @@ import { type Feature } from '../lib/features';
 import FloatingComments from './FloatingComments';
 import { useLoopIdle } from '../lib/playbackPresence';
 import OriginalArtistCredit from './OriginalArtistCredit';
+import { useStickerHold } from '../lib/useStickerHold';
 
 // The square, poster-style rendering of a song post in the HOME FEED.
 //
@@ -109,6 +110,10 @@ export default function SongSquareCard({
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  // Press-and-hold the poster artwork to lift its subject into a sticker
+  // (Threads-style), same as photo posts and album covers. A long-press lifts;
+  // a quick tap still opens the track.
+  const artHold = useStickerHold(cover);
 
   // Drives SongCardTitle's title↔credits flip. Only runs when there are credits
   // to flip to, and is keyed on the post so a recycled card restarts from the
@@ -172,7 +177,15 @@ export default function SongSquareCard({
   );
 
   return (
-    <TouchableOpacity style={styles.card} activeOpacity={0.94} onPress={onOpen}>
+    <TouchableOpacity
+      style={styles.card}
+      activeOpacity={0.94}
+      onPress={onOpen}
+      onLayout={artHold.onLayout}
+      onPressIn={artHold.onPressIn}
+      onLongPress={artHold.enabled ? artHold.onLongPress : undefined}
+      delayLongPress={artHold.delayLongPress}
+    >
       <Animated.View style={[StyleSheet.absoluteFill, driftStyle]} pointerEvents="none">
         {cover ? (
           <ExpoImage

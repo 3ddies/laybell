@@ -213,7 +213,7 @@ export default function SlideshowCarousel({
             };
           };
           const onLong = canLift
-            ? () => { const p = slidePt.current; console.log('[STK] slide hold; i=', i, 'pt=', p); captureSticker(s.url, p); }
+            ? () => { const p = slidePt.current; captureSticker(s.url, p); }
             : undefined;
           return (onSlidePress || onLong) ? (
             <TouchableOpacity

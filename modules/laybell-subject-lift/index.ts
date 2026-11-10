@@ -27,18 +27,13 @@ declare class LaybellSubjectLiftModule extends NativeModule {
 
 // null on every binary built before the module existed.
 const native = requireOptionalNativeModule<LaybellSubjectLiftModule>('LaybellSubjectLift');
-// TEMP DEBUG (sticker branch only — strip before shipping): confirm the native module linked.
-console.log('[STK] module import; native =', !!native);
 
 /** Whether this build AND device can lift subjects. False → never offer "make a sticker". */
 export function subjectLiftAvailable(): boolean {
-  if (!native) { console.log('[STK] avail=false — native is null (old build or not registered)'); return false; }
+  if (!native) return false;
   try {
-    const ok = typeof native.isSupported === 'function' && native.isSupported() === true;
-    console.log('[STK] avail=', ok, '— native present, isSupported() =', ok);
-    return ok;
-  } catch (e) {
-    console.log('[STK] avail=false — isSupported() threw:', String(e));
+    return typeof native.isSupported === 'function' && native.isSupported() === true;
+  } catch {
     return false;
   }
 }

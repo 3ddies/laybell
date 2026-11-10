@@ -73,6 +73,22 @@ export async function fetchStorybooks(userId: string): Promise<Storybook[]> {
   return (data ?? []).filter((b: any) => !b.archived_at) as Storybook[];
 }
 
+/**
+ * The owner's ARCHIVED books — soft-hidden from the shelf, surfaced in the Stories
+ * archive so they can be viewed or put back. Most-recently-archived first. Returns
+ * [] if the table / archived_at column isn't set up yet.
+ */
+export async function fetchArchivedStorybooks(userId: string): Promise<Storybook[]> {
+  const { data, error } = await supabase
+    .from('storybooks')
+    .select('*')
+    .eq('user_id', userId)
+    .not('archived_at', 'is', null)
+    .order('archived_at', { ascending: false });
+  if (error) return [];
+  return (data ?? []) as Storybook[];
+}
+
 // A tiny in-memory cache of the last-opened full books. The shelf pre-fetches a
 // book (showing a spinner) BEFORE navigating, so the viewer can open already-loaded
 // — no in-viewer data spinner, no black flash. Short-lived (process memory only).
@@ -151,7 +167,9 @@ export async function createStorybook(input: {
 
 export async function updateStorybook(
   bookId: string,
-  patch: Partial<Pick<Storybook, 'title' | 'cover_url' | 'is_public' | 'position'>>,
+  // `archived_at` is included so making a book public can clear it in one write —
+  // a public book can't stay archived (archiving forces it private + off the shelf).
+  patch: Partial<Pick<Storybook, 'title' | 'cover_url' | 'is_public' | 'position' | 'archived_at'>>,
 ): Promise<boolean> {
   const { error } = await supabase.from('storybooks').update(patch).eq('id', bookId);
   return !error;

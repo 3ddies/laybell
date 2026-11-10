@@ -180,7 +180,20 @@ export default function StorybookEditor() {
             <Ionicons name={isPublic ? 'globe-outline' : 'lock-closed-outline'} size={16} color={styles.subtle.color} />
             <Switch
               value={isPublic}
-              onValueChange={async (v) => { setIsPublic(v); if (bookId) await updateStorybook(bookId, { is_public: v }); }}
+              onValueChange={async (v) => {
+                setIsPublic(v);
+                if (!bookId) return;
+                // Making an archived book public brings it back onto the profile shelf
+                // (un-archives it) — an archived book is hidden and forced private, so
+                // "public" only makes sense once it's restored.
+                if (v) {
+                  await updateStorybook(bookId, { is_public: true, archived_at: null });
+                  setFull((f) => (f ? { ...f, is_public: true, archived_at: null } : f));
+                } else {
+                  await updateStorybook(bookId, { is_public: false });
+                  setFull((f) => (f ? { ...f, is_public: false } : f));
+                }
+              }}
             />
           </View>
         </View>

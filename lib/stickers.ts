@@ -3,6 +3,9 @@ import { Image as RNImage } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Image as ExpoImage } from 'expo-image';
 import { liftSubject, subjectLiftAvailable, type LiftPoint } from '../modules/laybell-subject-lift';
+import { supabase } from './supabase';
+import { uploadToStorageWithProgress } from './upload';
+import { addUserGif } from './userGifs';
 
 // The user's saved "cutout" stickers — subjects lifted out of photos (Threads-style), kept
 // on-device for reuse in the composer. Everything here is local and free: the cutout runs
@@ -115,6 +118,35 @@ export async function getSavedStickers(): Promise<SavedSticker[]> {
     return Array.isArray(list) ? list.filter((s) => s && s.id && s.uri) : [];
   } catch {
     return [];
+  }
+}
+
+/** Pixel dimensions of a local sticker image; {0,0} on error (callers treat that as square). */
+function stickerSize(uri: string): Promise<{ w: number; h: number }> {
+  return new Promise((resolve) => {
+    try { RNImage.getSize(uri, (w, h) => resolve({ w, h }), () => resolve({ w: 0, h: 0 })); } catch { resolve({ w: 0, h: 0 }); }
+  });
+}
+
+/**
+ * Publish a saved sticker to the user's GIF library ("My GIFs") so it can be attached
+ * in comments and DMs like any other GIF. Uploads the cutout PNG to the user's posts
+ * bucket (public-read, exactly like saved/created GIFs) and indexes it as a `sticker`.
+ * Best-effort and silent: this is a secondary copy, so the local sticker (and the story
+ * editor that uses it) is untouched if the upload or index fails. Returns the public
+ * URL, or null. The sticker only leaves the device here — the same moment it becomes
+ * usable with other people — not when it's merely lifted.
+ */
+export async function publishStickerToLibrary(localUri: string): Promise<string | null> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || !localUri) return null;
+    const { w, h } = await stickerSize(localUri);
+    const url = await uploadToStorageWithProgress('posts', user.id, localUri, 'png', 'image/png');
+    await addUserGif(user.id, { url, w: w || undefined, h: h || undefined, kind: 'sticker' });
+    return url;
+  } catch {
+    return null;
   }
 }
 

@@ -33,7 +33,6 @@ export function useStickerHold(uri: string | null | undefined) {
   }, []);
 
   const onLongPress = useCallback(() => {
-    console.log('[STK] hold (useStickerHold); uri=', !!uri, 'pt=', pt.current);
     if (uri) capture(uri, pt.current);
   }, [uri, capture]);
 

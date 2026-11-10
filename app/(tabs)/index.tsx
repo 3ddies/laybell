@@ -505,7 +505,6 @@ const PostCard = memo(function PostCard({
           onLongPress={stickerAvail && item.media_url ? () => {
             if (gestureSincePress.current) return;
             const u = feedImageUri(item.media_url!);
-            console.log('[STK] feed hold; pt=', pressPt.current, 'uri=', !!u);
             if (u) captureSticker(u, pressPt.current);
           } : undefined}
           delayLongPress={350}
