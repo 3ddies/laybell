@@ -58,8 +58,9 @@ Money: **no money code touched** this release; demo money clear by provenance (n
 
 **Still-true prior state:** **1.1.1 LIVE both stores** (approved 2026-11-05; Android vc18 /
 iOS b23) — ⚠️ Play production availability is still **1 country/region** (expand via
-Production→Countries/regions); ⚠️ the **@laybell active-status test-gate is still LIVE** (only
-@3ddie sees it — remove in `active_status.sql`). SBP: keep full 15%; flip
+Production→Countries/regions); ✅ the active-status test-gate is **already removed** from prod
+(verified 2026-11-10 — the dot shows for all users; the @laybell brand account is opted out via
+its own `active_status_enabled` flag, not a code hack). SBP: keep full 15%; flip
 `STORE_COMMISSION_RATE`→0.15 only on the effective date (§0.3).
 
 ---
