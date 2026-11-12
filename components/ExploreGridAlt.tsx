@@ -256,15 +256,20 @@ export default function ExploreGridAlt({
 
   // The Laybell-TV overlay chrome (tag + stat + watch chip), reused by the static
   // thumbnail body and by the hero's live preview tile.
-  const tvOverlays = (p: GridPost) => (
-    <>
-      <View style={styles.tvTag}><Ionicons name="tv" size={12} color="#fff" /><Text style={styles.tvTagText}>Laybell TV</Text></View>
-      <ThumbStat type={p.type} viewCount={p.view_count} streamCount={p.stream_count} />
-      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.72)']} style={styles.tvScrim}>
-        <View style={styles.watchChip}><Ionicons name="play" size={11} color="#000" /><Text style={styles.watchText}>{t('a11y.play')}</Text></View>
-      </LinearGradient>
-    </>
-  );
+  const tvOverlays = (p: GridPost) => {
+    const handle = p.profiles?.username ? `@${p.profiles.username}` : '';
+    const title = p.caption?.trim() || handle;
+    return (
+      <>
+        <View style={styles.tvTag}><Ionicons name="tv" size={12} color="#fff" /><Text style={styles.tvTagText}>Laybell TV</Text></View>
+        <ThumbStat type={p.type} viewCount={p.view_count} streamCount={p.stream_count} />
+        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.78)']} style={styles.tvScrim}>
+          {!!title && <Text style={styles.tvTitle} numberOfLines={2}>{title}</Text>}
+          {!!(p.caption?.trim() && handle) && <Text style={styles.tvByline} numberOfLines={1}>{handle}</Text>}
+        </LinearGradient>
+      </>
+    );
+  };
   // The Laybell-TV hero/feature inner content (16:9): static thumbnail + chrome.
   const tvBody = (p: GridPost) => (
     <>
@@ -743,11 +748,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.xl, paddingBottom: SPACING.sm,
     alignItems: 'flex-start',
   },
-  watchChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#fff', borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 4,
+  tvTitle: {
+    color: '#fff', fontSize: 17, fontWeight: '800', letterSpacing: -0.3,
+    textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
   },
-  watchText: { color: '#000', fontSize: 11, fontWeight: '800' },
+  tvByline: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600', marginTop: 2 },
 
   // ── Minimal ──
   minScroll: { paddingHorizontal: MIN_PAD, paddingTop: SPACING.xs, paddingBottom: SPACING.xxl },
