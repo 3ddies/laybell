@@ -39,6 +39,9 @@ type Props = {
   /** Font weights, so a caller (the Explore hero) can run heavier text than the feed default. */
   titleWeight?: TextStyle['fontWeight'];
   descWeight?: TextStyle['fontWeight'];
+  /** Horizontal padding override (default SPACING.md). The Explore hero runs tighter so the
+   *  text sits near the edge-to-edge thumbnail instead of indenting like a feed card. */
+  padH?: number;
 };
 
 const COLLAPSED_LINES = 2;
@@ -60,7 +63,7 @@ const BOX_H = Math.max(TITLE_LINE, DESC_LINE) * COLLAPSED_LINES;
 const HOLD_MS = 8200;
 const FADE_MS = 520;
 
-export default function RotatingCaption({ title, caption, tags, active = true, titleWeight, descWeight }: Props) {
+export default function RotatingCaption({ title, caption, tags, active = true, titleWeight, descWeight, padH }: Props) {
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const [expanded, setExpanded] = useState(false);
@@ -116,13 +119,14 @@ export default function RotatingCaption({ title, caption, tags, active = true, t
   // Weight overrides (the Explore hero runs heavier than the feed default); null = stylesheet.
   const titleStyle = [styles.title, titleWeight ? { fontWeight: titleWeight } : null];
   const descWeightStyle = descWeight ? { fontWeight: descWeight } : null;
+  const wrapStyle = padH != null ? [styles.wrap, { paddingHorizontal: padH }] : styles.wrap;
 
-  if (!hasTitle && !hasCaption) return hasTags ? <View style={styles.wrap}>{tags}</View> : null;
+  if (!hasTitle && !hasCaption) return hasTags ? <View style={wrapStyle}>{tags}</View> : null;
 
   // Expanded, or only one of the two exists — nothing to rotate between.
   if (!cycles) {
     return (
-      <View style={styles.wrap}>
+      <View style={wrapStyle}>
         {hasTitle && <Text style={titleStyle}>{title}</Text>}
         {hasCaption && (
           <MentionText style={[styles.desc, descWeightStyle, hasTitle && styles.descUnderTitle]} text={caption} />
@@ -149,7 +153,7 @@ export default function RotatingCaption({ title, caption, tags, active = true, t
   const isLong = descLines > COLLAPSED_LINES;
 
   return (
-    <View style={styles.wrap}>
+    <View style={wrapStyle}>
       <View style={styles.box}>
         {/* Measures the description UNCLAMPED, to learn whether it genuinely
             overflows two lines. Estimating that from character count is wrong on
