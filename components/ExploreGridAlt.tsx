@@ -644,12 +644,14 @@ export default function ExploreGridAlt({
                 mediaBody(p, false)
               )}
               {vid && tvOverlays(p)}
+              {!!handle && handle !== title && (
+                <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={styles.userScrim}>
+                  <Text style={styles.userText} numberOfLines={1}>{handle}</Text>
+                </LinearGradient>
+              )}
             </View>
             {!!title && (
-              <>
-                <RotatingCaption title={title} caption={heroDesc} titleWeight="800" descWeight="600" />
-                {!!handle && handle !== title && <Text style={styles.heroByline} numberOfLines={1}>{handle}</Text>}
-              </>
+              <RotatingCaption title={title} caption={heroDesc} titleWeight="800" descWeight="600" />
             )}
           </TouchableOpacity>
         );
@@ -768,8 +770,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3,
   },
   tvTagText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
-  // @handle beneath the hero's rotating title — aligned with RotatingCaption's own padding.
-  heroByline: { color: colors.textSecondary, fontSize: 12.5, fontWeight: '500', marginTop: 2, paddingHorizontal: SPACING.md },
 
   // ── Minimal ──
   minScroll: { paddingHorizontal: MIN_PAD, paddingTop: SPACING.xs, paddingBottom: SPACING.xxl },
