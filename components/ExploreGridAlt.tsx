@@ -647,7 +647,7 @@ export default function ExploreGridAlt({
             </View>
             {!!title && (
               <>
-                <RotatingCaption title={title} caption={heroDesc} />
+                <RotatingCaption title={title} caption={heroDesc} titleWeight="800" descWeight="600" />
                 {!!handle && handle !== title && <Text style={styles.heroByline} numberOfLines={1}>{handle}</Text>}
               </>
             )}
