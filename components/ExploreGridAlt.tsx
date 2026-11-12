@@ -14,7 +14,7 @@ import { usePostOptions } from '../contexts/PostOptionsContext';
 import { isSwipeTap } from '../contexts/PagerContext';
 import { isAudioPost } from '../lib/genres';
 import { isHorizontalVideo, isFilm } from '../lib/tv';
-import { songIsLinkOnly, songCreditLine } from '../lib/postSong';
+import { songIsLinkOnly, songCreditLine, captionEchoesTitle } from '../lib/postSong';
 import { isSlideshow, slideshowThumb } from '../lib/slideshow';
 import { cfStreamThumbnail } from '../lib/cast';
 import { previewImageProps } from '../lib/mediaPreview';
@@ -22,6 +22,7 @@ import { feedDragEnd, feedDragStart, settleFeedChrome, trackFeedScroll } from '.
 import VideoThumb from './VideoThumb';
 import ThumbStat from './ThumbStat';
 import { Marquee } from './SongCardTitle';
+import RotatingCaption from './RotatingCaption';
 import PreviewStills from './PreviewStills';
 
 // Two ALTERNATE Explore layouts the user can flip to from the header switcher
@@ -612,7 +613,12 @@ export default function ExploreGridAlt({
         const filmTitle = isFilm(p) && p.film_title?.trim() ? p.film_title.trim() : '';
         const songTitle = !filmTitle && p.type === 'video' && songIsLinkOnly(p) && p.song_title?.trim()
           ? songCreditLine(p.song_title, p.song_artist) : '';
-        const title = filmTitle || songTitle || p.caption?.trim() || handle;
+        const name = filmTitle || songTitle;
+        // Primary line: the name, else the caption, else the handle. The description flips in
+        // (RotatingCaption: bigger title ⇄ smaller description, with a "…" to open full text)
+        // only when the name is the primary line — otherwise the caption already IS the line.
+        const title = name || p.caption?.trim() || handle;
+        const heroDesc = name && !captionEchoesTitle(p.caption, name, p.song_artist) ? (p.caption ?? '') : '';
         const vid = isHorizontalVideo(p);
         // The first Laybell-TV video: thumbnail → ~10s cached preview → thumbnail, with its
         // title in a row BENEATH the thumbnail (YouTube-style), not over the image.
@@ -640,10 +646,10 @@ export default function ExploreGridAlt({
               {vid && tvOverlays(p)}
             </View>
             {!!title && (
-              <View style={styles.heroMeta}>
-                <Text style={styles.heroTitle} numberOfLines={2}>{title}</Text>
+              <>
+                <RotatingCaption title={title} caption={heroDesc} />
                 {!!handle && handle !== title && <Text style={styles.heroByline} numberOfLines={1}>{handle}</Text>}
-              </View>
+              </>
             )}
           </TouchableOpacity>
         );
@@ -762,10 +768,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3,
   },
   tvTagText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
-  // Title row beneath the hero thumbnail (YouTube-style) — page-colour text, not on-image.
-  heroMeta: { paddingTop: 8, paddingBottom: 2, paddingHorizontal: 6 },
-  heroTitle: { color: colors.text, fontSize: 17, fontWeight: '800', lineHeight: 22, letterSpacing: -0.3 },
-  heroByline: { color: colors.textSecondary, fontSize: 12.5, fontWeight: '500', marginTop: 2 },
+  // @handle beneath the hero's rotating title — aligned with RotatingCaption's own padding.
+  heroByline: { color: colors.textSecondary, fontSize: 12.5, fontWeight: '500', marginTop: 2, paddingHorizontal: SPACING.md },
 
   // ── Minimal ──
   minScroll: { paddingHorizontal: MIN_PAD, paddingTop: SPACING.xs, paddingBottom: SPACING.xxl },
