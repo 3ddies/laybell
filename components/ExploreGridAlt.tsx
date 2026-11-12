@@ -13,7 +13,8 @@ import { useNowPlaying } from '../contexts/AudioContext';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { isSwipeTap } from '../contexts/PagerContext';
 import { isAudioPost } from '../lib/genres';
-import { isHorizontalVideo } from '../lib/tv';
+import { isHorizontalVideo, isFilm } from '../lib/tv';
+import { songIsLinkOnly, songCreditLine } from '../lib/postSong';
 import { isSlideshow, slideshowThumb } from '../lib/slideshow';
 import { cfStreamThumbnail } from '../lib/cast';
 import { previewImageProps } from '../lib/mediaPreview';
@@ -44,6 +45,10 @@ type GridPost = {
   stream_count?: number; view_count?: number; user_id?: string;
   preview_url?: string | null; duration_seconds?: number | null;
   trim_start?: number | null; trim_end?: number | null;
+  // Video "name" (shown as the hero title, distinct from caption/description): a film's
+  // film_title, or a music video's song_title (songIsLinkOnly).
+  film_title?: string | null; song_title?: string | null; song_artist?: string | null;
+  song_id?: string | null; song_link_only?: boolean | null;
   profiles?: { username: string; display_name: string } | null;
 };
 type SongCluster = { title: string; songs: GridPost[] };
@@ -602,7 +607,12 @@ export default function ExploreGridAlt({
       case 'hero': {
         const p = blk.p;
         const handle = p.profiles?.username ? `@${p.profiles.username}` : '';
-        const title = p.caption?.trim() || handle;
+        // The TITLE is the video's NAME (a film's film_title, a music video's song_title),
+        // NOT its caption/description — same rule as the home feed.
+        const filmTitle = isFilm(p) && p.film_title?.trim() ? p.film_title.trim() : '';
+        const songTitle = !filmTitle && p.type === 'video' && songIsLinkOnly(p) && p.song_title?.trim()
+          ? songCreditLine(p.song_title, p.song_artist) : '';
+        const title = filmTitle || songTitle || p.caption?.trim() || handle;
         const vid = isHorizontalVideo(p);
         // The first Laybell-TV video: thumbnail → ~10s cached preview → thumbnail, with its
         // title in a row BENEATH the thumbnail (YouTube-style), not over the image.
@@ -632,7 +642,7 @@ export default function ExploreGridAlt({
             {!!title && (
               <View style={styles.heroMeta}>
                 <Text style={styles.heroTitle} numberOfLines={2}>{title}</Text>
-                {!!(p.caption?.trim() && handle) && <Text style={styles.heroByline} numberOfLines={1}>{handle}</Text>}
+                {!!handle && handle !== title && <Text style={styles.heroByline} numberOfLines={1}>{handle}</Text>}
               </View>
             )}
           </TouchableOpacity>
