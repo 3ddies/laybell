@@ -256,20 +256,14 @@ export default function ExploreGridAlt({
 
   // The Laybell-TV overlay chrome (tag + stat + watch chip), reused by the static
   // thumbnail body and by the hero's live preview tile.
-  const tvOverlays = (p: GridPost) => {
-    const handle = p.profiles?.username ? `@${p.profiles.username}` : '';
-    const title = p.caption?.trim() || handle;
-    return (
-      <>
-        <View style={styles.tvTag}><Ionicons name="tv" size={12} color="#fff" /><Text style={styles.tvTagText}>Laybell TV</Text></View>
-        <ThumbStat type={p.type} viewCount={p.view_count} streamCount={p.stream_count} />
-        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.78)']} style={styles.tvScrim}>
-          {!!title && <Text style={styles.tvTitle} numberOfLines={2}>{title}</Text>}
-          {!!(p.caption?.trim() && handle) && <Text style={styles.tvByline} numberOfLines={1}>{handle}</Text>}
-        </LinearGradient>
-      </>
-    );
-  };
+  // On-thumbnail chrome only (the "Laybell TV" tag + view count, like a duration badge).
+  // The title lives BELOW the thumbnail — see the hero case.
+  const tvOverlays = (p: GridPost) => (
+    <>
+      <View style={styles.tvTag}><Ionicons name="tv" size={12} color="#fff" /><Text style={styles.tvTagText}>Laybell TV</Text></View>
+      <ThumbStat type={p.type} viewCount={p.view_count} streamCount={p.stream_count} />
+    </>
+  );
   // The Laybell-TV hero/feature inner content (16:9): static thumbnail + chrome.
   const tvBody = (p: GridPost) => (
     <>
@@ -607,27 +601,42 @@ export default function ExploreGridAlt({
     switch (blk.k) {
       case 'hero': {
         const p = blk.p;
-        // The first Laybell-TV video: thumbnail → ~10s cached preview → thumbnail.
-        if (isHorizontalVideo(p) && p.preview_url) {
-          return (
-            <TouchableOpacity key={`hero-${p.id}`} activeOpacity={0.92} onPress={() => openMedia(p)} onLongPress={longPressFor(p)} style={[styles.g3Cell, styles.g3Block, { height: G3_HERO_H }]}>
-              <PreviewStills
-                uri={p.media_url}
-                previewUrl={p.preview_url}
-                thumbnailUrl={p.thumb_url || p.thumbnail_url || cfStreamThumbnail(p.media_url)}
-                placeholder={p.placeholder}
-                durationSec={p.duration_seconds}
-                trimStartSec={p.trim_start}
-                trimEndSec={p.trim_end}
-                play={heroPlay}
-                contentFit="cover"
-                style={StyleSheet.absoluteFill}
-              />
-              {tvOverlays(p)}
-            </TouchableOpacity>
-          );
-        }
-        return wide(p, G3_HERO_H, `hero-${p.id}`);
+        const handle = p.profiles?.username ? `@${p.profiles.username}` : '';
+        const title = p.caption?.trim() || handle;
+        const vid = isHorizontalVideo(p);
+        // The first Laybell-TV video: thumbnail → ~10s cached preview → thumbnail, with its
+        // title in a row BENEATH the thumbnail (YouTube-style), not over the image.
+        return (
+          <TouchableOpacity key={`hero-${p.id}`} activeOpacity={0.95} onPress={() => openMedia(p)} onLongPress={longPressFor(p)} style={styles.g3Block}>
+            <View style={[styles.g3Cell, { height: G3_HERO_H }]}>
+              {vid && p.preview_url ? (
+                <PreviewStills
+                  uri={p.media_url}
+                  previewUrl={p.preview_url}
+                  thumbnailUrl={p.thumb_url || p.thumbnail_url || cfStreamThumbnail(p.media_url)}
+                  placeholder={p.placeholder}
+                  durationSec={p.duration_seconds}
+                  trimStartSec={p.trim_start}
+                  trimEndSec={p.trim_end}
+                  play={heroPlay}
+                  contentFit="cover"
+                  style={StyleSheet.absoluteFill}
+                />
+              ) : vid ? (
+                <VideoThumb thumbnailUrl={p.thumb_url || p.thumbnail_url || cfStreamThumbnail(p.media_url)} placeholder={p.placeholder} mediaUrl={p.media_url} style={styles.fill} />
+              ) : (
+                mediaBody(p, false)
+              )}
+              {vid && tvOverlays(p)}
+            </View>
+            {!!title && (
+              <View style={styles.heroMeta}>
+                <Text style={styles.heroTitle} numberOfLines={2}>{title}</Text>
+                {!!(p.caption?.trim() && handle) && <Text style={styles.heroByline} numberOfLines={1}>{handle}</Text>}
+              </View>
+            )}
+          </TouchableOpacity>
+        );
       }
       case 'tv': return wide(blk.p, G3_TV_H, `tv-${blk.p.id}`);
       case 'single': return (
@@ -743,16 +752,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3,
   },
   tvTagText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
-  tvScrim: {
-    position: 'absolute', left: 0, right: 0, bottom: 0,
-    paddingHorizontal: SPACING.sm, paddingTop: SPACING.xl, paddingBottom: SPACING.sm,
-    alignItems: 'flex-start',
-  },
-  tvTitle: {
-    color: '#fff', fontSize: 17, fontWeight: '800', letterSpacing: -0.3,
-    textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
-  },
-  tvByline: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600', marginTop: 2 },
+  // Title row beneath the hero thumbnail (YouTube-style) — page-colour text, not on-image.
+  heroMeta: { paddingTop: 8, paddingBottom: 2, paddingHorizontal: 6 },
+  heroTitle: { color: colors.text, fontSize: 15, fontWeight: '700', lineHeight: 20, letterSpacing: -0.2 },
+  heroByline: { color: colors.textSecondary, fontSize: 12.5, fontWeight: '500', marginTop: 2 },
 
   // ── Minimal ──
   minScroll: { paddingHorizontal: MIN_PAD, paddingTop: SPACING.xs, paddingBottom: SPACING.xxl },
