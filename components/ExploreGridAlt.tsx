@@ -651,7 +651,7 @@ export default function ExploreGridAlt({
               )}
             </View>
             {!!title && (
-              <RotatingCaption title={title} caption={heroDesc} titleWeight="800" descWeight="600" padH={4} />
+              <RotatingCaption title={title} caption={heroDesc} titleWeight="800" descWeight="600" />
             )}
           </TouchableOpacity>
         );
