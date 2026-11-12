@@ -754,7 +754,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   tvTagText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
   // Title row beneath the hero thumbnail (YouTube-style) — page-colour text, not on-image.
   heroMeta: { paddingTop: 8, paddingBottom: 2, paddingHorizontal: 6 },
-  heroTitle: { color: colors.text, fontSize: 15, fontWeight: '700', lineHeight: 20, letterSpacing: -0.2 },
+  heroTitle: { color: colors.text, fontSize: 17, fontWeight: '800', lineHeight: 22, letterSpacing: -0.3 },
   heroByline: { color: colors.textSecondary, fontSize: 12.5, fontWeight: '500', marginTop: 2 },
 
   // ── Minimal ──
