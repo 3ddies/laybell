@@ -24,9 +24,10 @@ const MIN_DURATION_MS = 20_000;
 // full-player font), so 4000 leaves a wide margin (and covers long credit rows).
 const MEASURE_W = 4000;
 
-// Exported: the TV remote reuses this for long video titles (scroll-through,
-// pause, snap back — same behavior as the song card).
-export function Marquee({ centered, children }: { centered?: boolean; children: ReactNode }) {
+// Exported: the TV remote reuses this for long video titles (scroll-through, pause, snap
+// back). With `seamless`, the reset hides behind a fade — scroll to the end, fade out, fade
+// back in at the start, scroll again — instead of a visible snap-back (used by Explore).
+export function Marquee({ centered, seamless, children }: { centered?: boolean; seamless?: boolean; children: ReactNode }) {
   const [boxW, setBoxW] = useState(0);
   const [contentW, setContentW] = useState(0);
   const x = useRef(new Animated.Value(0)).current;
@@ -37,21 +38,47 @@ export function Marquee({ centered, children }: { centered?: boolean; children: 
   // wrapped to multiple lines then collapsed to the single marquee row —
   // the sideways/vertical title lurch visible on song transitions.
   const reveal = useRef(new Animated.Value(0)).current;
+  // Seamless mode's own opacity: fades the title out at the end and back in at the start,
+  // kept separate from the one-shot `reveal` the snap-back callers use.
+  const cycleOp = useRef(new Animated.Value(0)).current;
   const overflow = Math.max(0, contentW - boxW);
   const fits = boxW > 0 && overflow <= 2;
   const measured = boxW > 0 && contentW > 0;
 
   useEffect(() => {
-    if (measured) {
+    if (!seamless && measured) {
       Animated.timing(reveal, { toValue: 1, duration: 160, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
     }
-  }, [measured, reveal]);
+  }, [measured, reveal, seamless]);
 
   useEffect(() => {
     x.stopAnimation();
     x.setValue(0);
-    if (boxW <= 0 || overflow <= 2) return;
+    cycleOp.stopAnimation();
+    if (boxW <= 0 || overflow <= 2) {
+      // Fits (or not measured yet): the seamless title just sits there, shown once measured.
+      if (seamless) cycleOp.setValue(measured ? 1 : 0);
+      return;
+    }
     const dist = overflow + 8;
+    if (seamless) {
+      // Scroll to the end, hold, FADE OUT, jump back to the start while invisible, FADE IN,
+      // scroll again — the reset never shows, so there is no visible snap or jump. A random
+      // per-instance stagger keeps a screenful of titles from all scrolling in lockstep.
+      cycleOp.setValue(0);
+      const stagger = 500 + Math.floor(Math.random() * 1500);
+      const loop = Animated.loop(Animated.sequence([
+        Animated.timing(cycleOp, { toValue: 1, duration: 280, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.delay(stagger),
+        Animated.timing(x, { toValue: -dist, duration: dist * 42, easing: Easing.linear, useNativeDriver: true }),
+        Animated.delay(900),
+        Animated.timing(cycleOp, { toValue: 0, duration: 280, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+        Animated.timing(x, { toValue: 0, duration: 0, useNativeDriver: true }),
+        Animated.delay(220),
+      ]));
+      loop.start();
+      return () => loop.stop();
+    }
     const dur = dist * 42; // ~42ms/px — an unhurried read
     const loop = Animated.loop(Animated.sequence([
       Animated.delay(1400),
@@ -61,7 +88,7 @@ export function Marquee({ centered, children }: { centered?: boolean; children: 
     ]));
     loop.start();
     return () => loop.stop();
-  }, [overflow, boxW, x]);
+  }, [overflow, boxW, x, seamless, measured, cycleOp]);
 
   return (
     <View
@@ -83,7 +110,7 @@ export function Marquee({ centered, children }: { centered?: boolean; children: 
         style={[
           styles.row,
           { width: contentW || MEASURE_W },
-          { transform: [{ translateX: x }], opacity: measured ? reveal : 0 },
+          { transform: [{ translateX: x }], opacity: seamless ? cycleOp : (measured ? reveal : 0) },
         ]}
       >
         {children}

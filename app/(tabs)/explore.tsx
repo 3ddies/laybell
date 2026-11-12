@@ -13,7 +13,9 @@ import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useSearchSwipeLock } from '../../contexts/PagerContext';
-import ExploreGrid from '../../components/ExploreGrid';
+// ExploreGrid (the original pre-redesign mosaic grid) is kept in the repo but no longer
+// imported — the layout switcher was retired in favor of the editorial grid (ExploreGridAlt).
+import ExploreGridAlt from '../../components/ExploreGridAlt';
 import TrackRow from '../../components/TrackRow';
 import FollowButton from '../../components/FollowButton';
 import SuggestedAccounts from '../../components/SuggestedAccounts';
@@ -43,7 +45,7 @@ import { afterHomePaint } from '../../lib/startupGate';
 // Genre clusters for the All grid: 4-song stacks titled by genre, cached per
 // user. Refreshes every 24h — or every 3h when the user is actively consuming
 // from them (2+ cluster plays since the last refresh).
-const CLUSTERS_KEY = 'explore_genre_clusters_v1';
+const CLUSTERS_KEY = 'explore_genre_clusters_v2'; // v2: one rail per genre (all songs), not 4-song chunks
 const CLUSTERS_TTL_IDLE_MS = 24 * 60 * 60 * 1000;
 const CLUSTERS_TTL_ACTIVE_MS = 3 * 60 * 60 * 1000;
 const CLUSTERS_ACTIVE_PLAYS = 2;
@@ -99,6 +101,9 @@ export default function ExploreScreen() {
   // to leave the screen (and it would throw the query away).
   useSearchSwipeLock(searchFocused || searchQuery.length > 0);
   const [selectedGenre, setSelectedGenre] = useState('All');
+  // Explore shows the editorial grid (components/ExploreGridAlt, variant 'grid3'). The old
+  // layout switcher (mosaic components/ExploreGrid + the 'minimal' variant) was retired; both
+  // are kept in the repo if we ever want them back.
   // The genre most recently asked for. A slow response for a genre the user has
   // already switched away from is cached, but must not repaint the grid.
   const latestGenreRef = useRef('All');
@@ -320,31 +325,17 @@ export default function ExploreScreen() {
       }))
       .sort((a, b) => b.s - a.s);
 
-    // Bucket by genre (best-ranked first within each), chunk into stacks of 4
-    // (a trailing single is dropped — one-song cards look bare).
+    // ONE rail per genre, holding ALL of that genre's eligible songs (best-ranked first;
+    // the rail scrolls horizontally) — never the same category split across several short
+    // rows. Most-interacted genres first; a genre needs ≥2 songs or a lone card looks bare.
     const byGenre: Record<string, any[]> = {};
     for (const { p } of ranked) (byGenre[displayGenre(p.genre)] ||= []).push(p);
-    const chunksOf: Record<string, any[][]> = {};
-    for (const g of Object.keys(byGenre)) {
-      const chunks: any[][] = [];
-      for (let i = 0; i < byGenre[g].length; i += 4) chunks.push(byGenre[g].slice(i, i + 4));
-      chunksOf[g] = chunks.filter(c => c.length >= 2 || byGenre[g].length === 1);
-    }
-
-    // Most-interacted genres first, cycling round-robin down the feed.
     const order = sortRailByAffinity(Object.keys(byGenre), affinityProfile.current);
     const clusters: SongCluster[] = [];
-    for (let cycle = 0; clusters.length < CLUSTERS_MAX; cycle++) {
-      let pushedAny = false;
-      for (const g of order) {
-        const chunk = chunksOf[g]?.[cycle];
-        if (chunk?.length) {
-          clusters.push({ title: g, songs: chunk });
-          pushedAny = true;
-          if (clusters.length >= CLUSTERS_MAX) break;
-        }
-      }
-      if (!pushedAny) break;
+    for (const g of order) {
+      if (byGenre[g].length < 2) continue;
+      clusters.push({ title: g, songs: byGenre[g] });
+      if (clusters.length >= CLUSTERS_MAX) break;
     }
 
     setSongClusters(clusters);
@@ -877,7 +868,8 @@ export default function ExploreScreen() {
         )}
         </View>
       ) : (
-        <ExploreGrid
+        <ExploreGridAlt
+          variant="grid3"
           posts={trendingPosts}
           refreshing={refreshing}
           onRefresh={onRefresh}
