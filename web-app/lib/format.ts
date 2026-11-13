@@ -31,6 +31,11 @@ export type GridPost = {
   cover_url: string | null;
   like_count?: number | null;
   comment_count?: number | null;
+  // Creator engagement privacy (post_privacy.sql), resolved server-side. Required
+  // (not optional) so a grid query that forgets these columns is a compile error,
+  // not a silent fail-open that renders a count the creator chose to hide.
+  hide_like_count_eff: boolean | null;
+  comments_disabled_eff: boolean | null;
 };
 
 // The thumbnail for a grid tile: cover art for audio, the poster/thumbnail for

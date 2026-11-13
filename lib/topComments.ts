@@ -66,14 +66,24 @@ export async function fetchTopComments(postId: string, limit = 3): Promise<TopCo
   if (hit && Date.now() - hit.at < TTL_MS) return hit.rows;
 
   try {
-    const { data: comments } = await supabase
-      .from('comments')
-      .select('id, body, created_at, user_id, parent_id, profiles!comments_user_id_fkey(username, display_name, avatar_url, hidden)')
-      .eq('post_id', postId)
-      // A cap, because this runs for cards in a scrolling feed. Ranking wants the
-      // whole set to count replies properly, but a post with thousands of
-      // comments does not need all of them to decide the top three.
-      .limit(300);
+    // Respect the creator's "comments off" (post_privacy.sql): a decorative
+    // overlay must not be the one surface still leaking comment text when the
+    // thread is hidden everywhere else. Fetched alongside the comments.
+    const [{ data: post }, { data: comments }] = await Promise.all([
+      supabase.from('posts').select('comments_disabled_eff').eq('id', postId).maybeSingle(),
+      supabase
+        .from('comments')
+        .select('id, body, created_at, user_id, parent_id, profiles!comments_user_id_fkey(username, display_name, avatar_url, hidden)')
+        .eq('post_id', postId)
+        // A cap, because this runs for cards in a scrolling feed. Ranking wants the
+        // whole set to count replies properly, but a post with thousands of
+        // comments does not need all of them to decide the top three.
+        .limit(300),
+    ]);
+    if ((post as any)?.comments_disabled_eff) {
+      cache.set(postId, { at: Date.now(), rows: [] });
+      return [];
+    }
     if (!comments || comments.length === 0) {
       cache.set(postId, { at: Date.now(), rows: [] });
       return [];

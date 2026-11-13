@@ -16,6 +16,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useAudioControls } from '../../contexts/AudioContext';
 import { GENRES, genreLabel, isAudioPost } from '../../lib/genres';
+import { overrideInitial, overrideToStore } from '../../lib/postPrivacy';
 import { applyMention, extractMentionUsernames, getActiveMentionQuery, processMentions } from '../../lib/mentions';
 import { createNotification } from '../../lib/createNotification';
 import { checkFields } from '../../lib/contentFilter';
@@ -67,6 +68,9 @@ type Snapshot = {
   mature: boolean;
   allowGifs: boolean;
   downloadable: boolean;
+  hideLikeCount: boolean;
+  commentsDisabled: boolean;
+  hideSaveCount: boolean;
   filmTitle: string;
   audioKind: string;
   tagged: TaggedPerson[];
@@ -135,6 +139,12 @@ export default function EditPostScreen() {
   const [mature, setMature] = useState(false);
   const [allowGifs, setAllowGifs] = useState(true);
   const [downloadable, setDownloadable] = useState(true);
+  const [hideLikeCount, setHideLikeCount] = useState(false);
+  const [commentsDisabled, setCommentsDisabled] = useState(false);
+  const [hideSaveCount, setHideSaveCount] = useState(false);
+  // The author's account-wide defaults (fetched in load) — needed to resolve each
+  // per-post override (override ?? default) and to tell when a toggle diverges.
+  const [privDefaults, setPrivDefaults] = useState({ like: false, comm: false, save: false });
   const [filmTitle, setFilmTitle] = useState('');
   const [audioKind, setAudioKind] = useState<string>('audio');
   const [tagged, setTagged] = useState<TaggedPerson[]>([]);
@@ -168,6 +178,16 @@ export default function EditPostScreen() {
       Alert.alert(t('editPost.notAllowedTitle'), t('editPost.notAllowedBody')); router.back(); return;
     }
 
+    // The author's engagement-privacy account defaults, to resolve this post's
+    // effective toggle values (post_privacy.sql). Read straight from the DB so a
+    // slow ProfileContext can't freeze the toggles at a pre-load value.
+    const { data: me } = await supabase.from('profiles')
+      .select('hide_like_count_default, comments_disabled_default, hide_save_count_default')
+      .eq('id', user.id).maybeSingle();
+    const dLike = !!(me as any)?.hide_like_count_default;
+    const dComm = !!(me as any)?.comments_disabled_default;
+    const dSave = !!(me as any)?.hide_save_count_default;
+
     const taggedIds: string[] = Array.isArray(post.tagged_user_ids) ? post.tagged_user_ids : [];
     let people: TaggedPerson[] = [];
     if (taggedIds.length) {
@@ -183,6 +203,9 @@ export default function EditPostScreen() {
       mature: !!post.mature,
       allowGifs: post.allow_gifs !== false,
       downloadable: post.downloadable !== false,
+      hideLikeCount: overrideInitial(post.hide_like_count, dLike),
+      commentsDisabled: overrideInitial(post.comments_disabled, dComm),
+      hideSaveCount: overrideInitial(post.hide_save_count, dSave),
       filmTitle: post.film_title ?? '',
       audioKind: post.type,
       tagged: people,
@@ -204,6 +227,8 @@ export default function EditPostScreen() {
     setCaption(s.caption); setCursor(s.caption.length);
     setIsPublic(s.isPublic); setGenre(s.genre); setMature(s.mature);
     setAllowGifs(s.allowGifs); setDownloadable(s.downloadable); setFilmTitle(s.filmTitle);
+    setHideLikeCount(s.hideLikeCount); setCommentsDisabled(s.commentsDisabled); setHideSaveCount(s.hideSaveCount);
+    setPrivDefaults({ like: dLike, comm: dComm, save: dSave });
     setAudioKind(s.audioKind); setTagged(s.tagged); setFeatures(s.features);
     setSong(s.song); setMusicVideo(s.musicVideo); setMix(s.mix);
     setStickers(s.stickers); setCover(s.cover);
@@ -250,6 +275,13 @@ export default function EditPostScreen() {
     if (mature !== s.mature) u.mature = mature;
     if (isVideo && allowGifs !== s.allowGifs) u.allow_gifs = allowGifs;
     if (isAudio && downloadable !== s.downloadable) u.downloadable = downloadable;
+    // Engagement privacy applies to every post type. Only write when the user
+    // actually changed the toggle (compare to the snapshot, like every other field)
+    // — never because the stored override happens to now equal the account default,
+    // which would false-dirty the form on open and silently un-pin the post.
+    if (hideLikeCount !== s.hideLikeCount) u.hide_like_count = overrideToStore(hideLikeCount, privDefaults.like);
+    if (commentsDisabled !== s.commentsDisabled) u.comments_disabled = overrideToStore(commentsDisabled, privDefaults.comm);
+    if (hideSaveCount !== s.hideSaveCount) u.hide_save_count = overrideToStore(hideSaveCount, privDefaults.save);
     if (isFilm && filmTitle.trim() !== s.filmTitle.trim()) u.film_title = filmTitle.trim() || null;
     if (isAudio && audioKind !== s.audioKind) u.type = audioKind;
     if (!isAudio && !same(tagged.map((p) => p.id), s.tagged.map((p) => p.id))) u.tagged_user_ids = tagged.map((p) => p.id);
@@ -338,7 +370,18 @@ export default function EditPostScreen() {
         }
       }
 
-      const { data, error: updateError } = await supabase.from('posts').update(u).eq('id', id).select('id');
+      let { data, error: updateError } = await supabase.from('posts').update(u).eq('id', id).select('id');
+      // Degrade if the privacy columns aren't live yet (SQL applied after this
+      // build, or a PostgREST cache lag): drop them and retry so the rest of the
+      // edit still saves, rather than failing the whole edit.
+      if (updateError && /hide_like_count|comments_disabled|hide_save_count/i.test(updateError.message ?? '')) {
+        delete (u as any).hide_like_count; delete (u as any).comments_disabled; delete (u as any).hide_save_count;
+        if (Object.keys(u).length > 0) {
+          ({ data, error: updateError } = await supabase.from('posts').update(u).eq('id', id).select('id'));
+        } else {
+          updateError = null; data = [{ id }] as any; // only privacy changed; nothing left to save pre-migration
+        }
+      }
       if (updateError || !data?.length) {
         setError(t('editPost.notSaved'));
         setSaving(false);
@@ -674,6 +717,11 @@ export default function EditPostScreen() {
 
         {/* ── Settings ──────────────────────────────────────────────────────── */}
         <View style={styles.card}>
+          {/* Engagement privacy — every post type; each shows its effective value
+              (this post's override, or your account default). */}
+          <Toggle label={t('post.hideLikesLabel')} value={hideLikeCount} onChange={setHideLikeCount} styles={styles} colors={colors} />
+          <Toggle label={t('post.disableCommentsLabel')} value={commentsDisabled} onChange={setCommentsDisabled} styles={styles} colors={colors} />
+          <Toggle label={t('post.hideSavesLabel')} value={hideSaveCount} onChange={setHideSaveCount} styles={styles} colors={colors} />
           {isAudio && (
             <Toggle label={t('offline.downloadableLabel')} value={downloadable} onChange={setDownloadable} styles={styles} colors={colors} />
           )}

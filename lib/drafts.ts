@@ -86,6 +86,11 @@ export type Draft = {
   // per-post creator controls (both default true). Optional so older drafts load.
   allowDownloads?: boolean;     // audio: whether listeners may download for offline
   allowGifs?: boolean;          // video: whether others may Make GIF from it
+  // Engagement-privacy per-post toggles (effective value; null/undefined on older
+  // drafts → fall back to the account default on resume). See post_privacy.sql.
+  hideLikeCount?: boolean;
+  commentsDisabled?: boolean;
+  hideSaveCount?: boolean;
 
   // ── Crash insurance (video uploads) ─────────────────────────────────────────
   // Set by Share when the upload starts; cleared only when the post TRULY

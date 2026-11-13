@@ -74,6 +74,9 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
   const [saved, setSaved] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [commentCount, setCommentCount] = useState(0);
+  // Creator engagement privacy (post_privacy.sql) for the on-TV post.
+  const [hideLikes, setHideLikes] = useState(false);
+  const [commentsDisabled, setCommentsDisabled] = useState(false);
   // The post's real caption (CastItem.title falls back to the author's name) —
   // the share payload wants the true caption or nothing.
   const [caption, setCaption] = useState<string | null>(null);
@@ -83,14 +86,16 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
   useEffect(() => {
     if (!postId) return;
     let alive = true;
-    setLiked(false); setSaved(false); setLikeCount(0); setCommentCount(0); setCaption(null);
-    supabase.from('posts').select('caption, likes(count), comments(count)').eq('id', postId).maybeSingle()
+    setLiked(false); setSaved(false); setLikeCount(0); setCommentCount(0); setCaption(null); setHideLikes(false); setCommentsDisabled(false);
+    supabase.from('posts').select('caption, likes(count), comments(count), hide_like_count_eff, comments_disabled_eff').eq('id', postId).maybeSingle()
       .then(({ data }) => {
         if (!alive || !data) return;
         const d = data as any;
         setCaption(d.caption ?? null);
         setLikeCount(d.likes?.[0]?.count ?? 0);
         setCommentCount(d.comments?.[0]?.count ?? 0);
+        setHideLikes(d.hide_like_count_eff === true);
+        setCommentsDisabled(d.comments_disabled_eff === true);
       }, () => {});
     if (uid) {
       supabase.from('likes').select('user_id').eq('post_id', postId).eq('user_id', uid).maybeSingle()
@@ -271,16 +276,18 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
           <Ionicons name={liked ? 'heart' : 'heart-outline'} size={24} color={liked ? COLORS.like : colors.text} />
         </TouchableOpacity>
         {/* The COUNT (not the heart) opens who liked / reposted / saved. */}
-        {likeCount > 0 && (
+        {likeCount > 0 && !hideLikes && (
           <TouchableOpacity onPress={() => router.push(`/post-engagement/${postId}`)} hitSlop={8}>
             <Text style={styles.socialCount}>{formatCount(likeCount)}</Text>
           </TouchableOpacity>
         )}
       </View>
-      <TouchableOpacity onPress={() => { selection(); openComments(); }} hitSlop={8} style={styles.socialBtn}>
-        <Ionicons name="chatbubble-outline" size={22} color={colors.text} />
-        {commentCount > 0 && <Text style={styles.socialCount}>{formatCount(commentCount)}</Text>}
-      </TouchableOpacity>
+      {!commentsDisabled && (
+        <TouchableOpacity onPress={() => { selection(); openComments(); }} hitSlop={8} style={styles.socialBtn}>
+          <Ionicons name="chatbubble-outline" size={22} color={colors.text} />
+          {commentCount > 0 && <Text style={styles.socialCount}>{formatCount(commentCount)}</Text>}
+        </TouchableOpacity>
+      )}
       <TouchableOpacity accessibilityRole="button" accessibilityLabel={saved ? t('a11y.unsave') : t('a11y.save')} onPress={toggleSave} hitSlop={8} style={styles.socialBtn}>
         <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={22} color={saved ? colors.primary : colors.text} />
       </TouchableOpacity>

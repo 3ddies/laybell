@@ -52,7 +52,7 @@ export default async function ProfilePage({ params }: { params: { handle: string
 
   const db = sb();
   const [postsRes, followersRes, followingRes, albumsRes, listingsRes, shopRes] = await Promise.all([
-    db.from('posts').select('id,type,caption,media_url,thumbnail_url,cover_url,like_count,comment_count', { count: 'exact' })
+    db.from('posts').select('id,type,caption,media_url,thumbnail_url,cover_url,like_count,comment_count,hide_like_count_eff,comments_disabled_eff', { count: 'exact' })
       .eq('user_id', p.id).eq('is_public', true).is('archived_at', null).not('mature', 'is', true)
       .order('created_at', { ascending: false }).limit(60),
     db.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', p.id),

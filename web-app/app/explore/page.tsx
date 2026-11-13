@@ -8,7 +8,7 @@ export const metadata = { title: 'Explore', description: 'Discover artists, post
 export default async function ExplorePage() {
   const db = sb();
   const [postsRes, commsRes] = await Promise.all([
-    db.from('posts').select('id,type,media_url,thumbnail_url,cover_url,like_count,comment_count')
+    db.from('posts').select('id,type,media_url,thumbnail_url,cover_url,like_count,comment_count,hide_like_count_eff,comments_disabled_eff')
       .eq('is_public', true).is('archived_at', null).not('mature', 'is', true)
       .order('created_at', { ascending: false }).limit(30),
     db.from('communities').select('id,name,hashtag,member_count').order('member_count', { ascending: false }).limit(10),

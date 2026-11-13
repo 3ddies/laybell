@@ -40,10 +40,14 @@ type Row = {
 
 
 export default function Comments({
-  postId, ownerId, ListHeaderComponent, style, contentPadding, minHeaderHeight, onRefresh, onNavigate, onComposingChange, onEngage, onScrollTop, onPosted,
+  postId, ownerId, disabled, ListHeaderComponent, style, contentPadding, minHeaderHeight, onRefresh, onNavigate, onComposingChange, onEngage, onScrollTop, onPosted,
 }: {
   postId: string;
   ownerId?: string | null;
+  // The post has commenting turned off (post_privacy.sql, resolved via
+  // postPrivacy). The thread, the count chip and the input are all hidden and an
+  // "off" notice shows instead — the DB trigger is the real backstop.
+  disabled?: boolean;
   ListHeaderComponent?: ReactElement;
   style?: any;
   // Stretches the host's header to (at least) this height, so the "Comments"
@@ -122,6 +126,10 @@ export default function Comments({
     if (user) supabase.from('profiles').select('username, display_name, avatar_url, badge_tier, badge_show, profile_theme').eq('id', user.id).single()
       .then(({ data }) => setUserProfile(data));
 
+    // Comments off: skip fetching the thread entirely (the render shows the "off"
+    // notice; the DB trigger blocks writes) so hidden comments never hit the wire.
+    if (disabled) { setRows([]); return; }
+
     const { data: comments } = await supabase
       .from('comments')
       .select('id, body, created_at, user_id, parent_id, profiles!comments_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden)')
@@ -148,7 +156,7 @@ export default function Comments({
     // Snapshot the relevance order now (with fresh like/reply counts) so the list
     // is stable — liking a comment later won't reshuffle it mid-read.
     setTopOrder(rankTopLevelIds(comments, counts));
-  }, [postId]);
+  }, [postId, disabled]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -383,7 +391,7 @@ export default function Comments({
     <View style={[styles.flex, style]}>
       <FlatList
         ref={listRef}
-        data={topLevel}
+        data={disabled ? [] : topLevel}
         keyExtractor={c => c.id}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -413,7 +421,7 @@ export default function Comments({
             <View style={styles.divider} />
             <View style={[styles.labelRow, minHeaderHeight != null && styles.labelRowFold]}>
               <Text style={styles.label}>{t('comments.title')}</Text>
-              {rows.length > 0 && (
+              {rows.length > 0 && !disabled && (
                 <View style={styles.countChip}>
                   <Text style={styles.countChipText}>{formatCount(rows.length)}</Text>
                 </View>
@@ -422,11 +430,19 @@ export default function Comments({
           </>
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Ionicons name="chatbubble-ellipses-outline" size={26} color={colors.textTertiary} />
-            <Text style={styles.emptyTitle}>{t('comments.emptyTitle')}</Text>
-            <Text style={styles.emptySub}>{t('comments.emptySub')}</Text>
-          </View>
+          disabled ? (
+            <View style={styles.empty}>
+              <Ionicons name="chatbubbles-outline" size={26} color={colors.textTertiary} />
+              <Text style={styles.emptyTitle}>{t('comments.offTitle')}</Text>
+              <Text style={styles.emptySub}>{t('comments.offBody')}</Text>
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <Ionicons name="chatbubble-ellipses-outline" size={26} color={colors.textTertiary} />
+              <Text style={styles.emptyTitle}>{t('comments.emptyTitle')}</Text>
+              <Text style={styles.emptySub}>{t('comments.emptySub')}</Text>
+            </View>
+          )
         }
         renderItem={({ item }) => {
           const replies = repliesOf(item.id);
@@ -450,6 +466,7 @@ export default function Comments({
           or a default) — with none, the input's rounded corners sat clipped
           against the screen edge (the expanded-post host passes no padding so
           its media can stay full-bleed). */}
+      {!disabled && (
       <View style={[styles.inputWrap, { marginHorizontal: contentPadding ?? SPACING.md }]}>
         {replyTo && (
           <View style={styles.replyingBar}>
@@ -515,6 +532,7 @@ export default function Comments({
           </TouchableOpacity>
         </View>
       </View>
+      )}
 
     </View>
   );

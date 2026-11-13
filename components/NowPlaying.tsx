@@ -55,6 +55,8 @@ function formatMs(ms: number): string {
 // account's like/save state.
 type TrackStats = {
   streams: number; saves: number; likeCount: number;
+  // Creator engagement privacy (post_privacy.sql), resolved server-side.
+  hideLikes: boolean; hideSaves: boolean; commentsDisabled: boolean;
   isLiked: boolean; isSaved: boolean;
   ownerId: string | null; ownerName?: string;
   ownerBadge: { badge_tier?: string | null; badge_show?: boolean | null } | null;
@@ -307,6 +309,9 @@ export default function NowPlaying() {
   const isLikedRef = useRef(isLiked);
   isLikedRef.current = isLiked;
   const [likeCount, setLikeCount] = useState(0);
+  const [hideLikes, setHideLikes] = useState(false);
+  const [hideSaves, setHideSaves] = useState(false);
+  const [commentsDisabled, setCommentsDisabled] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   // Gate + fade for the stat bar. False from the moment a DIFFERENT track
   // renders (see the render-phase reset below `const pid`) until that track's
@@ -418,6 +423,7 @@ export default function NowPlaying() {
 
     const applyStats = (s: TrackStats) => {
       setStreams(s.streams); setSaves(s.saves); setLikeCount(s.likeCount);
+      setHideLikes(s.hideLikes); setHideSaves(s.hideSaves); setCommentsDisabled(s.commentsDisabled);
       setIsLiked(s.isLiked); setIsSaved(s.isSaved);
       setOwnerId(s.ownerId); setOwnerName(s.ownerName); setOwnerBadge(s.ownerBadge);
       setSpotlighted(s.spotlighted);
@@ -452,7 +458,7 @@ export default function NowPlaying() {
       // visible seconds-late stats pop. isLiked is a single-row membership
       // check instead of a scan.
       const [postRes, likeRes, saveRes] = await Promise.all([
-        supabase.from('posts').select('stream_count, save_count, like_count, user_id, profiles!posts_user_id_fkey(username, display_name, badge_tier, badge_show, profile_theme)').eq('id', pid).single(),
+        supabase.from('posts').select('stream_count, save_count, like_count, hide_like_count_eff, hide_save_count_eff, comments_disabled_eff, user_id, profiles!posts_user_id_fkey(username, display_name, badge_tier, badge_show, profile_theme)').eq('id', pid).single(),
         user ? supabase.from('likes').select('user_id').eq('user_id', user.id).eq('post_id', pid).maybeSingle() : Promise.resolve({ data: null }),
         user ? supabase.from('saves').select('id').eq('user_id', user.id).eq('post_id', pid).maybeSingle() : Promise.resolve({ data: null }),
       ]);
@@ -462,6 +468,9 @@ export default function NowPlaying() {
         streams: d?.stream_count || 0,
         saves: d?.save_count || 0,
         likeCount: d?.like_count || 0,
+        hideLikes: d?.hide_like_count_eff === true,
+        hideSaves: d?.hide_save_count_eff === true,
+        commentsDisabled: d?.comments_disabled_eff === true,
         isLiked: !!likeRes.data,
         isSaved: !!saveRes.data,
         ownerId: d?.user_id ?? null,
@@ -535,7 +544,7 @@ export default function NowPlaying() {
     needsRevealRef.current = true;
     statsFade.stopAnimation();
     statsFade.setValue(0);
-    setStreams(0); setSaves(0); setLikeCount(0);
+    setStreams(0); setSaves(0); setLikeCount(0); setHideLikes(false); setHideSaves(false); setCommentsDisabled(false);
     setIsLiked(false); setIsSaved(false);
     // Owner identity is per-track too: without this, tapping the artist name
     // during the fetch window routed to the PREVIOUS song's artist. The row
@@ -753,6 +762,7 @@ export default function NowPlaying() {
           <Comments
             postId={pid}
             ownerId={ownerId}
+            disabled={commentsDisabled}
             contentPadding={SPACING.md}
             // Area height minus the input bar (~81, calibrated) and the
             // divider+label block (~51): the label lands a few points above
@@ -846,9 +856,11 @@ export default function NowPlaying() {
                       <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={26} color={isLiked ? colors.like : colors.text} />
                     </TouchableOpacity>
                     {/* The COUNT (not the heart) opens who liked / reposted / saved. */}
-                    <TouchableOpacity disabled={!statsReady} onPress={() => { collapse(); router.push(`/post-engagement/${pid}`); }} activeOpacity={0.8} hitSlop={6}>
-                      <Animated.Text style={[styles.tapStatNum, { opacity: statsFade }]}>{formatCount(likeCount)}</Animated.Text>
-                    </TouchableOpacity>
+                    {!hideLikes && (
+                      <TouchableOpacity disabled={!statsReady} onPress={() => { collapse(); router.push(`/post-engagement/${pid}`); }} activeOpacity={0.8} hitSlop={6}>
+                        <Animated.Text style={[styles.tapStatNum, { opacity: statsFade }]}>{formatCount(likeCount)}</Animated.Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                   <View style={styles.centerStat}>
                     <Animated.Text style={[styles.centerStatNum, { opacity: statsFade }]}>{formatCount(streams)}</Animated.Text>
@@ -856,7 +868,7 @@ export default function NowPlaying() {
                   </View>
                   <TouchableOpacity disabled={!statsReady} style={[styles.tapStat, isSaved && styles.tapStatActiveSave]} onPress={handleSave} activeOpacity={0.8}>
                     <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={26} color={colors.text} />
-                    <Animated.Text style={[styles.tapStatNum, { opacity: statsFade }]}>{formatCount(saves)}</Animated.Text>
+                    {!hideSaves && <Animated.Text style={[styles.tapStatNum, { opacity: statsFade }]}>{formatCount(saves)}</Animated.Text>}
                   </TouchableOpacity>
                 </View>
 

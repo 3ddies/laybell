@@ -53,6 +53,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { usePostMusicActions, usePostMusicMuted } from '../../contexts/PostMusicContext';
 import { useIsFocused } from '@react-navigation/native';
 import { useExpandTransition } from '../../hooks/useExpandTransition';
+import { postPrivacy } from '../../lib/postPrivacy';
 import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost, EMPTY_PROFILE,
 } from '../../lib/feedScorer';
@@ -137,6 +138,9 @@ const ReelControls = memo(function ReelControls({
   const commentCount = item.comments?.[0]?.count || 0;
   const saveCount = item.save_count || 0;
   const shareCount = item.share_count || 0;
+  // Creator engagement privacy (post_privacy.sql): hide the like/save COUNT and
+  // the comment button when the post or its author's account default asks for it.
+  const priv = postPrivacy(item);
   // Landscape: generous hit area on each button so a near-miss still fires it,
   // and the rail/meta absorb stray taps in their region so tapping AROUND the
   // buttons doesn't fall through and close the controls. Vertical is unchanged.
@@ -158,19 +162,21 @@ const ReelControls = memo(function ReelControls({
             <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={32} color={isLiked ? colors.like : '#fff'} />
           </TouchableOpacity>
           {/* The COUNT (not the heart) opens who liked / reposted / saved. */}
-          {likeCount > 0 && (
+          {likeCount > 0 && !priv.hideLikes && (
             <TouchableOpacity hitSlop={railHit} onPress={() => api.openLikes(item)}>
               <Text style={styles.railText} numberOfLines={1}>{formatCount(likeCount)}</Text>
             </TouchableOpacity>
           )}
         </View>
-        <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => api.openComments(item)}>
-          <Ionicons name="chatbubble-outline" size={30} color="#fff" />
-          {commentCount > 0 && <Text style={styles.railText} numberOfLines={1}>{formatCount(commentCount)}</Text>}
-        </TouchableOpacity>
+        {!priv.commentsDisabled && (
+          <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => api.openComments(item)}>
+            <Ionicons name="chatbubble-outline" size={30} color="#fff" />
+            {commentCount > 0 && <Text style={styles.railText} numberOfLines={1}>{formatCount(commentCount)}</Text>}
+          </TouchableOpacity>
+        )}
         <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => api.toggleSave(item)}>
           <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={28} color="#fff" />
-          {saveCount > 0 && <Text style={styles.railText} numberOfLines={1}>{formatCount(saveCount)}</Text>}
+          {saveCount > 0 && !priv.hideSaves && <Text style={styles.railText} numberOfLines={1}>{formatCount(saveCount)}</Text>}
         </TouchableOpacity>
         <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => api.share(item)}>
           <Ionicons name="share-social-outline" size={28} color="#fff" />

@@ -14,6 +14,8 @@ type Post = {
   media_url: string | null; thumbnail_url: string | null; cover_url: string | null;
   like_count: number | null; comment_count: number | null; view_count: number | null;
   stream_count: number | null; mature: boolean | null; created_at: string;
+  // Creator engagement privacy (post_privacy.sql), resolved server-side.
+  hide_like_count_eff: boolean | null; comments_disabled_eff: boolean | null;
 };
 type Author = { username: string; display_name: string | null; avatar_url: string | null; hidden: boolean | null };
 
@@ -22,7 +24,7 @@ const getPost = cache(async (id: string) => {
   // RLS already drops private posts and posts of hidden authors; we also filter
   // archived_at and mature ourselves (neither is policy-enforced for the web).
   const { data: post } = await db.from('posts')
-    .select('id,user_id,type,caption,media_url,thumbnail_url,cover_url,like_count,comment_count,view_count,stream_count,mature,created_at')
+    .select('id,user_id,type,caption,media_url,thumbnail_url,cover_url,like_count,comment_count,hide_like_count_eff,comments_disabled_eff,view_count,stream_count,mature,created_at')
     .eq('id', id).is('archived_at', null).maybeSingle();
   if (!post) return { post: null as Post | null, author: null as Author | null };
   const { data: author } = await db.from('profiles')
@@ -83,7 +85,7 @@ export default async function PostPage({ params }: { params: { id: string } }) {
             </Link>
             <div className="pbody">
               {post.caption ? <div className="cap">{post.caption}</div> : null}
-              <PostInteractions postId={post.id} initialLikes={post.like_count} initialComments={post.comment_count} />
+              <PostInteractions postId={post.id} initialLikes={post.like_count} initialComments={post.comment_count} hideLikes={!!post.hide_like_count_eff} commentsDisabled={!!post.comments_disabled_eff} />
             </div>
             <div className="pfoot"><OpenCTA label="Open in Laybell" wide /></div>
           </div>

@@ -16,6 +16,7 @@ import { useSearchSwipeLock } from '../../contexts/PagerContext';
 // ExploreGrid (the original pre-redesign mosaic grid) is kept in the repo but no longer
 // imported — the layout switcher was retired in favor of the editorial grid (ExploreGridAlt).
 import ExploreGridAlt from '../../components/ExploreGridAlt';
+import { postPrivacy } from '../../lib/postPrivacy';
 import TrackRow from '../../components/TrackRow';
 import FollowButton from '../../components/FollowButton';
 import SuggestedAccounts from '../../components/SuggestedAccounts';
@@ -840,14 +841,21 @@ export default function ExploreScreen() {
                 <View style={styles.postMeta}>
                   <HighlightText text={`@${item.profiles?.username}`} query={hq} style={styles.postUser} highlightStyle={styles.searchHl} numberOfLines={1} />
                   <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={11} />
-                  {((item.likes?.[0]?.count || 0) + (item.comments?.[0]?.count || 0)) > 0 && (
-                    <View style={styles.postStats}>
-                      <Ionicons name="heart" size={11} color={colors.like} />
-                      <Text style={styles.postStatText}>{item.likes?.[0]?.count || 0}</Text>
-                      <Ionicons name="chatbubble" size={11} color={colors.textTertiary} />
-                      <Text style={styles.postStatText}>{item.comments?.[0]?.count || 0}</Text>
-                    </View>
-                  )}
+                  {(() => {
+                    // Respect the creator's engagement privacy (post_privacy.sql):
+                    // drop the like count and/or the comment count per the post's
+                    // effective flags; render the block only if something remains.
+                    const priv = postPrivacy(item);
+                    const likes = priv.hideLikes ? 0 : (item.likes?.[0]?.count || 0);
+                    const comments = priv.commentsDisabled ? 0 : (item.comments?.[0]?.count || 0);
+                    if (likes + comments <= 0) return null;
+                    return (
+                      <View style={styles.postStats}>
+                        {likes > 0 && <><Ionicons name="heart" size={11} color={colors.like} /><Text style={styles.postStatText}>{likes}</Text></>}
+                        {comments > 0 && <><Ionicons name="chatbubble" size={11} color={colors.textTertiary} /><Text style={styles.postStatText}>{comments}</Text></>}
+                      </View>
+                    );
+                  })()}
                 </View>
               </View>
               <FollowButton userId={item.user_id} />

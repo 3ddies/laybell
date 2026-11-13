@@ -5,12 +5,12 @@ import Link from 'next/link';
 import { browserSb } from '@/lib/supabaseBrowser';
 import { formatCount, timeAgo, gradientFor, initial } from '@/lib/format';
 
-type Post = { id: string; user_id: string; type: string | null; caption: string | null; media_url: string | null; thumbnail_url: string | null; cover_url: string | null; like_count: number | null; comment_count: number | null; created_at: string };
+type Post = { id: string; user_id: string; type: string | null; caption: string | null; media_url: string | null; thumbnail_url: string | null; cover_url: string | null; like_count: number | null; comment_count: number | null; hide_like_count_eff: boolean | null; comments_disabled_eff: boolean | null; created_at: string };
 type Author = { id: string; username: string; display_name: string | null; avatar_url: string | null };
 
 const AUDIO = new Set(['audio', 'podcast', 'audiobook']);
 const VIDEO = new Set(['video', 'reel']);
-const COLS = 'id,user_id,type,caption,media_url,thumbnail_url,cover_url,like_count,comment_count,created_at';
+const COLS = 'id,user_id,type,caption,media_url,thumbnail_url,cover_url,like_count,comment_count,hide_like_count_eff,comments_disabled_eff,created_at';
 
 export default function HomePage() {
   const sb = browserSb();
@@ -119,11 +119,13 @@ export default function HomePage() {
             <div className="factions">
               <button className={liked[p.id] ? 'liked' : ''} onClick={() => toggleLike(p)} aria-label="Like">
                 <svg viewBox="0 0 24 24" fill={liked[p.id] ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2"><path d="M12 21s-7-4.5-9.3-8.3C1.2 10 2.3 6.5 5.5 6c1.9-.3 3.6.8 4.5 2 .9-1.2 2.6-2.3 4.5-2 3.2.5 4.3 4 2.8 6.7C19 16.5 12 21 12 21Z"/></svg>
-                {formatCount(p.like_count)}
+                {!p.hide_like_count_eff && formatCount(p.like_count)}
               </button>
-              <Link href={`/p/${p.id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontWeight: 700 }}>
+              {/* The permalink stays even when comments are off — it's the home
+                  feed's ONLY tap-through to the post; only the count is hidden. */}
+              <Link href={`/p/${p.id}`} aria-label="Open post" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontWeight: 700 }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="23" height="23"><path d="M21 12a8 8 0 0 1-11.5 7.2L3 21l1.8-6.5A8 8 0 1 1 21 12Z"/></svg>
-                {formatCount(p.comment_count)}
+                {!p.comments_disabled_eff && formatCount(p.comment_count)}
               </Link>
             </div>
             {p.caption ? <div className="fcap"><b>@{a?.username} </b>{p.caption}</div> : null}

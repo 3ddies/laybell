@@ -342,7 +342,7 @@ export default function PublicProfileScreen() {
       currentUser
         ? supabase.from('follows').select('*').eq('follower_id', id).eq('following_id', currentUser.id).maybeSingle()
         : Promise.resolve({ data: null }),
-      supabase.from('reposts').select('created_at, posts(id, type, media_url, caption, is_public, archived_at, thumbnail_url, cover_url, profiles!posts_user_id_fkey(display_name))').eq('user_id', id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('reposts').select('created_at, posts(id, type, media_url, caption, is_public, archived_at, thumbnail_url, cover_url, hide_like_count_eff, comments_disabled_eff, hide_save_count_eff, profiles!posts_user_id_fkey(display_name))').eq('user_id', id).order('created_at', { ascending: false }).limit(100),
       supabase.from('playlists').select('*').eq('user_id', id).eq('is_public', true).order('play_count', { ascending: false }),
     ]);
 

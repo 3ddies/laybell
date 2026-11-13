@@ -32,10 +32,13 @@ function rubber(excess: number, max = 38): number {
 // with them; a re-render storm under an active TextInput drops/jumps typing.
 // Callers with stable props (CastBar) get the bail-out; inline-arrow callers
 // behave exactly as before.
-function CommentsSheet({ visible, postId, ownerId, onClose, onPosted, inOverlay }: {
+function CommentsSheet({ visible, postId, ownerId, disabled, onClose, onPosted, inOverlay }: {
   visible: boolean;
   postId: string;
   ownerId?: string | null;
+  // Commenting is turned off for this post (post_privacy.sql) — forwarded to
+  // Comments, which then shows the "off" notice with no thread or input.
+  disabled?: boolean;
   onClose: () => void;
   // Forwarded to Comments — fires when a comment is actually submitted.
   onPosted?: () => void;
@@ -216,7 +219,7 @@ function CommentsSheet({ visible, postId, ownerId, onClose, onPosted, inOverlay 
           </TouchableOpacity>
           <View style={styles.divider} />
           <View style={styles.body}>
-            {postId ? <Comments postId={postId} ownerId={ownerId} contentPadding={SPACING.md} onNavigate={dismiss} onPosted={onPosted} /> : null}
+            {postId ? <Comments postId={postId} ownerId={ownerId} disabled={disabled} contentPadding={SPACING.md} onNavigate={dismiss} onPosted={onPosted} /> : null}
           </View>
         </Reanimated.View>
       </View>

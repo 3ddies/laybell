@@ -43,6 +43,11 @@ export type VideoJob = {
   taggedIds: string[];
   communityIds: string[];
   allowGifs: boolean;
+  // Per-post engagement-privacy overrides (post_privacy.sql). NULL/undefined =
+  // inherit the author's account default; only a deliberate divergence is sent.
+  hideLikeCount?: boolean | null;
+  commentsDisabled?: boolean | null;
+  hideSaveCount?: boolean | null;
   // Marks the post mature (supabase/sql/mature_content.sql).
   mature?: boolean;
   // One bubble per letterbox band of a LANDSCAPE clip watched upright
@@ -492,6 +497,11 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         ...(job.taggedIds.length ? { tagged_user_ids: job.taggedIds } : {}),
         ...(job.communityIds.length ? { community_ids: job.communityIds } : {}),
         allow_gifs: job.allowGifs,
+        // Per-post privacy overrides — only a non-null divergence is sent; NULL
+        // (inherit) is the column default, so omitting it means the same thing.
+        ...(job.hideLikeCount != null ? { hide_like_count: job.hideLikeCount } : {}),
+        ...(job.commentsDisabled != null ? { comments_disabled: job.commentsDisabled } : {}),
+        ...(job.hideSaveCount != null ? { hide_save_count: job.hideSaveCount } : {}),
         // Only when set, like the composer: a database without the column never sees it.
         ...(job.mature ? { mature: true } : {}),
         // Remix pairing + layout/mode (post_remix_sequence.sql).
@@ -535,6 +545,15 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         delete row.composition_kind;
         delete row.source_trim_start;
         delete row.source_trim_end;
+        ({ data: newPost, error } = await supabase.from('posts').insert(row).select('id').single());
+      }
+      // Engagement-privacy columns, if PostgREST's cached schema still lags the
+      // ALTER: the post lands without the per-post override, so it simply follows
+      // the author's account default (which the DB trigger still applies).
+      if (error && /hide_like_count|comments_disabled|hide_save_count/i.test(error.message ?? '')) {
+        delete row.hide_like_count;
+        delete row.comments_disabled;
+        delete row.hide_save_count;
         ({ data: newPost, error } = await supabase.from('posts').insert(row).select('id').single());
       }
       // One asset = one post, DB-enforced (posts_video_uid_unique). If a racing

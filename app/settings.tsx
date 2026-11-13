@@ -203,6 +203,17 @@ export default function SettingsScreen() {
   // in online_user_ids()). Mirrors the profile so the switch is right on open.
   const [activeStatusOn, setActiveStatusOn] = useState(true);
   useEffect(() => { setActiveStatusOn((profile as any)?.active_status_enabled !== false); }, [profile]);
+  // Account-wide engagement-privacy defaults (post_privacy.sql). Each applies to
+  // ALL your posts; a per-post toggle in the composer can still diverge. Mirrors
+  // the profile so the switches are right on open.
+  const [hideLikesOn, setHideLikesOn] = useState(false);
+  const [commentsOffOn, setCommentsOffOn] = useState(false);
+  const [hideSavesOn, setHideSavesOn] = useState(false);
+  useEffect(() => {
+    setHideLikesOn((profile as any)?.hide_like_count_default === true);
+    setCommentsOffOn((profile as any)?.comments_disabled_default === true);
+    setHideSavesOn((profile as any)?.hide_save_count_default === true);
+  }, [profile]);
   const { colors, mode, setMode } = useTheme();
   const { usageBytes, prefs: offlinePrefs, setPref: setOfflinePref } = useOffline();
   const { isPremium, isPremiumPlus } = usePremium();
@@ -401,6 +412,26 @@ export default function SettingsScreen() {
     }
   }
 
+  // One account-wide engagement-privacy default. The DB trigger re-resolves every
+  // one of this user's posts (posts that didn't diverge follow the new value).
+  async function togglePostPrivacy(
+    column: 'hide_like_count_default' | 'comments_disabled_default' | 'hide_save_count_default',
+    setLocal: (v: boolean) => void,
+    next: boolean,
+  ) {
+    setLocal(next);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('no session');
+      const { error } = await supabase.from('profiles').update({ [column]: next }).eq('id', user.id);
+      if (error) throw error;
+      update({ [column]: next } as any); // keep the cached profile in step
+    } catch {
+      setLocal(!next);
+      Alert.alert(t('editProfile.error'), t('settings.postPrivacySaveFailed'));
+    }
+  }
+
   function toggleHidden(next: boolean) {
     if (next) {
       Alert.alert(
@@ -559,6 +590,27 @@ export default function SettingsScreen() {
       subtitle: t('account.activeStatusSub'),
       value: activeStatusOn,
       onValueChange: toggleActiveStatus,
+    },
+    {
+      icon: 'heart-dislike-outline',
+      label: t('settings.hideLikesDefault'),
+      subtitle: t('settings.hideLikesDefaultSub'),
+      value: hideLikesOn,
+      onValueChange: (v) => togglePostPrivacy('hide_like_count_default', setHideLikesOn, v),
+    },
+    {
+      icon: 'chatbubble-ellipses-outline',
+      label: t('settings.disableCommentsDefault'),
+      subtitle: t('settings.disableCommentsDefaultSub'),
+      value: commentsOffOn,
+      onValueChange: (v) => togglePostPrivacy('comments_disabled_default', setCommentsOffOn, v),
+    },
+    {
+      icon: 'bookmark-outline',
+      label: t('settings.hideSavesDefault'),
+      subtitle: t('settings.hideSavesDefaultSub'),
+      value: hideSavesOn,
+      onValueChange: (v) => togglePostPrivacy('hide_save_count_default', setHideSavesOn, v),
     },
     {
       icon: 'eye-off-outline',
