@@ -140,10 +140,20 @@ export default function ExploreGridAlt({
     playRaw({ id: s.id, uri: s.media_url, caption: s.caption, artist: s.profiles?.display_name ?? '', cover: s.cover_url });
     if (isAudioPost(s.type)) onClusterSongPlay?.();
   };
-  const openMedia = (p: GridPost) => {
+  // Shared-element open: measure the tapped tile and hand its screen rect to the
+  // viewer as `src`, so the post grows OUT of the thumbnail on open and shrinks
+  // back INTO it on close (useExpandTransition on the reel/post screens) — the
+  // exact effect the profile grid uses. No node/rect → a plain open, no zoom.
+  const openMedia = (p: GridPost, node?: { measureInWindow?: (cb: (x: number, y: number, w: number, h: number) => void) => void } | null) => {
     if (isSwipeTap()) return;
     const pathname = p.type === 'video' ? '/reel/[id]' : '/post/[id]';
-    router.push({ pathname, params: { id: p.id, post: JSON.stringify(p) } });
+    const seed = JSON.stringify(p);
+    if (node?.measureInWindow) {
+      node.measureInWindow((x, y, width, height) =>
+        router.push({ pathname, params: { id: p.id, post: seed, src: JSON.stringify({ x, y, width, height }) } }));
+    } else {
+      router.push({ pathname, params: { id: p.id, post: seed } });
+    }
   };
   const longPressFor = (p: GridPost) =>
     currentUserId
@@ -492,26 +502,35 @@ export default function ExploreGridAlt({
 
   // ── Block renderers ────────────────────────────────────────────────────────
   // One square/feature media tile. `style` carries the slot sizing (flex / height).
-  const cell = (p: GridPost, showUser: boolean, style?: any) => (
-    <TouchableOpacity key={p.id} activeOpacity={0.9} onPress={() => openMedia(p)} onLongPress={longPressFor(p)} style={[styles.g3Cell, style]}>
-      {mediaBody(p, showUser)}
-    </TouchableOpacity>
-  );
+  const cell = (p: GridPost, showUser: boolean, style?: any) => {
+    // Each tile carries its OWN node and hands it back on press (not a shared
+    // id→view map) so the viewer grows out of exactly the square that was tapped.
+    let node: any = null;
+    return (
+      <TouchableOpacity key={p.id} ref={(n) => { node = n; }} activeOpacity={0.9} onPress={() => openMedia(p, node)} onLongPress={longPressFor(p)} style={[styles.g3Cell, style]}>
+        {mediaBody(p, showUser)}
+      </TouchableOpacity>
+    );
+  };
   // A full-width tile (hero / TV strip / lone remainder). Horizontal videos get the
   // Laybell-TV treatment; anything else fills the wide slot with a cover crop.
-  const wide = (p: GridPost, h: number, key: string) => (
-    <TouchableOpacity key={key} activeOpacity={0.92} onPress={() => openMedia(p)} onLongPress={longPressFor(p)} style={[styles.g3Cell, styles.g3Block, { height: h }]}>
-      {isHorizontalVideo(p) ? tvBody(p) : mediaBody(p, true)}
-    </TouchableOpacity>
-  );
+  const wide = (p: GridPost, h: number, key: string) => {
+    let node: any = null;
+    return (
+      <TouchableOpacity key={key} ref={(n) => { node = n; }} activeOpacity={0.92} onPress={() => openMedia(p, node)} onLongPress={longPressFor(p)} style={[styles.g3Cell, styles.g3Block, { height: h }]}>
+        {isHorizontalVideo(p) ? tvBody(p) : mediaBody(p, true)}
+      </TouchableOpacity>
+    );
+  };
 
   // The quad's tall reel: plays the cached video preview (cost-safe — the immutable
   // preview_url MP4, never Cloudflare HLS), falling back to the unbilled still-frame
   // slideshow when the clip is missing or won't load. Only `preview` reels move.
   const reelTile = (p: GridPost, preview: boolean, style?: any) => {
     if (preview && p.type === 'video') {
+      let node: any = null;
       return (
-        <TouchableOpacity key={p.id} activeOpacity={0.9} onPress={() => openMedia(p)} onLongPress={longPressFor(p)} style={[styles.g3Cell, style]}>
+        <TouchableOpacity key={p.id} ref={(n) => { node = n; }} activeOpacity={0.9} onPress={() => openMedia(p, node)} onLongPress={longPressFor(p)} style={[styles.g3Cell, style]}>
           <PreviewStills
             uri={p.media_url}
             previewUrl={p.preview_url}
@@ -620,11 +639,14 @@ export default function ExploreGridAlt({
         const title = name || p.caption?.trim() || handle;
         const heroDesc = name && !captionEchoesTitle(p.caption, name, p.song_artist) ? (p.caption ?? '') : '';
         const vid = isHorizontalVideo(p);
+        // The post grows out of the thumbnail IMAGE itself (not the title row
+        // beneath it), so the rect is measured off the inner cell, not the block.
+        let heroNode: any = null;
         // The first Laybell-TV video: thumbnail → ~10s cached preview → thumbnail, with its
         // title in a row BENEATH the thumbnail (YouTube-style), not over the image.
         return (
-          <TouchableOpacity key={`hero-${p.id}`} activeOpacity={0.95} onPress={() => openMedia(p)} onLongPress={longPressFor(p)} style={styles.g3Block}>
-            <View style={[styles.g3Cell, { height: G3_HERO_H }]}>
+          <TouchableOpacity key={`hero-${p.id}`} activeOpacity={0.95} onPress={() => openMedia(p, heroNode)} onLongPress={longPressFor(p)} style={styles.g3Block}>
+            <View ref={(n) => { heroNode = n; }} style={[styles.g3Cell, { height: G3_HERO_H }]}>
               {vid && p.preview_url ? (
                 <PreviewStills
                   uri={p.media_url}
@@ -657,11 +679,14 @@ export default function ExploreGridAlt({
         );
       }
       case 'tv': return wide(blk.p, G3_TV_H, `tv-${blk.p.id}`);
-      case 'single': return (
-        <TouchableOpacity key={`single-${blk.p.id}`} activeOpacity={0.92} onPress={() => openMedia(blk.p)} onLongPress={longPressFor(blk.p)} style={[styles.g3Cell, styles.g3Block, { height: G3_SINGLE_H }]}>
-          {mediaBody(blk.p, true)}
-        </TouchableOpacity>
-      );
+      case 'single': {
+        let node: any = null;
+        return (
+          <TouchableOpacity key={`single-${blk.p.id}`} ref={(n) => { node = n; }} activeOpacity={0.92} onPress={() => openMedia(blk.p, node)} onLongPress={longPressFor(blk.p)} style={[styles.g3Cell, styles.g3Block, { height: G3_SINGLE_H }]}>
+            {mediaBody(blk.p, true)}
+          </TouchableOpacity>
+        );
+      }
       case 'quad': {
         const grid = (
           <View key="q" style={styles.g3QuadGrid}>
