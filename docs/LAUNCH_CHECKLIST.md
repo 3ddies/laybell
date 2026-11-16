@@ -18,15 +18,24 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ---
 
-## 0.0 ✅ THE CURRENT STATE — updated 2026-11-10
+## 0.0 ✅ THE CURRENT STATE — updated 2026-11-16
 
-**1.1.4 is SUBMITTED to BOTH stores and IN REVIEW** (2026-11-10). It **supersedes 1.1.2**
-(which never shipped). This was a **native** build (new on-device module
-`modules/laybell-subject-lift`, no OTA). It carries **subject-lift stickers** (press-and-hold
-any image → cut its subject into a transparent sticker; stickers land in "My GIFs" and send
-transparently in comments/DMs), **storybooks** (chaptered story highlights on the profile,
-with archive + make-public), and the **archive UX polish**. Merged to `dev` via PRs #1–#3
-(final merge `dca8b8c`). Full What's New: **`docs/RELEASE_NOTES_1.1.4.md`**.
+**1.1.5 is CUT + PREPPED — owner builds + submits.** On `feature/subject-lift-stickers`
+(features `583ddef`, release cut `20838b4`): `app.json` → **1.1.5**, **pure JS/TS + one additive
+column**, no new native module. Ships since 1.1.4: the **Explore editorial-grid redesign** +
+Laybell-TV hero rework, **privacy controls** (hide like/save counts, turn off comments), the
+**shop display toggle** (`profiles.shop_display`), **storybooks beside the profile name/bio**,
+and the **album cover-color accent**. Gates: app typecheck **0**; **no money code**; demo
+screenshot data removed + verified 0/0 this session. The assistant is **blocked from prod/store
+commands**, so the **OWNER RUNBOOK is `docs/RELEASE_NOTES_1.1.5.md`**: (1) deploy
+`supabase/sql/profile_shop_display.sql`, (2) run the schema-audit gate `scripts/.schema-audit.sql`
+(deploy any SQL it names — e.g. `post_privacy.sql` if those columns aren't live — then re-run until
+empty), (3) `eas build -p ios|android --profile production`, (4) `eas submit … --latest` → create the
+ASC **1.1.5** version (What's New from the release notes) + finalize the Play draft. **No new IAPs.**
+
+**1.1.4 is LIVE on both stores** (confirmed 2026-11-16; submitted 2026-11-10) — subject-lift
+stickers + storybooks + archive UX polish (native module `modules/laybell-subject-lift`). Full
+What's New: **`docs/RELEASE_NOTES_1.1.4.md`**; its submit detail is in the bullets below.
 
 - **iOS build 25** → `eas submit` (stored ASC key `5GPD4R9QBU`, no 2FA) → ASC version 1.1.4
   created, build attached, metadata carried from 1.1.1, What's New pasted, **Submitted →
