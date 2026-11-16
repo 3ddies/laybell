@@ -11,6 +11,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { coverFade } from '../../lib/coverFade';
+import { useCoverAccent } from '../../lib/coverColor';
 import { useAudio } from '../../contexts/AudioContext';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import { formatCount } from '../../lib/format';
@@ -102,6 +103,7 @@ export default function AlbumScreen() {
 
   const isOwn = !!album && album.user_id === uid;
   const cover = album ? albumCover({ ...album, tracks }) : null;
+  const coverAccent = useCoverAccent(cover); // tints the Play button to match the artwork
   // Press-and-hold the album art to lift its subject into a sticker (Threads-style).
   const coverHold = useStickerHold(cover);
 
@@ -139,12 +141,12 @@ export default function AlbumScreen() {
             <ExpoImage source={{ uri: item.post.cover_url }} style={styles.trackCover} contentFit="cover" cachePolicy="memory-disk" transition={coverFade(item.post.cover_url)} />
           ) : (
             <View style={[styles.trackCover, styles.trackCoverEmpty]}>
-              <Ionicons name="musical-note" size={16} color={colors.textTertiary} />
+              <Ionicons name="musical-note" size={18} color={colors.textTertiary} />
             </View>
           )}
           {active && (
             <View style={styles.trackCoverOverlay}>
-              <Ionicons name={isPlaying ? 'musical-notes' : 'pause'} size={16} color={colors.text} />
+              <Ionicons name={isPlaying ? 'musical-notes' : 'pause'} size={18} color={colors.primary} />
             </View>
           )}
         </View>
@@ -153,11 +155,11 @@ export default function AlbumScreen() {
             {title || t('album.untitled')}
           </Text>
           <View style={styles.trackMeta}>
-            <Ionicons name="play" size={9} color={colors.textTertiary} />
-            <Text style={styles.trackMetaText}>{formatCount(item.post?.stream_count ?? 0)}</Text>
-            {dur && <Text style={styles.trackMetaText}>· {dur}</Text>}
+            <Ionicons name="play" size={9} color={active ? colors.primary : colors.textTertiary} />
+            <Text style={[styles.trackMetaText, active && { color: colors.primary }]}>{formatCount(item.post?.stream_count ?? 0)}</Text>
           </View>
         </View>
+        {dur ? <Text style={[styles.trackDur, active && { color: colors.primary }]}>{dur}</Text> : null}
       </>
     );
   };
@@ -248,7 +250,7 @@ export default function AlbumScreen() {
       <View style={styles.container}>
         <View style={[styles.topBar, { paddingTop: Math.max(insets.top, SPACING.md) + SPACING.xs }]}>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={8}>
-            <Ionicons name="chevron-back" size={22} color={colors.primaryLight} />
+            <Ionicons name="chevron-back" size={22} color={colors.text} />
             <Text style={styles.backText}>{t('common.back')}</Text>
           </TouchableOpacity>
           <View style={styles.topBarRight}>
@@ -316,17 +318,28 @@ export default function AlbumScreen() {
                     {editing ? <Text style={styles.titlePencil}>{'  '}✎</Text> : null}
                   </Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push(`/profile/${album.user_id}`)} hitSlop={6} disabled={isOwn}>
-                  <Text style={styles.meta} numberOfLines={1}>
-                    {isOwn ? t('album.yours') : <Text style={styles.metaAccent}>@{artist?.username ?? ''}</Text>}
-                    {` · ${countLabel('track', tracks.length)}`}
-                    {runtime > 0 ? ` · ${fmtRuntime(runtime)}` : ''}
+                <TouchableOpacity style={styles.artistRow} onPress={() => router.push(`/profile/${album.user_id}`)} hitSlop={6} disabled={isOwn} activeOpacity={0.7}>
+                  {artist?.avatar_url ? (
+                    <ExpoImage source={{ uri: artist.avatar_url }} style={styles.artistAvatar} contentFit="cover" cachePolicy="memory-disk" />
+                  ) : (
+                    <View style={[styles.artistAvatar, styles.artistAvatarEmpty]}>
+                      <Ionicons name="person" size={12} color={colors.textTertiary} />
+                    </View>
+                  )}
+                  <Text style={styles.artistName} numberOfLines={1}>
+                    {isOwn ? t('album.yours') : (artist?.display_name || `@${artist?.username ?? ''}`)}
                   </Text>
+                  {artist?.badge_show && artist?.badge_tier ? (
+                    <Ionicons name="checkmark-circle" size={15} color={GOLD} />
+                  ) : null}
                 </TouchableOpacity>
+                <Text style={styles.subMeta} numberOfLines={1}>
+                  {countLabel('track', tracks.length)}{runtime > 0 ? ` · ${fmtRuntime(runtime)}` : ''}
+                </Text>
                 {tracks.length > 0 && !editing && (
-                  <TouchableOpacity style={styles.playAll} onPress={() => { playQueue(queue(), 0); expand(); }} activeOpacity={0.85}>
-                    <Ionicons name="play" size={14} color={colors.background} style={{ marginLeft: 2 }} />
-                    <Text style={styles.playAllText}>{t('album.play')}</Text>
+                  <TouchableOpacity style={[styles.playAll, coverAccent && { backgroundColor: coverAccent.bg }]} onPress={() => { playQueue(queue(), 0); expand(); }} activeOpacity={0.85}>
+                    <Ionicons name="play" size={15} color={coverAccent?.fg ?? '#fff'} style={{ marginLeft: 1 }} />
+                    <Text style={[styles.playAllText, coverAccent && { color: coverAccent.fg }]}>{t('album.play')}</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -520,7 +533,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingHorizontal: SPACING.md, paddingBottom: SPACING.md,
   },
   backBtn: { flexDirection: 'row', alignItems: 'center' },
-  backText: { color: colors.primaryLight, fontSize: 16, marginLeft: 2 },
+  backText: { color: colors.text, fontSize: 16, marginLeft: 2 },
   editBtn: { color: colors.primaryLight, fontSize: 16, fontWeight: '700' },
   topBarRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
   featureBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -538,18 +551,21 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     flexDirection: 'row', gap: SPACING.md,
     paddingHorizontal: SPACING.md, paddingTop: SPACING.lg, paddingBottom: SPACING.md,
   },
-  cover: { width: 96, height: 96, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceLight },
+  cover: { width: 112, height: 112, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceLight },
   headerInfo: { flex: 1, justifyContent: 'center' },
-  title: { color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  title: { color: colors.text, fontSize: 26, fontWeight: '800', letterSpacing: -0.6, lineHeight: 30 },
   titlePencil: { color: colors.textTertiary, fontSize: 15 },
-  meta: { color: colors.textSecondary, fontSize: 13, marginTop: 4 },
-  metaAccent: { color: colors.text, fontWeight: '700' },
+  artistRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 8 },
+  artistAvatar: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.surfaceLight },
+  artistAvatarEmpty: { alignItems: 'center', justifyContent: 'center' },
+  artistName: { color: colors.text, fontSize: 15.5, fontWeight: '700', flexShrink: 1 },
+  subMeta: { color: colors.textTertiary, fontSize: 12.5, marginTop: 3 },
   playAll: {
     flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
-    marginTop: SPACING.sm, paddingHorizontal: SPACING.md, paddingVertical: 7,
-    borderRadius: RADIUS.full, backgroundColor: colors.text,
+    marginTop: SPACING.sm + 2, paddingHorizontal: SPACING.md + 2, paddingVertical: 8,
+    borderRadius: RADIUS.full, backgroundColor: colors.primary,
   },
-  playAllText: { color: colors.background, fontSize: 13.5, fontWeight: '800' },
+  playAllText: { color: '#fff', fontSize: 14, fontWeight: '800' },
 
   listContent: { paddingBottom: SPACING.xxl },
   // A flat, tight album row — number (or a now-playing mark) · cover · title ·
@@ -558,14 +574,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // the songs and the numbers line up in a clean column.
   trackRow: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    paddingVertical: 9, paddingHorizontal: SPACING.md,
+    paddingVertical: 11, paddingHorizontal: SPACING.md,
   },
-  trackRowActive: { backgroundColor: colors.text + '0D' },
+  trackRowActive: { backgroundColor: colors.primary + '14' },
   // Tabular so the column does not shuffle sideways as it passes 9 to 10.
   trackNumCol: { width: 22, alignItems: 'center', justifyContent: 'center' },
   trackNum: { color: quietText(colors), fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  trackCoverWrap: { width: 46, height: 46, borderRadius: RADIUS.md, overflow: 'hidden' },
-  trackCover: { width: 46, height: 46, borderRadius: RADIUS.md, backgroundColor: colors.surfaceLight },
+  trackCoverWrap: { width: 50, height: 50, borderRadius: RADIUS.md, overflow: 'hidden' },
+  trackCover: { width: 50, height: 50, borderRadius: RADIUS.md, backgroundColor: colors.surfaceLight },
   trackCoverEmpty: { alignItems: 'center', justifyContent: 'center' },
   // Scrim + mark over the artwork of the loaded row — the page colour, so the
   // text-colour glyph on top contrasts in every theme (same idea as TrackRow).
@@ -574,13 +590,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background + '8C',
   },
   trackMain: { flex: 1, justifyContent: 'center' },
-  trackTitle: { color: colors.text, fontSize: 15.5, fontWeight: '700', letterSpacing: -0.2 },
+  trackTitle: { color: colors.text, fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
   trackTitleActive: { color: colors.primary },
-  trackMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  trackMetaText: { color: colors.textTertiary, fontSize: 12 },
+  trackMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
+  trackMetaText: { color: colors.textTertiary, fontSize: 12.5 },
+  // Length pinned to the right edge of each row, tabular so the column holds steady.
+  trackDur: { color: colors.textTertiary, fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'], marginLeft: SPACING.sm },
   // Hairline between rows, inset to begin at the title (past the number + cover),
   // so the list reads as grouped songs rather than detached cards.
-  trackSep: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: SPACING.md * 2 + 46, marginRight: SPACING.md },
+  trackSep: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: SPACING.md * 2 + 50, marginRight: SPACING.md },
   // Edit-mode row body (the drag target): centred, horizontal padding only. The
   // opaque background now lives on the reorder row itself, and the pencil/remove
   // actions are rendered beside this by ReorderableList, outside the drag gesture.

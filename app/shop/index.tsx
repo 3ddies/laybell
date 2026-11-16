@@ -16,6 +16,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useSearchSwipeLock } from '../../contexts/PagerContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
+import { supabase } from '../../lib/supabase';
 import {
   LISTING_CATEGORIES, createShop, deliverOrder, exploreListings, fetchMyPurchases,
   fetchMySales, fetchSellerListings, formatPrice, getShop, hasOpenShop,
@@ -248,6 +249,15 @@ function MyShopTab({ myId, myAge }: { myId: string | null; myAge: number | null 
   const [editName, setEditName] = useState('');
   const [editBio, setEditBio] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+  // How this seller's shop appears on their public profile: 'button' (default) or a cover 'rail'.
+  const [shopDisplay, setShopDisplay] = useState<'button' | 'rail'>('button');
+  useEffect(() => {
+    if (!myId) return;
+    let active = true;
+    supabase.from('profiles').select('shop_display').eq('id', myId).maybeSingle()
+      .then(({ data }) => { if (active && (data as { shop_display?: string } | null)?.shop_display === 'rail') setShopDisplay('rail'); });
+    return () => { active = false; };
+  }, [myId]);
 
   const load = useCallback(async () => {
     if (!myId) return;
@@ -484,6 +494,25 @@ function MyShopTab({ myId, myAge }: { myId: string | null; myAge: number | null 
               </Text>
               <Text style={styles.statLabel}>{t('shop.statsEarned')}</Text>
             </View>
+          </View>
+          {/* How the shop shows on your profile: plain button (default) or a cover rail. */}
+          <View style={styles.displayRow}>
+            <View style={styles.flex}>
+              <Text style={styles.displayLabel}>Cover rail on your profile</Text>
+              <Text style={styles.displaySub}>Show a few listing covers instead of just a button</Text>
+            </View>
+            <Switch
+              value={shopDisplay === 'rail'}
+              onValueChange={async (v) => {
+                const next = v ? 'rail' : 'button';
+                const prev = shopDisplay;
+                setShopDisplay(next);
+                const { error } = await supabase.from('profiles').update({ shop_display: next }).eq('id', myId);
+                if (error) setShopDisplay(prev);
+              }}
+              trackColor={{ true: colors.success, false: colors.surfaceLight }}
+              thumbColor="#fff"
+            />
           </View>
           <TouchableOpacity style={styles.greenBtn} onPress={() => router.push('/shop/new-listing')} activeOpacity={0.85}>
             <Ionicons name="add" size={18} color="#fff" />
@@ -731,6 +760,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   editSaveText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   openRow: { alignItems: 'center', gap: 2 },
   openLabel: { color: c.textTertiary, fontSize: 11, fontWeight: '600' },
+  displayRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
+  displayLabel: { color: c.text, fontSize: 14, fontWeight: '700' },
+  displaySub: { color: c.textTertiary, fontSize: 12, marginTop: 1 },
   // Orders
   ordersContent: { paddingHorizontal: SPACING.md, paddingBottom: 40, gap: 18 },
   orderSection: { gap: 10 },

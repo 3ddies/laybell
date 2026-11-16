@@ -58,7 +58,7 @@ import { createScreenCache } from '../../lib/screenCache';
 type Profile = {
   id: string; username: string; display_name: string;
   bio: string | null; avatar_url: string | null; badge_tier: string;
-  link?: string | null; title?: string | null;
+  link?: string | null; title?: string | null; shop_display?: 'button' | 'rail' | null;
 };
 type Stats = { followers: number; following: number; posts: number };
 
@@ -126,6 +126,7 @@ export default function PublicProfileScreen() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followsMe, setFollowsMe] = useState(false); // does this profile follow me back?
   const [hasShop, setHasShop] = useState(false); // open shop → green Shop button
+  const [shopPreview, setShopPreview] = useState<{ id: string; cover_url: string | null }[]>([]); // covers for the 'rail' display
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('posts');
   const [followLoading, setFollowLoading] = useState(false);
@@ -314,6 +315,21 @@ export default function PublicProfileScreen() {
     hasOpenShop(String(id)).then((v) => { if (active) setHasShop(v); }).catch(() => {});
     return () => { active = false; };
   }, [id]);
+
+  // Cover previews for the shop — only when this seller chose the 'rail' display.
+  useEffect(() => {
+    if (!id || currentUserId === id || profile?.shop_display !== 'rail') { setShopPreview([]); return; }
+    let active = true;
+    supabase
+      .from('shop_listings')
+      .select('id, cover_url')
+      .eq('user_id', String(id))
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(4)
+      .then(({ data }) => { if (active) setShopPreview((data as { id: string; cover_url: string | null }[]) ?? []); });
+    return () => { active = false; };
+  }, [id, currentUserId, profile?.shop_display]);
 
   // "Viewed your profile" — record this view (profile_views.sql). The RPC no-ops
   // for self, for a viewer who hasn't opted in, and across a block, so it's safe
@@ -979,36 +995,71 @@ export default function PublicProfileScreen() {
         </View>
       </LinearGradient>
 
-      {/* Info */}
+      {/* Info — name/bio/link on the left; for a visitor the highlights tuck in
+          beside them, so the top reads fuller and shorter, not a tall empty column. */}
       <View style={styles.infoSection}>
-        <View style={styles.nameRow}>
-          <Text style={styles.displayName}>{profile?.display_name}</Text>
-          <BadgeEmblem profile={profile} size={17} />
+        <View style={styles.infoRow}>
+          <View style={styles.infoMain}>
+            <View style={styles.nameRow}>
+              <Text style={styles.displayName}>{profile?.display_name}</Text>
+              <BadgeEmblem profile={profile} size={17} />
+            </View>
+            {profile?.title ? <Text style={styles.titleText} numberOfLines={2}>{profile.title}</Text> : null}
+            {profile?.bio
+              ? <TranslatableText text={profile.bio} style={styles.bio} />
+              : <Text style={styles.bioEmpty}>{t('profile.noBio')}</Text>
+            }
+            {profile?.link ? (
+              <TouchableOpacity style={styles.linkRow} onPress={() => linkGuard.open(profile.link!, { context: 'bio' })}>
+                <Ionicons name="link-outline" size={14} color={colors.text} />
+                <Text style={styles.linkText} numberOfLines={1}>{displayUrl(profile.link)}</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          {!isOwnProfile && id ? (
+            <View style={styles.infoHighlights}>
+              <StorybookShelf userId={String(id)} isOwn={false} compact />
+            </View>
+          ) : null}
         </View>
-        {profile?.title ? <Text style={styles.titleText} numberOfLines={2}>{profile.title}</Text> : null}
-        {profile?.bio
-          ? <TranslatableText text={profile.bio} style={styles.bio} />
-          : <Text style={styles.bioEmpty}>{t('profile.noBio')}</Text>
-        }
-        {profile?.link ? (
-          <TouchableOpacity style={styles.linkRow} onPress={() => linkGuard.open(profile.link!, { context: 'bio' })}>
-            <Ionicons name="link-outline" size={14} color={colors.text} />
-            <Text style={styles.linkText} numberOfLines={1}>{displayUrl(profile.link)}</Text>
-          </TouchableOpacity>
-        ) : null}
       </View>
 
-      {/* Storybooks — their public highlight shelf, just under the bio */}
-      {id ? <StorybookShelf userId={String(id)} isOwn={isOwnProfile} /> : null}
+      {/* Your own profile keeps the full-width highlights shelf (with the New bubble). */}
+      {isOwnProfile && id ? <StorybookShelf userId={String(id)} isOwn /> : null}
 
-      {/* Shop (only when this user has an open shop) — above Follow / Message */}
+      {/* Shop (visitor, open shop) — the seller picks a plain button (default) or a cover rail. */}
       {!isOwnProfile && hasShop && (
-        <View style={styles.shopButtonRow}>
-          <TouchableOpacity style={styles.shopButton} onPress={() => router.push(`/shop/${id}`)} activeOpacity={0.85}>
-            <Ionicons name="storefront" size={17} color="#fff" />
-            <Text style={styles.shopButtonText}>{t('shop.title')}</Text>
+        profile?.shop_display === 'rail' ? (
+          <TouchableOpacity style={styles.shopCard} onPress={() => router.push(`/shop/${id}`)} activeOpacity={0.85}>
+            <View style={styles.shopCardHead}>
+              <Ionicons name="storefront" size={16} color={colors.text} />
+              <Text style={styles.shopCardTitle}>{t('shop.title')}</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} style={styles.shopCardChevron} />
+            </View>
+            {shopPreview.length > 0 && (
+              <View style={styles.shopCardRow}>
+                {shopPreview.map((s) => (
+                  <View key={s.id} style={styles.shopThumbWrap}>
+                    {s.cover_url ? (
+                      <Image source={{ uri: s.cover_url }} style={styles.shopThumb} contentFit="cover" transition={120} />
+                    ) : (
+                      <View style={[styles.shopThumb, styles.shopThumbEmpty]}>
+                        <Ionicons name="musical-note" size={16} color={colors.textTertiary} />
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
           </TouchableOpacity>
-        </View>
+        ) : (
+          <View style={styles.shopButtonRow}>
+            <TouchableOpacity style={styles.shopButton} onPress={() => router.push(`/shop/${id}`)} activeOpacity={0.85}>
+              <Ionicons name="storefront" size={17} color="#fff" />
+              <Text style={styles.shopButtonText}>{t('shop.title')}</Text>
+            </TouchableOpacity>
+          </View>
+        )
       )}
 
       {/* Follow / Message */}
@@ -1135,6 +1186,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   statLabel: { color: 'rgba(245,245,245,0.7)', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
 
   infoSection: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: 4 },
+  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.md },
+  infoMain: { flex: 1, minWidth: 0, gap: 4 },
+  infoHighlights: { flexShrink: 0, maxWidth: 148, paddingTop: 2 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   displayName: { color: colors.text, fontSize: 16, fontWeight: '700' },
   titleText: { color: colors.text, fontSize: 13.5, fontWeight: '700' },
@@ -1151,6 +1205,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   shopButtonRow: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md },
   shopButton: { backgroundColor: colors.success, borderRadius: RADIUS.md, paddingVertical: SPACING.sm + 2, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
   shopButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  shopCard: { marginHorizontal: SPACING.md, marginTop: SPACING.md, backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md, padding: SPACING.sm + 2, gap: SPACING.sm },
+  shopCardHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  shopCardTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  shopCardChevron: { marginLeft: 'auto' },
+  shopCardRow: { flexDirection: 'row', gap: SPACING.sm },
+  shopThumbWrap: { flex: 1, aspectRatio: 1, borderRadius: RADIUS.sm, overflow: 'hidden', backgroundColor: colors.background },
+  shopThumb: { width: '100%', height: '100%' },
+  shopThumbEmpty: { alignItems: 'center', justifyContent: 'center' },
   actionButtons: { flexDirection: 'row', paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: SPACING.sm },
   // justifyContent, and a lineHeight on the label: with padding alone the text
   // sat a hair above centre, because a font's box carries more room under the

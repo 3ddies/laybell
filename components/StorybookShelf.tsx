@@ -20,8 +20,9 @@ import type { SourceRect } from '../lib/stories';
  * Press-and-hold one of YOUR OWN books to open a quick menu: edit it, flip it
  * public/private, or delete it.
  */
-export default function StorybookShelf({ userId, isOwn }: { userId: string; isOwn: boolean }) {
+export default function StorybookShelf({ userId, isOwn, compact = false }: { userId: string; isOwn: boolean; compact?: boolean }) {
   const styles = useThemedStyles(makeStyles);
+  const sz = compact ? 54 : SIZE; // smaller circles when tucked beside the bio
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [books, setBooks] = useState<Storybook[]>([]);
@@ -136,22 +137,22 @@ export default function StorybookShelf({ userId, isOwn }: { userId: string; isOw
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={styles.wrap}
-        contentContainerStyle={styles.content}
+        style={[styles.wrap, compact && styles.wrapCompact]}
+        contentContainerStyle={[styles.content, compact && styles.contentCompact]}
       >
         {isOwn && (
-          <TouchableOpacity style={styles.item} activeOpacity={0.8} onPress={() => router.push('/storybook/edit/new' as any)}>
-            <View style={[styles.cover, styles.newCover]}>
-              <Ionicons name="add" size={26} color={styles.newGlyph.color} />
+          <TouchableOpacity style={[styles.item, { width: sz + 10 }]} activeOpacity={0.8} onPress={() => router.push('/storybook/edit/new' as any)}>
+            <View style={[styles.cover, styles.newCover, { width: sz, height: sz, borderRadius: sz / 2 }]}>
+              <Ionicons name="add" size={compact ? 22 : 26} color={styles.newGlyph.color} />
             </View>
-            <Text style={styles.title} numberOfLines={1}>New</Text>
+            <Text style={[styles.title, { width: sz + 8 }]} numberOfLines={1}>New</Text>
           </TouchableOpacity>
         )}
 
         {books.map((b) => (
           <TouchableOpacity
             key={b.id}
-            style={styles.item}
+            style={[styles.item, { width: sz + 10 }]}
             activeOpacity={0.85}
             onPress={() => openBook(b)}
             onLongPress={isOwn ? () => openMenu(b) : undefined}
@@ -159,20 +160,20 @@ export default function StorybookShelf({ userId, isOwn }: { userId: string; isOw
             disabled={!!openingId}
           >
             <View
-              style={styles.coverWrap}
+              style={[styles.coverWrap, { width: sz, height: sz }]}
               collapsable={false}
               ref={(n) => { if (n) coverRefs.current.set(b.id, n as unknown as View); else coverRefs.current.delete(b.id); }}
             >
               {b.cover_url ? (
-                <Image source={{ uri: b.cover_url }} style={styles.cover} contentFit="cover" transition={120} />
+                <Image source={{ uri: b.cover_url }} style={[styles.cover, { width: sz, height: sz, borderRadius: sz / 2 }]} contentFit="cover" transition={120} />
               ) : (
-                <View style={[styles.cover, styles.emptyCover]}>
-                  <Ionicons name="book" size={22} color={styles.newGlyph.color} />
+                <View style={[styles.cover, styles.emptyCover, { width: sz, height: sz, borderRadius: sz / 2 }]}>
+                  <Ionicons name="book" size={compact ? 18 : 22} color={styles.newGlyph.color} />
                 </View>
               )}
               {/* Pre-load spinner — the book's content loads here, before the viewer opens */}
               {openingId === b.id && (
-                <View style={styles.coverLoading}>
+                <View style={[styles.coverLoading, { width: sz, height: sz, borderRadius: sz / 2 }]}>
                   <ActivityIndicator color="#fff" size="small" />
                 </View>
               )}
@@ -184,7 +185,7 @@ export default function StorybookShelf({ userId, isOwn }: { userId: string; isOw
                 </View>
               )}
             </View>
-            <Text style={styles.title} numberOfLines={1}>{b.title}</Text>
+            <Text style={[styles.title, { width: sz + 8 }]} numberOfLines={1}>{b.title}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -235,7 +236,9 @@ const DANGER = '#FF3B30';
 
 const makeStyles = (c: ThemePalette) => StyleSheet.create({
   wrap: { marginTop: SPACING.md },
+  wrapCompact: { marginTop: 0, flexGrow: 0 },
   content: { paddingHorizontal: SPACING.md, gap: SPACING.md, alignItems: 'flex-start' },
+  contentCompact: { paddingHorizontal: 0, gap: SPACING.sm },
   item: { width: SIZE + 10, alignItems: 'center' },
   coverWrap: { width: SIZE, height: SIZE, position: 'relative' },
   cover: {
