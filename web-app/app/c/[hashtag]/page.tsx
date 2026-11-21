@@ -29,7 +29,7 @@ export default async function CommunityPage({ params }: { params: { hashtag: str
   const db = sb();
   const [c, postsRes] = await Promise.all([
     getCommunity(tag),
-    db.from('posts').select('id,type,media_url,thumbnail_url,cover_url,like_count,comment_count,hide_like_count_eff,comments_disabled_eff', { count: 'exact' })
+    db.from('posts').select('id,type,media_url,thumbnail_url,cover_url,like_count,comment_count', { count: 'exact' })
       .eq('community_hashtag', tag).eq('is_public', true).is('archived_at', null).not('mature', 'is', true)
       .order('created_at', { ascending: false }).limit(60),
   ]);

@@ -53,7 +53,7 @@ export function PostTile({ post }: { post: GridPost }) {
 
 export function OpenCTA({ label = 'Open in Laybell', wide = false }: { label?: string; wide?: boolean }) {
   return (
-    <a className="btn btn-primary" href="https://laybell.app/open.html" style={wide ? { width: '100%', justifyContent: 'center' } : undefined}>
+    <a className="btn btn-primary" href="https://laybell.app/open.html" target="_blank" rel="noopener noreferrer" style={wide ? { width: '100%', justifyContent: 'center' } : undefined}>
       <img className="logo-sm" src="/logo.png" alt="" />
       {label}
     </a>

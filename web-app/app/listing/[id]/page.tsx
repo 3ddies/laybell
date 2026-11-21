@@ -5,6 +5,7 @@ import { sb, isVisibleProfile } from '@/lib/supabase';
 import { formatCount, gradientFor } from '@/lib/format';
 import { LISTING_PUBLIC_COLS, CATEGORY_LABEL, dealRows, listingAppLink, type WebListing } from '@/lib/shop';
 import { TierBadge, NotFoundState } from '../../components';
+import ProtectedAudio from '../../ProtectedAudio';
 
 export const revalidate = 60;
 
@@ -77,7 +78,9 @@ export default async function ListingPage({ params }: { params: { id: string } }
           {l.preview_url ? (
             <div className="lpreview">
               <span className="lp-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V6l9-2v12"/><circle cx="6" cy="18" r="2.6" fill="currentColor"/><circle cx="15" cy="16" r="2.6" fill="currentColor"/></svg> Preview</span>
-              <audio controls preload="none" src={l.preview_url} />
+              {/* Preview clip only (the full product is delivered after purchase);
+                  streams but no download affordance. */}
+              <ProtectedAudio src={l.preview_url} />
             </div>
           ) : null}
 

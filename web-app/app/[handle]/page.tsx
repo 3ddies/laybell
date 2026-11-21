@@ -51,8 +51,8 @@ export default async function ProfilePage({ params }: { params: { handle: string
   if (!isVisibleProfile(p)) return <NotFoundState title="Account unavailable" body="This account is private or no longer available." />;
 
   const db = sb();
-  const [postsRes, followersRes, followingRes, albumsRes, listingsRes, shopRes] = await Promise.all([
-    db.from('posts').select('id,type,caption,media_url,thumbnail_url,cover_url,like_count,comment_count,hide_like_count_eff,comments_disabled_eff', { count: 'exact' })
+  const [postsRes, followersRes, followingRes, albumsRes, listingsRes, shopRes, salesRes] = await Promise.all([
+    db.from('posts').select('id,type,caption,media_url,thumbnail_url,cover_url,like_count,comment_count', { count: 'exact' })
       .eq('user_id', p.id).eq('is_public', true).is('archived_at', null).not('mature', 'is', true)
       .order('created_at', { ascending: false }).limit(60),
     db.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', p.id),
@@ -62,6 +62,9 @@ export default async function ProfilePage({ params }: { params: { handle: string
     db.from('shop_listings').select(LISTING_PUBLIC_COLS).eq('user_id', p.id).eq('status', 'active').order('created_at', { ascending: false }).limit(48),
     // Shop row — RLS returns it only when the shop is open (is_open), so a hit == open.
     db.from('shops').select('name,bio,is_open').eq('user_id', p.id).maybeSingle(),
+    // Total paid sales across ALL listings incl. sold-exclusives that RLS hides
+    // from the anon key — the same figure the app shows (shop_seller_paid_sales).
+    db.rpc('shop_seller_paid_sales', { p_user: p.id }),
   ]);
   const posts = (postsRes.data || []) as any[];
   const badge = p.badge_show !== false ? p.badge_tier : null;
@@ -97,7 +100,8 @@ export default async function ProfilePage({ params }: { params: { handle: string
 
   const listings = (listingsRes.data || []) as WebListing[];
   const shopRow = (shopRes.data as { name: string | null; bio: string | null } | null) || null;
-  const shop = { open: !!shopRow, listings, name: shopRow?.name ?? null, bio: shopRow?.bio ?? null };
+  const sold = typeof salesRes.data === 'number' ? salesRes.data : 0;
+  const shop = { open: !!shopRow, listings, name: shopRow?.name ?? null, bio: shopRow?.bio ?? null, sold };
 
   return (
     <>

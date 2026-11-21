@@ -12,6 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useState, useRef, type ReactElement } from 'react';
 import { FlashList } from '@shopify/flash-list';
+import Reanimated from 'react-native-reanimated';
 import { orderProfileTabs, tabContent } from '../../lib/profileTabOrder';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
@@ -54,6 +55,11 @@ import { LISTEN_FILL } from '../../components/ListenButton';
 import { useFollow } from '../../contexts/FollowContext';
 import { ProfileSkeleton } from '../../components/Skeleton';
 import { createScreenCache } from '../../lib/screenCache';
+import { useScrollAwayHeader } from '../../hooks/useScrollAwayHeader';
+
+// FlashList wrapped as a Reanimated animated component so the scroll-away
+// header's UI-thread scroll handler can attach to the grids.
+const AnimatedFlashList = Reanimated.createAnimatedComponent(FlashList);
 
 type Profile = {
   id: string; username: string; display_name: string;
@@ -132,6 +138,10 @@ export default function PublicProfileScreen() {
   const [followLoading, setFollowLoading] = useState(false);
   // This user's ACTIVE public playlists (locked over-limit ones stay hidden).
   const [publicPlaylists, setPublicPlaylists] = useState<any[]>([]);
+
+  // The profile card + tab strip scroll away as the active tab's feed scrolls —
+  // one absolute header layer, native-driver scroll-linked (useScrollAwayHeader).
+  const { onScrollForTab, onOverlayLayout, overlayH, headerStyle } = useScrollAwayHeader(TAB_KEYS, activeTab);
 
   // This screen writes its own follow row (it owns the follower count and the
   // private-post visibility that depend on it), so it has to tell the shared
@@ -316,9 +326,10 @@ export default function PublicProfileScreen() {
     return () => { active = false; };
   }, [id]);
 
-  // Cover previews for the shop — only when this seller chose the 'rail' display.
+  // Cover previews for the shop rail — fetched for visitors AND for the owner's
+  // own profile now that the rail shows there too.
   useEffect(() => {
-    if (!id || currentUserId === id || profile?.shop_display !== 'rail') { setShopPreview([]); return; }
+    if (!id || profile?.shop_display !== 'rail') { setShopPreview([]); return; }
     let active = true;
     supabase
       .from('shop_listings')
@@ -329,7 +340,7 @@ export default function PublicProfileScreen() {
       .limit(4)
       .then(({ data }) => { if (active) setShopPreview((data as { id: string; cover_url: string | null }[]) ?? []); });
     return () => { active = false; };
-  }, [id, currentUserId, profile?.shop_display]);
+  }, [id, profile?.shop_display]);
 
   // "Viewed your profile" — record this view (profile_views.sql). The RPC no-ops
   // for self, for a viewer who hasn't opted in, and across a block, so it's safe
@@ -869,13 +880,13 @@ export default function PublicProfileScreen() {
     const first = header ? 1 : 0;
     const geo = inset ? GRID_INSET : GRID_BLEED;
     return (
-      <FlashList
+      <AnimatedFlashList
         data={rows}
         numColumns={3}
         keyExtractor={gridKey}
         getItemType={gridItemType}
         overrideItemLayout={spanGridHeader}
-        renderItem={({ item, index }) => (item.__header ? header : (
+        renderItem={({ item, index }: { item: any; index: number }) => (item.__header ? header : (
           <ProfileGridTile
             post={item}
             tabKey={key}
@@ -888,8 +899,10 @@ export default function PublicProfileScreen() {
         // Only a page with nothing at all: under a custom layout or a films
         // shelf, that first row is the content.
         ListEmptyComponent={renderGridEmpty(key)}
-        contentContainerStyle={styles.pageContent}
+        contentContainerStyle={[styles.pageContent, { paddingTop: overlayH }]}
         showsVerticalScrollIndicator={false}
+        onScroll={onScrollForTab(key)}
+        scrollEventThrottle={16}
         refreshControl={refreshControl}
         // Behave like the ScrollView this replaced: nothing anchors when the
         // first row or the posts above the screen change.
@@ -921,7 +934,6 @@ export default function PublicProfileScreen() {
           handle going back, so nothing competes with the sub-tab swipes. */}
       <Stack.Screen options={{ gestureEnabled: false }} />
 
-      <View>
       {/* Back */}
       <View style={styles.topBar}>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.backBtn} onPress={() => router.back()}>
@@ -963,6 +975,11 @@ export default function PublicProfileScreen() {
         />
       )}
 
+      {/* The profile card + tab strip scroll away together as the active feed
+          scrolls (useScrollAwayHeader) — one absolute layer, clipped by the body
+          wrapper's overflow:hidden at the nav bar. */}
+      <View style={styles.body}>
+      <Reanimated.View onLayout={onOverlayLayout} style={[styles.headerOverlay, headerStyle]}>
       {/* Banner — tinted by the owner's chosen profile theme (gated by their tier) */}
       <LinearGradient colors={bannerColors} style={styles.banner}>
         <View style={styles.avatarWrap}>
@@ -1027,8 +1044,9 @@ export default function PublicProfileScreen() {
       {/* Your own profile keeps the full-width highlights shelf (with the New bubble). */}
       {isOwnProfile && id ? <StorybookShelf userId={String(id)} isOwn /> : null}
 
-      {/* Shop (visitor, open shop) — the seller picks a plain button (default) or a cover rail. */}
-      {!isOwnProfile && hasShop && (
+      {/* Shop (open shop) — seller picks a plain button (default) or a cover rail.
+          Shown to visitors AND on the owner's own view, mirroring what visitors see. */}
+      {hasShop && (
         profile?.shop_display === 'rail' ? (
           <TouchableOpacity style={styles.shopCard} onPress={() => router.push(`/shop/${id}`)} activeOpacity={0.85}>
             <View style={styles.shopCardHead}>
@@ -1120,7 +1138,7 @@ export default function PublicProfileScreen() {
           </TouchableOpacity>
         ))}
       </View>
-      </View>
+      </Reanimated.View>
 
       {/* Sub-tab pages — ALL stay mounted; switching just flips visibility, so
           a step never pays a grid-mount cost mid-swipe. The visible page slides
@@ -1128,29 +1146,36 @@ export default function PublicProfileScreen() {
       <Animated.View style={[styles.pager, { transform: [{ translateX: tabAnimX }] }]}>
         {TAB_KEYS.map((key) => {
           const refresh = (
-            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setup().catch(() => { setLoading(false); setRefreshing(false); }); }} tintColor={tabAccent} colors={[tabAccent]} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setup().catch(() => { setLoading(false); setRefreshing(false); }); }} tintColor={tabAccent} colors={[tabAccent]} progressViewOffset={overlayH} />
           );
           return (
             <View key={key} style={key === activeTab ? styles.pager : styles.pageHidden}>
               {key === 'playlists' || key === 'music' ? (
-                <ScrollView
+                <Reanimated.ScrollView
                   showsVerticalScrollIndicator={false}
-                  contentContainerStyle={styles.pageContent}
+                  contentContainerStyle={[styles.pageContent, { paddingTop: overlayH }]}
+                  onScroll={onScrollForTab(key)}
+                  scrollEventThrottle={16}
                   refreshControl={refresh}
                 >
                   {key === 'playlists' ? renderPlaylists() : renderMusicList(dataForTab('music'))}
-                </ScrollView>
+                </Reanimated.ScrollView>
               ) : renderGridPage(key, refresh)}
             </View>
           );
         })}
       </Animated.View>
+      </View>
     </View>
   );
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  // Header + pager share this clip box: the scroll-away header (absolute,
+  // overlapping the pager's reserved paddingTop) is cut off cleanly at the nav bar.
+  body: { flex: 1, overflow: 'hidden' },
+  headerOverlay: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 2, backgroundColor: colors.background },
   dismissPage: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
   loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
 

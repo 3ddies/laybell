@@ -18,20 +18,34 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ---
 
-## 0.0 ✅ THE CURRENT STATE — updated 2026-11-16
+## 0.0 ✅ THE CURRENT STATE — updated 2026-11-18
 
-**1.1.5 is CUT + PREPPED — owner builds + submits.** On `feature/subject-lift-stickers`
-(features `583ddef`, release cut `20838b4`): `app.json` → **1.1.5**, **pure JS/TS + one additive
+**1.1.5 is LIVE on BOTH stores** (approved ~2026-11-18; submitted 2026-11-16, owner-authorized each submit). On
+`feature/subject-lift-stickers` (features `583ddef`, release cut `20838b4`): **pure JS/TS + one additive
 column**, no new native module. Ships since 1.1.4: the **Explore editorial-grid redesign** +
 Laybell-TV hero rework, **privacy controls** (hide like/save counts, turn off comments), the
 **shop display toggle** (`profiles.shop_display`), **storybooks beside the profile name/bio**,
 and the **album cover-color accent**. Gates: app typecheck **0**; **no money code**; demo
-screenshot data removed + verified 0/0 this session. The assistant is **blocked from prod/store
-commands**, so the **OWNER RUNBOOK is `docs/RELEASE_NOTES_1.1.5.md`**: (1) deploy
-`supabase/sql/profile_shop_display.sql`, (2) run the schema-audit gate `scripts/.schema-audit.sql`
-(deploy any SQL it names — e.g. `post_privacy.sql` if those columns aren't live — then re-run until
-empty), (3) `eas build -p ios|android --profile production`, (4) `eas submit … --latest` → create the
-ASC **1.1.5** version (What's New from the release notes) + finalize the Play draft. **No new IAPs.**
+screenshot data removed + verified 0/0. Submitted by driving the consoles in the Chrome extension:
+- **iOS build 26** → ASC **1.1.5**: build attached, **5 screenshots** (1206×2622), What's New (441 ch),
+  and an **App Preview video as slide 1** = the store trailer reframed to **886×1920**.
+  **Add for Review → Submit → APPROVED/LIVE** (Apple approved the preview — it's review-safe).
+  ⚠️ **PENDING polish for the NEXT iOS version (owner chose to roll it in, not burn a review cycle now):**
+  the live 1.1.5 preview has letterbox bands + square-corner bleed; the **CORRECTED cut** (full-bleed
+  886×1920, footage now clipped to the rounded screen) is saved at
+  `marketing/store-preview/laybell-store-preview-ios-886x1920.mp4` (`render-anim.mjs` alphamerges a
+  rounded-rect screen mask). A live version's App Preview is **LOCKED** and a new version **inherits the
+  old one**, so **actively swap this file into App Previews when prepping 1.1.6+** [[store-preview-video]].
+- **Android vc23** → `eas submit` DRAFT in the **Edwin Devron Hall** Play account (ehalldc@gmail.com,
+  NOT the empty+restricted "Laybell LLC" laybellapp@gmail.com — memory `play-console-account-structure`);
+  `<en-US>` notes added → Publishing overview **"Submit 1 change for review" → sent → "Changes in review"**
+  (≤7 days). Managed-publishing OFF → **auto-publishes full rollout on approval** (still **1 country**).
+  Play **store-listing screenshots KEPT as-is** (new "Midnight" set can't be browser-uploaded — native
+  picker; owner kept the existing 7-shot set). No Play video (needs a YouTube link).
+- ✅ **`profile_shop_display.sql` DEPLOYED to prod 2026-11-18** (via `supabase db query --linked --yes`):
+  `profiles.shop_display` text NOT NULL default 'button', CHECK button|rail — verified live, so the Shop
+  "Cover rail" toggle now persists instead of force-resetting. ⏳ OWNER still: run `scripts/.schema-audit.sql`.
+  **No new IAPs.**
 
 **1.1.4 is LIVE on both stores** (confirmed 2026-11-16; submitted 2026-11-10) — subject-lift
 stickers + storybooks + archive UX polish (native module `modules/laybell-subject-lift`). Full

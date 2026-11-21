@@ -11,7 +11,7 @@ import { GRADIENTS, RADIUS, SPACING, type ThemePalette } from '../../constants/t
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { supabase } from '../../lib/supabase';
-import { fetchSellerListings, getShop, paidSalesCount, type Shop, type ShopListing } from '../../lib/shop';
+import { fetchSellerListings, fetchSellerPaidSales, getShop, type Shop, type ShopListing } from '../../lib/shop';
 
 // A specific seller's storefront — opened from the green Shop button on their
 // profile. Header shows the shop identity; the grid is their active listings.
@@ -27,20 +27,25 @@ export default function SellerShopScreen() {
   const [shop, setShop] = useState<Shop | null>(null);
   const [seller, setSeller] = useState<{ username: string | null; display_name: string | null; avatar_url: string | null } | null>(null);
   const [listings, setListings] = useState<ShopListing[]>([]);
+  // Total paid sales across ALL the seller's listings, incl. sold-exclusives
+  // that RLS hides from a visitor — fetched server-side (fetchSellerPaidSales).
+  const [salesTotal, setSalesTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     if (!userId) return;
     try {
-      const [s, l, { data: p }] = await Promise.all([
+      const [s, l, { data: p }, sales] = await Promise.all([
         getShop(userId),
         fetchSellerListings(userId),
         supabase.from('profiles').select('username, display_name, avatar_url').eq('id', userId).maybeSingle(),
+        fetchSellerPaidSales(userId),
       ]);
       setShop(s);
       setListings(l);
       setSeller(p ?? null);
+      setSalesTotal(sales);
     } catch { /* pre-migration */ }
     setLoading(false);
   }, [userId]);
@@ -93,9 +98,9 @@ export default function SellerShopScreen() {
                 <View style={styles.flex}>
                   <Text style={styles.sellerName}>{name}</Text>
                   {!!shop?.bio && <Text style={styles.sellerBio} numberOfLines={2}>{shop.bio}</Text>}
-                  {listings.length > 0 && (
+                  {(listings.length > 0 || salesTotal > 0) && (
                     <Text style={styles.sellerMeta}>
-                      {t('shop.shopMeta', { n: listings.length, m: listings.reduce((s, l) => s + paidSalesCount(l), 0) })}
+                      {t('shop.shopMeta', { n: listings.length, m: salesTotal })}
                     </Text>
                   )}
                 </View>

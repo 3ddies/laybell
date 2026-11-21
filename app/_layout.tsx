@@ -459,6 +459,19 @@ function AppContent() {
             explicitly so it doesn't inherit the transparentModal sheet-drag from the
             post/reel it's opened over. */}
         <Stack.Screen name="story/repost/[id]" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
+        {/* Lifetime stats (expanded from the notifications header): NOT a SwipeBackPager
+            screen — a fullscreen modal that slides UP to enter and straight DOWN to dismiss,
+            one vertical motion. Must be listed explicitly: it's opened from notifications (a
+            transparentModal), so otherwise it inherits that presentation AND, with the pager's
+            own slide, double-animates ("slide over then down"). */}
+        <Stack.Screen
+          name="lifetime-stats"
+          options={{
+            presentation: 'fullScreenModal',
+            animation: 'slide_from_bottom',
+            gestureEnabled: false,
+          }}
+        />
         {/* One-motion swipe-back screens: each renders inside a SwipeBackPager,
             so they're transparent modals — the screen you came from stays mounted
             underneath and is revealed live as you drag the page off (same feel as

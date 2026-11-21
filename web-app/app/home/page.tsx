@@ -3,14 +3,15 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { browserSb } from '@/lib/supabaseBrowser';
-import { formatCount, timeAgo, gradientFor, initial } from '@/lib/format';
+import { formatCount, timeAgo, gradientFor, initial, streamIframeSrc, streamThumb, aspectOf } from '@/lib/format';
+import StreamPlayer from '../StreamPlayer';
 
-type Post = { id: string; user_id: string; type: string | null; caption: string | null; media_url: string | null; thumbnail_url: string | null; cover_url: string | null; like_count: number | null; comment_count: number | null; hide_like_count_eff: boolean | null; comments_disabled_eff: boolean | null; created_at: string };
+type Post = { id: string; user_id: string; type: string | null; caption: string | null; media_url: string | null; thumbnail_url: string | null; cover_url: string | null; aspect_ratio: string | null; like_count: number | null; comment_count: number | null; hide_like_count_eff?: boolean | null; comments_disabled_eff?: boolean | null; created_at: string };
 type Author = { id: string; username: string; display_name: string | null; avatar_url: string | null };
 
 const AUDIO = new Set(['audio', 'podcast', 'audiobook']);
 const VIDEO = new Set(['video', 'reel']);
-const COLS = 'id,user_id,type,caption,media_url,thumbnail_url,cover_url,like_count,comment_count,hide_like_count_eff,comments_disabled_eff,created_at';
+const COLS = 'id,user_id,type,caption,media_url,thumbnail_url,cover_url,aspect_ratio,like_count,comment_count,created_at';
 
 export default function HomePage() {
   const sb = browserSb();
@@ -109,9 +110,14 @@ export default function HomePage() {
             </div>
             <div className="fmedia" style={!img || isAudio ? { background: gradientFor(p.id) } : undefined}>
               {isAudio ? (
-                <>{p.cover_url ? <img src={p.cover_url} alt="" style={{ opacity: 0.92 }} /> : null}{p.media_url ? <audio className="aud" src={p.media_url} controls preload="none" /> : null}</>
+                // Streams, but no download affordance (controlsList + right-click off).
+                <>{p.cover_url ? <img src={p.cover_url} alt="" /> : null}{p.media_url ? <audio className="aud" src={p.media_url} controls controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} preload="none" /> : null}</>
               ) : isVideo ? (
-                <video src={p.media_url || undefined} poster={p.thumbnail_url || p.cover_url || undefined} controls playsInline preload="none" />
+                streamIframeSrc(p.media_url, p.thumbnail_url || p.cover_url) ? (
+                  <StreamPlayer className="fvid" src={streamIframeSrc(p.media_url, p.thumbnail_url || p.cover_url)!} thumb={streamThumb(p.media_url)} initialAr={aspectOf(p.aspect_ratio) || 16 / 9} title={p.caption || undefined} />
+                ) : (
+                  <video src={p.media_url || undefined} poster={p.thumbnail_url || p.cover_url || undefined} controls controlsList="nodownload noplaybackrate" disablePictureInPicture playsInline preload="none" />
+                )
               ) : p.media_url ? (
                 <img src={p.media_url} alt={p.caption || ''} />
               ) : null}
