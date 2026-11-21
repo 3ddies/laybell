@@ -6,6 +6,10 @@
   --accent:#F26522; --accent-deep:#E8401C; --accent-warm:#FAB525; --gold:#F59E0B; --live:#22C55E; --like:#F43F5E;
   --shadow:0 1px 2px rgba(20,20,26,.05), 0 8px 24px rgba(20,20,26,.06);
   --maxw:960px;
+  /* One typeface for the whole site (Inter, loaded as --f-ui in layout.tsx) — the
+     clean iOS/Apple-Music look from /music, applied everywhere. The LAYBELL
+     wordmark keeps --f-logo (Nunito). */
+  --f-display:var(--f-ui); --f-body:var(--f-ui);
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
@@ -33,7 +37,7 @@ img{max-width:100%; display:block}
 /* Top bar */
 .topbar{position:sticky; top:0; z-index:20; background:color-mix(in srgb,var(--bg) 86%,transparent); backdrop-filter:saturate(1.3) blur(14px); border-bottom:1px solid var(--border)}
 .topbar .wrap{display:flex; align-items:center; gap:14px; padding-block:12px}
-.brand{display:flex; align-items:center; gap:9px; font-family:var(--f-display); font-weight:800; font-size:21px; letter-spacing:-.03em}
+.brand{display:flex; align-items:center; gap:9px; font-family:var(--f-logo); font-weight:900; font-size:20px; letter-spacing:-.01em; text-transform:uppercase}
 .bell{width:26px; height:26px; flex:0 0 auto; display:grid; place-items:center; border-radius:8px; background:linear-gradient(135deg,var(--accent-deep),var(--accent) 55%,var(--accent-warm)); color:#fff}
 .bell svg{width:15px; height:15px}
 .logo-img{width:28px; height:28px; border-radius:8px; display:block; flex:0 0 auto}
@@ -43,7 +47,7 @@ img{max-width:100%; display:block}
 .icon-btn svg{width:18px; height:18px}
 .btn{cursor:pointer; border:0; border-radius:999px; font-weight:700; font-size:14px; padding:10px 16px; display:inline-flex; align-items:center; gap:7px; white-space:nowrap; font-family:var(--f-body)}
 .btn-primary{color:#fff; background:linear-gradient(135deg,var(--accent-deep),var(--accent))}
-.btn-ghost{background:var(--surface-2); color:var(--fg); border:1px solid var(--border-2)}
+.btn-ghost{background:var(--surface-2); color:var(--fg); border:1px solid var(--border-2); box-shadow:0 2px 8px rgba(0,0,0,.1)}
 .btn svg{width:16px; height:16px}
 
 /* Profile hero */
@@ -103,18 +107,19 @@ img{max-width:100%; display:block}
 
 /* Post page */
 .postpage .wrap{max-width:900px; padding-block:26px 48px}
-.postwrap{display:grid; grid-template-columns:1.15fr .85fr; gap:0; border:1px solid var(--border-2); border-radius:18px; overflow:hidden; background:var(--elevate); box-shadow:var(--shadow)}
+.postwrap{display:grid; grid-template-columns:1.15fr .85fr; grid-template-rows:minmax(0,1fr); gap:0; border:1px solid var(--border-2); border-radius:18px; overflow:hidden; background:var(--elevate); box-shadow:var(--shadow); max-height:78vh}
 .postmedia{position:relative; min-height:420px; display:grid; place-items:center; background:#000}
-.postmedia img{width:100%; height:100%; object-fit:contain; max-height:70vh}
+.postmedia img{width:100%; height:100%; object-fit:contain; max-height:78vh}
 .postmedia audio, .postmedia video{width:100%}
-.postmedia .cover-audio{position:absolute; inset:0}
+/* Audio cover fills the media pane (no 70vh cap), so the gradient never shows through below it. */
+.postmedia .cover-audio{position:absolute; inset:0; width:100%; height:100%; max-height:none; object-fit:cover}
 .postmedia .audio-ctl{position:absolute; left:16px; right:16px; bottom:16px; z-index:2}
-.postside{display:flex; flex-direction:column; min-width:0}
+.postside{display:flex; flex-direction:column; min-width:0; min-height:0}
 .pt{display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--border)}
 .mini-av{width:40px; height:40px; border-radius:50%; overflow:hidden; background:linear-gradient(150deg,#5b3ac9,#f0603a); display:grid; place-items:center; color:#fff; font-weight:800; font-family:var(--f-display); flex:0 0 auto}
 .mini-av img{width:100%; height:100%; object-fit:cover}
 .pt b{font-family:var(--f-display); font-weight:700}
-.pbody{padding:16px; overflow:auto; flex:1; font-size:14.5px}
+.pbody{padding:16px; overflow:auto; flex:1; min-height:0; font-size:14.5px}
 .pbody .cap{white-space:pre-wrap}
 .pstats{display:flex; gap:20px; color:var(--muted); font-size:14px; padding:12px 16px; border-top:1px solid var(--border)}
 .pstats span{display:inline-flex; align-items:center; gap:7px}
@@ -148,7 +153,7 @@ footer.site .wrap{padding-block:30px 40px; display:flex; flex-wrap:wrap; gap:18p
   .handle{font-size:21px}
   .counts{gap:12px 16px; order:4; margin:14px 0 0; grid-column:1/-1; flex-wrap:wrap}
   .pinfo-extra{grid-column:1/-1; margin-top:14px}
-  .postwrap{grid-template-columns:1fr}
+  .postwrap{grid-template-columns:1fr; grid-template-rows:none; max-height:none}
   .postmedia{min-height:320px; aspect-ratio:1}
   .grid{gap:3px}
 }
@@ -196,6 +201,13 @@ footer.site .wrap{padding-block:30px 40px; display:flex; flex-wrap:wrap; gap:18p
 .fmedia img{width:100%; max-height:620px; object-fit:cover}
 .fmedia audio,.fmedia video{width:100%}
 .fmedia .aud{position:absolute; left:12px; right:12px; bottom:12px}
+
+/* Feed video — the Cloudflare Stream player (16:9 rectangle, streams in every
+   browser, fullscreen, no download). */
+/* Feed video fills the card width (no side bars for vertical clips); the frame
+   is sized to the real aspect by StreamPlayer. */
+.fvid{position:relative; aspect-ratio:var(--ar,1.7778); width:100%; background:transparent}
+.fvid iframe{position:absolute; inset:0; width:100%; height:100%; border:0}
 .factions{display:flex; align-items:center; gap:18px; padding:12px 14px 4px}
 .factions button{background:none; border:0; cursor:pointer; color:var(--fg); display:inline-flex; align-items:center; gap:7px; font-weight:700; font-family:inherit; font-size:14px}
 .factions button svg{width:23px; height:23px}
@@ -254,6 +266,31 @@ footer.site .wrap{padding-block:30px 40px; display:flex; flex-wrap:wrap; gap:18p
 .srow .t b{font-family:var(--f-display); font-weight:700; font-size:15px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .srow .t span{font-size:13px; color:var(--muted)}
 .srow .dur{color:var(--accent); font-size:16px}
+/* ── Music tab — Apple-Music look: ONE clean iOS/SF-Pro-style face (Inter)
+   across the whole tab, with a bold weight hierarchy (bold headers, semibold
+   titles, light/muted subtitles). No font mixing. Scoped to /music. */
+.music-page{ font-family:var(--f-ui) }
+.music-page .mus-h1{ font-family:var(--f-ui); font-weight:800; letter-spacing:-.03em }
+.music-page .music-sec h2{ font-family:var(--f-ui); font-weight:800; letter-spacing:-.028em }
+.music-page .mus-hero-title{ font-family:var(--f-ui); font-weight:700; letter-spacing:-.022em }
+.music-page .album .ctitle{ font-family:var(--f-ui); font-weight:700; letter-spacing:-.01em }
+.music-page .album .meta b{ font-family:var(--f-ui); font-weight:600 }
+.music-page .srow .t b{ font-family:var(--f-ui); font-weight:600 }
+/* Bigger "Hot right now" albums + "New music" rows on laptops/desktop. Scoped to
+   the /music page so the profile music tab keeps its own sizes. */
+@media (min-width:700px){
+  .music-page .music-sec h2{ font-family:var(--f-ui); font-weight:800; letter-spacing:-.028em; line-height:1.03; font-size:clamp(32px,4vw,44px); margin:28px 2px 18px }
+  .music-page .shelf{ grid-auto-columns:212px; gap:20px }
+  .music-page .album .ctitle{ font-size:18px }
+  .music-page .album .meta{ margin-top:12px }
+  .music-page .album .meta b{ font-size:16px }
+  .music-page .album .meta span{ font-size:13.5px }
+  .music-page .srow{ grid-template-columns:64px 1fr auto; gap:16px; padding:11px 12px }
+  .music-page .srow .art{ width:64px; height:64px; border-radius:11px }
+  .music-page .srow .t b{ font-size:16.5px }
+  .music-page .srow .t span{ font-size:14px }
+  .music-page .srow .dur{ font-size:18px }
+}
 
 /* ── Direct messages ── */
 .msgs{max-width:720px; margin:0 auto; padding-block:18px 40px; padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px))}
@@ -420,3 +457,310 @@ footer.site .wrap{padding-block:30px 40px; display:flex; flex-wrap:wrap; gap:18p
 .shopdark .schip.sell{ background:color-mix(in srgb,var(--accent) 24%,transparent); color:var(--accent-warm) }
 .shopdark .schip.lease{ background:color-mix(in srgb,#818cf8 22%,transparent); color:#a5b4fc }
 .shopdark .schip.free{ background:color-mix(in srgb,var(--live) 24%,transparent); color:#5ee893 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Home page (hm-) — hero, beat-shop band, feature grid, app CTA.
+   Motion is CSS-only (no deps) and fully disabled under prefers-reduced-motion.
+   ══════════════════════════════════════════════════════════════════════════ */
+@keyframes hm-rise{from{opacity:0; transform:translateY(16px)} to{opacity:1; transform:none}}
+@keyframes hm-glow{0%,100%{opacity:.7; transform:translateY(0) scale(1)} 50%{opacity:1; transform:translateY(8px) scale(1.06)}}
+@keyframes hm-shimmer{0%,100%{background-position:0% 50%} 50%{background-position:100% 50%}}
+/* Continuous, flowy "float": the bell gently sways like a pendulum (±6°) with a
+   soft bob at each extreme, looping seamlessly so it's always in smooth motion
+   rather than ringing once and sitting still. */
+@keyframes hm-bell-float{
+  0%   {transform:translateY(0) rotate(0deg)}
+  25%  {transform:translateY(-3px) rotate(6deg)}
+  50%  {transform:translateY(0) rotate(0deg)}
+  75%  {transform:translateY(-3px) rotate(-6deg)}
+  100% {transform:translateY(0) rotate(0deg)}
+}
+.hm-rise{opacity:0; animation:hm-rise .7s cubic-bezier(.2,.7,.2,1) both}
+
+/* Hero */
+.hm-hero{position:relative; overflow:hidden; isolation:isolate; background:var(--bg)}
+/* Dark frosted-grey top region: the sticky header + the hero take dark tokens so
+   their content reads light, over a blurred looping video. */
+/* The hero is always dark. The sticky topbar only goes dark-grey on pages that
+   ARE dark — the homepage (has .hm-hero) and the shop pages (.market/.listing) —
+   and stays white on light pages the user browses (profiles, feed, posts, etc.).
+   A profile's shop TAB (.shop-sec.shopdark) is deliberately NOT matched here, so
+   browsing a profile keeps a white topbar. */
+.hm-hero,
+html:has(.hm-hero) .topbar,
+html:has(.market) .topbar,
+html:has(.listing) .topbar,
+html:has(.dj-page) .topbar,
+html:has(.live-page) .topbar{
+  --bg:#242428; --surface:#303036; --surface-2:#383840; --elevate:#3e3e46;
+  --fg:#f5f5f8; --muted:#b4b4be; --faint:#86868f; --border:#43434c; --border-2:#4e4e58;
+  color-scheme:dark; color:var(--fg);
+}
+.hm-video{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:-3;
+  filter:blur(4.5px) brightness(.82) saturate(1.08) contrast(1.05); transform:scale(1.14)}
+.hm-video-tint{position:absolute; inset:0; z-index:-2; pointer-events:none;
+  background:
+    radial-gradient(78% 62% at 50% 44%, rgba(8,8,12,.44), transparent 72%),
+    linear-gradient(180deg, rgba(16,16,20,.48) 0%, rgba(14,14,18,.58) 52%, rgba(12,12,16,.78) 100%)}
+.hm-glow{position:absolute; z-index:-1; inset:-45% -10% auto -10%; height:560px; pointer-events:none;
+  background:radial-gradient(50% 100% at 50% 0%, color-mix(in srgb,var(--accent) 22%,transparent), transparent 72%);
+  animation:hm-glow 7s ease-in-out infinite}
+.hm-hero-inner{max-width:720px; margin-inline:auto; text-align:center; padding-block:84px 60px; position:relative; z-index:1}
+.hm-eyebrow{display:inline-block; font-size:12.5px; font-weight:800; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--accent); padding:7px 14px; border-radius:999px;
+  background:color-mix(in srgb,var(--accent) 12%,transparent); border:1px solid color-mix(in srgb,var(--accent) 22%,transparent)}
+/* Brand lockup: the white bell silhouette stacked OVER the wordmark, ringing.
+   The bell is a mask tinted with the text colour, so it's white on dark and dark
+   on light — never invisible — and always matches the "Laybell" wordmark. */
+.hm-brand{display:flex; flex-direction:column; align-items:center; gap:2px; margin-top:16px}
+.hm-brand-bell{width:clamp(70px,11vw,106px); aspect-ratio:634/720;
+  background:linear-gradient(165deg, var(--accent-warm), var(--accent) 50%, var(--accent-deep));
+  -webkit-mask:url(/bell-mark.png) center/contain no-repeat; mask:url(/bell-mark.png) center/contain no-repeat;
+  filter:drop-shadow(0 5px 7px rgba(0,0,0,.22));
+  transform-origin:50% 10%; animation:hm-bell-float 3.2s ease-in-out .6s infinite; will-change:transform}
+.hm-brand-word{font-family:var(--f-logo); font-weight:900; text-transform:uppercase; font-size:clamp(54px,11vw,108px); letter-spacing:-.015em; line-height:.95;
+  text-shadow:0 1px 0 rgba(0,0,0,.4), 0 2px 1px rgba(0,0,0,.32), 0 4px 10px rgba(0,0,0,.5), 0 6px 22px rgba(0,0,0,.35)}
+.hm-brand + .hm-title{margin-top:14px}
+.hm-title{font-family:var(--f-display); font-weight:700; font-size:clamp(23px,3.8vw,36px); line-height:1.2; letter-spacing:-.01em; margin-top:16px}
+.hm-grad{background:linear-gradient(135deg,var(--accent-deep),var(--accent) 50%,var(--accent-warm)); background-size:220% 100%;
+  -webkit-background-clip:text; background-clip:text; color:transparent; animation:hm-shimmer 6s ease-in-out infinite}
+.hm-sub{color:var(--muted); font-size:clamp(16px,2.4vw,19px); line-height:1.5; margin:22px auto 0; max-width:540px}
+.hm-cta{display:flex; gap:10px; margin-top:30px; justify-content:center; flex-wrap:wrap}
+/* Plain white "More" link under the hero CTA → the Discover page. */
+.hm-more{display:block; width:max-content; margin:16px auto 0; color:#fff; font-weight:600; font-size:15px; letter-spacing:.01em; opacity:.85; transition:opacity .18s ease}
+.hm-more:hover{opacity:1; text-decoration:underline; text-underline-offset:3px}
+.hm-cta .btn{padding:13px 22px; font-size:15px}
+.hm-cta .hm-cta-main{width:100%; max-width:440px; padding-top:16px; padding-bottom:16px; font-size:16px; justify-content:center}
+/* Hover polish: the logo, nav links and buttons in the top bar (and the hero
+   button) grow gently on hover and dip on press — smooth, soft ease both ways. */
+.topbar .brand, .topbar .navlink, .topbar .btn, .hm-cta .btn{transition:transform .26s cubic-bezier(.2,.6,.3,1)}
+.topbar .brand{transform-origin:left center}
+.topbar .brand:hover, .topbar .navlink:hover, .topbar .btn:hover, .hm-cta .btn:hover{transform:scale(1.06)}
+.topbar .brand:active, .topbar .navlink:active, .topbar .btn:active, .hm-cta .btn:active{transform:scale(.97)}
+
+/* Beat-shop band (wrapped in .shopdark so it reads as the storefront) */
+.hm-beats{padding-block:48px 56px; border-block:1px solid var(--border)}
+.hm-beats-head{display:flex; align-items:flex-end; justify-content:space-between; gap:18px; margin-bottom:22px; flex-wrap:wrap}
+.hm-kicker{display:inline-block; font-size:12px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:var(--accent-warm)}
+.hm-h2{font-family:var(--f-display); font-weight:800; font-size:clamp(24px,3.4vw,32px); letter-spacing:-.02em; margin:6px 0 0}
+.hm-beats-sub{color:var(--muted); font-size:14.5px; margin:8px 0 0; max-width:52ch}
+.hm-viewall{flex:0 0 auto}
+.hm-beats-empty{text-align:center; padding:28px 0 6px; color:var(--muted)}
+.hm-beats-empty p{margin:0 0 16px}
+
+/* Feature grid */
+.hm-features{padding-block:56px 20px}
+.hm-center{text-align:center}
+.hm-section-sub{color:var(--muted); font-size:16px; margin:10px auto 0; max-width:46ch}
+.hm-feat-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(248px,1fr)); gap:14px; margin-top:34px}
+.hm-feat{display:flex; flex-direction:column; background:var(--surface-2); border:1px solid var(--border-2); border-radius:16px; padding:20px 18px; color:inherit;
+  box-shadow:var(--shadow); transition:transform .22s cubic-bezier(.2,.6,.3,1), border-color .18s ease, box-shadow .22s ease}
+.hm-feat:hover{transform:translateY(-4px) scale(1.012); border-color:color-mix(in srgb,var(--accent) 42%,var(--border-2)); box-shadow:0 16px 36px rgba(20,20,26,.16)}
+.hm-feat-ic{display:grid; place-items:center; width:46px; height:46px; border-radius:13px; color:var(--accent); margin-bottom:14px;
+  background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 18%,transparent),color-mix(in srgb,var(--accent-warm) 14%,transparent))}
+.hm-feat-ic svg{width:23px; height:23px}
+.hm-feat b{font-family:var(--f-display); font-weight:800; font-size:17px; display:block}
+.hm-feat-desc{color:var(--muted); font-size:14px; line-height:1.5; display:block; margin-top:6px; flex:1}
+.hm-feat-go{display:inline-flex; align-items:center; gap:5px; margin-top:14px; color:var(--accent); font-weight:800; font-size:13px; transition:gap .2s ease}
+.hm-feat:hover .hm-feat-go{gap:9px}
+
+/* Community chips */
+/* One "Browse Laybell" button in place of the community chips — jumps straight
+   into everything on Laybell. */
+.hm-browse{display:flex; justify-content:center; margin-top:40px}
+.hm-browse-btn{display:inline-flex; align-items:center; gap:11px; font-family:var(--f-display); font-size:16px; font-weight:800; color:var(--fg); padding:14px 30px; border-radius:999px;
+  background:var(--surface-2); border:1.5px solid var(--border-2); box-shadow:var(--shadow); transition:border-color .18s ease, transform .2s cubic-bezier(.2,.6,.3,1), color .18s ease}
+.hm-browse-btn:hover{border-color:color-mix(in srgb,var(--accent) 55%,var(--border-2)); transform:translateY(-2px); color:var(--accent)}
+.hm-browse-btn svg{width:19px; height:19px; color:var(--accent)}
+.hm-browse-arrow{transition:transform .2s ease}
+.hm-browse-btn:hover .hm-browse-arrow{transform:translateX(3px)}
+
+/* App CTA band */
+.hm-appcta{padding-block:20px 56px}
+.hm-appcta-inner{display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; border-radius:22px; padding:30px 28px;
+  background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 12%,var(--surface-2)),var(--surface-2)); border:1px solid var(--border-2)}
+.hm-appcta-text h2{margin:0}
+.hm-appcta-text p{color:var(--muted); font-size:15px; margin:8px 0 0}
+.hm-appcta .btn{padding:14px 24px; font-size:15px}
+
+@media (max-width:720px){
+  .hm-hero-inner{padding-block:52px 44px}
+  .hm-beats-head{align-items:flex-start}
+  .hm-appcta-inner{padding:24px 20px}
+}
+@media (prefers-reduced-motion:reduce){
+  .hm-rise{opacity:1; transform:none; animation:none}
+  .hm-glow{animation:none}
+  .hm-grad{animation:none}
+  .hm-brand-bell{animation:none}
+  .dj-platter.spin{animation:none}
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DJ Booth (/dj) — a dark, self-contained two-deck mixer UI.
+   ══════════════════════════════════════════════════════════════════════════ */
+.dj-page{ background:#0d0d11; color:#f2f2f5; min-height:calc(100dvh - 60px) }
+.dj-page .wrap{ padding-block:26px 56px }
+.dj-h1{ font-family:var(--f-logo); font-weight:900; text-transform:uppercase; letter-spacing:-.01em; font-size:clamp(26px,5vw,40px); color:#fff }
+.dj-sub{ color:#a7a7b2; font-size:15px; margin:8px 0 22px; max-width:62ch }
+.dj-decks{ display:grid; grid-template-columns:1fr minmax(120px,170px) 1fr; gap:16px; align-items:stretch }
+.dj-deck{ background:linear-gradient(180deg,#17171e,#121217); border:1px solid #2a2a34; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:12px }
+.dj-deck-top{ display:flex; align-items:center; justify-content:space-between; gap:10px }
+.dj-deck-tag{ font-weight:800; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent-warm) }
+.dj-load{ font-size:12.5px; font-weight:800; color:#fff; background:linear-gradient(135deg,var(--accent-deep),var(--accent)); padding:7px 12px; border-radius:999px; cursor:pointer; white-space:nowrap }
+.dj-load:hover{ filter:brightness(1.06) }
+.dj-track{ font-family:var(--f-display); font-weight:700; font-size:15px; color:#ededf2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-height:20px }
+.dj-platter{ width:112px; height:112px; margin:4px auto 2px; border-radius:50%; align-self:center; position:relative;
+  background:radial-gradient(circle at 50% 50%, #2b2b34 0 30%, #17171d 31% 46%, #23232b 47% 100%); border:1px solid #33333f; box-shadow:0 6px 18px rgba(0,0,0,.4), inset 0 0 0 6px #121217 }
+.dj-platter::after{ content:""; position:absolute; inset:0; margin:auto; width:16px; height:16px; border-radius:50%; background:var(--accent) }
+.dj-platter span{ position:absolute; left:50%; top:8px; width:3px; height:34px; background:var(--accent-warm); border-radius:2px; transform:translateX(-50%); transform-origin:50% 48px }
+@keyframes dj-spin{ to{ transform:rotate(360deg) } }
+.dj-platter.spin{ animation:dj-spin 1.6s linear infinite }
+.dj-scrub{ position:relative; height:10px; border-radius:999px; border:0; padding:0; background:#26262f; cursor:pointer; overflow:hidden; width:100% }
+.dj-scrub-fill{ position:absolute; inset:0 auto 0 0; background:linear-gradient(90deg,var(--accent-deep),var(--accent-warm)) }
+.dj-time{ display:flex; justify-content:space-between; font-size:11.5px; color:#8a8a95; font-variant-numeric:tabular-nums; margin-top:-4px }
+.dj-transport{ display:flex; gap:8px }
+.dj-btn{ flex:1; background:#22222b; border:1px solid #33333f; color:#e9e9ef; font-weight:700; font-size:13px; padding:9px 6px; border-radius:11px; cursor:pointer; transition:transform .15s ease, background .15s ease }
+.dj-btn:hover:not(:disabled){ background:#2c2c37; transform:translateY(-1px) }
+.dj-btn:disabled{ opacity:.45; cursor:default }
+.dj-btn.dj-play{ background:linear-gradient(135deg,var(--accent-deep),var(--accent)); border-color:transparent; color:#fff; flex:1.4 }
+.dj-btn.on{ background:color-mix(in srgb,var(--accent) 30%,#22222b); border-color:var(--accent) }
+.dj-btn.locked{ opacity:.6 }
+.dj-sliders{ display:flex; flex-direction:column; gap:10px; margin-top:2px }
+.dj-slider{ display:grid; grid-template-columns:54px 1fr auto; align-items:center; gap:10px; font-size:12px; color:#b7b7c2; font-weight:700 }
+.dj-slider em{ font-style:normal; font-variant-numeric:tabular-nums; color:#8a8a95; min-width:34px; text-align:right }
+.dj-slider.locked{ opacity:.5 }
+.dj-mixer{ display:flex; flex-direction:column; align-items:center; gap:14px; background:linear-gradient(180deg,#141419,#101014); border:1px solid #2a2a34; border-radius:18px; padding:16px 12px }
+.dj-mixer-label{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#7a7a85; font-weight:800 }
+.dj-vert{ display:flex; flex-direction:column; align-items:center; gap:8px; flex:1; font-size:11px; color:#9a9aa5; font-weight:700 }
+.dj-vert input[type=range]{ writing-mode:vertical-lr; direction:rtl; width:8px; height:150px }
+.dj-xf{ width:100% }
+.dj-xf-ends{ display:flex; justify-content:space-between; font-size:12px; font-weight:800; color:var(--accent-warm); margin-bottom:4px }
+.dj-xf input[type=range]{ width:100% }
+.dj-xf-cap{ text-align:center; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:#7a7a85; font-weight:800; margin-top:4px }
+.dj-booth input[type=range]{ accent-color:var(--accent) }
+.dj-note{ margin-top:22px; text-align:center; color:#9a9aa5; font-size:14px }
+.dj-note a{ color:var(--accent-warm); font-weight:800 }
+@media (max-width:760px){
+  .dj-decks{ grid-template-columns:1fr }
+  .dj-mixer{ order:3; flex-direction:row; flex-wrap:wrap; justify-content:center; gap:18px }
+  .dj-vert input[type=range]{ writing-mode:horizontal-tb; direction:ltr; width:140px; height:8px }
+  .dj-xf{ flex:1 1 100%; max-width:320px }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Live now (/live) — dark page listing current broadcasts.
+   ══════════════════════════════════════════════════════════════════════════ */
+.live-page{
+  --bg:#242428; --surface:#303036; --surface-2:#383840; --elevate:#3e3e46;
+  --fg:#f5f5f8; --muted:#b4b4be; --faint:#86868f; --border:#43434c; --border-2:#4e4e58;
+  color-scheme:dark; background:#0d0d11; color:var(--fg); min-height:calc(100dvh - 60px)
+}
+.live-page .wrap{ padding-block:26px 56px }
+.live-head{ margin-bottom:24px }
+.live-h1{ display:flex; align-items:center; gap:11px; font-family:var(--f-logo); font-weight:900; text-transform:uppercase; letter-spacing:-.01em; font-size:clamp(26px,5vw,40px); color:#fff }
+.live-sub{ color:#a7a7b2; font-size:15px; margin:6px 0 0 }
+.live-dot{ width:11px; height:11px; border-radius:50%; background:#F43F5E; animation:live-pulse 1.6s ease-out infinite; flex:0 0 auto }
+.live-dot.sm{ width:7px; height:7px }
+@keyframes live-pulse{ 0%{ box-shadow:0 0 0 0 rgba(244,63,94,.55) } 70%{ box-shadow:0 0 0 7px rgba(244,63,94,0) } 100%{ box-shadow:0 0 0 0 rgba(244,63,94,0) } }
+.live-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:16px }
+.live-card{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:4px; background:#15151b; border:1px solid #2a2a34; border-radius:16px; padding:18px 14px; color:inherit; transition:transform .2s cubic-bezier(.2,.6,.3,1), border-color .18s ease }
+.live-card:hover{ transform:translateY(-4px) scale(1.012); border-color:color-mix(in srgb,#F43F5E 42%,#2a2a34) }
+.live-card-media{ position:relative; margin-bottom:8px }
+.live-badge{ position:absolute; left:50%; bottom:-6px; transform:translateX(-50%); display:inline-flex; align-items:center; gap:4px; background:#F43F5E; color:#fff; font-size:10px; font-weight:800; letter-spacing:.06em; padding:3px 8px; border-radius:999px; border:2px solid #15151b }
+.live-title{ font-family:var(--f-display); font-weight:700; font-size:15px; color:#f2f2f5; margin-top:4px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.live-host{ font-size:13px; color:#a7a7b2 }
+.live-metacount{ font-size:12px; color:#7a7a85; margin-top:2px }
+.live-empty{ text-align:center; max-width:560px; margin:72px auto 44px; display:flex; flex-direction:column; align-items:center; gap:14px }
+.live-empty-ic{ width:88px; height:88px; border-radius:50%; display:grid; place-items:center; background:radial-gradient(circle at 50% 50%, color-mix(in srgb,#F43F5E 24%, transparent), #17171d 70%); border:1px solid #33333f; margin-bottom:6px }
+.live-empty-ic .live-dot{ width:17px; height:17px }
+.live-empty h2{ font-family:var(--f-display); font-weight:900; letter-spacing:-.02em; line-height:1.04; font-size:clamp(28px,4.2vw,42px); color:#fff }
+.live-empty p{ color:#b4b4be; font-size:clamp(15px,1.5vw,17px); line-height:1.6; max-width:30rem }
+.live-empty-cta{ display:flex; gap:12px; flex-wrap:wrap; justify-content:center; margin-top:20px }
+.live-empty-cta .btn{ padding:13px 28px; font-size:15.5px }
+.live-empty-cta .btn svg{ width:18px; height:18px }
+/* A bit bigger on laptops/desktop. */
+@media (min-width:700px){
+  .live-empty-cta .btn{ padding:15px 34px; font-size:17px }
+  .live-empty-cta .btn svg{ width:20px; height:20px }
+}
+.live-note{ text-align:center; color:#7a7a85; font-size:13px; margin-top:28px }
+@media (prefers-reduced-motion:reduce){ .live-dot{ animation:none } }
+
+/* Laybell TV — landscape (16:9) tiles so horizontal videos show uncropped. */
+.tv-grid{ grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px }
+.tv-grid .tile{ aspect-ratio:16/9; border-radius:12px }
+
+/* Music page — a featured hero above the app-style shelves + song rows. */
+.music-page{ padding-block:22px 48px }
+.mus-h1{ font-size:clamp(40px,7.5vw,64px); font-family:var(--f-display); font-weight:900; letter-spacing:-.03em; line-height:1.0; margin:8px 2px 2px }
+.mus-sub{ color:var(--muted); font-size:15px; margin:8px 2px 24px; max-width:58ch }
+/* "Get the app to see more" link at the foot of the Discover page. */
+.discover-more{ text-align:center; margin:44px 0 6px; font-size:16px }
+.discover-more a{ color:var(--accent); font-weight:700 }
+.discover-more a:hover{ text-decoration:underline; text-underline-offset:3px }
+/* Featured song — square cover with details BESIDE it on laptops/desktop; they
+   stack UNDER the cover on phones (≤600px), where beside won't fit. */
+.mus-hero{ display:flex; flex-direction:row; align-items:center; gap:28px; width:100%; max-width:640px; margin:4px 0 34px; color:inherit }
+.mus-hero-cover{ position:relative; width:clamp(184px,28vw,260px); aspect-ratio:1; flex:0 0 auto; border-radius:16px; overflow:hidden; background:var(--surface); box-shadow:var(--shadow); transition:transform .22s cubic-bezier(.2,.6,.3,1) }
+.mus-hero:hover .mus-hero-cover{ transform:translateY(-4px) }
+.mus-hero-cover img{ width:100%; height:100%; object-fit:cover }
+.mus-hero-play{ position:absolute; right:12px; bottom:12px; width:46px; height:46px; border-radius:50%; display:grid; place-items:center; background:linear-gradient(135deg,var(--accent-deep),var(--accent)); color:#fff; box-shadow:0 8px 18px -6px color-mix(in srgb,var(--accent) 80%, transparent); transition:transform .2s }
+.mus-hero:hover .mus-hero-play{ transform:scale(1.08) }
+.mus-hero-play svg{ width:20px; height:20px; margin-left:2px }
+.mus-hero-info{ min-width:0; display:flex; flex-direction:column; gap:3px }
+.mus-kicker{ font-size:12px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:var(--accent) }
+/* Beside the cover on desktop the words were tiny — scale them up with the
+   viewport (clamp mins keep the phone/stacked layout unchanged). */
+.mus-hero .mus-kicker{ font-size:clamp(12px,1.25vw,15px); letter-spacing:.16em }
+.mus-hero-title{ font-family:var(--f-display); font-weight:900; letter-spacing:-.025em; line-height:1.03; font-size:clamp(22px,3.4vw,38px); margin:6px 0 4px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical }
+.mus-hero-artist{ color:var(--muted); font-size:clamp(15px,1.6vw,19px) }
+@media (max-width:600px){
+  .mus-hero{ flex-direction:column; align-items:flex-start; gap:0; max-width:320px }
+  .mus-hero-cover{ width:100% }
+  .mus-hero-info{ margin-top:12px }
+}
+
+/* Laybell TV — editorial: a 16:9 featured hero, a trending rail, a wrap grid. */
+.tv-page2{ padding-block:22px 48px }
+.tv-hero{ position:relative; display:block; aspect-ratio:16/9; max-height:460px; margin:6px 0 30px; border-radius:20px; overflow:hidden; background:var(--surface); box-shadow:var(--shadow); color:#fff; transition:transform .24s cubic-bezier(.2,.6,.3,1) }
+.tv-hero:hover{ transform:translateY(-3px) }
+.tv-hero-media{ position:absolute; inset:0 }
+.tv-hero-media img{ width:100%; height:100%; object-fit:cover }
+.tv-hero-grad{ position:absolute; inset:0; background:linear-gradient(0deg, rgba(0,0,0,.82) 2%, rgba(0,0,0,.15) 42%, transparent 66%) }
+.tv-hero-cap{ position:absolute; left:0; right:0; bottom:0; z-index:1; padding:22px 24px }
+.tv-hero-cap .mus-kicker{ color:var(--accent-warm) }
+.tv-hero-cap h2{ font-family:var(--f-display); font-weight:900; letter-spacing:-.02em; line-height:1.05; font-size:clamp(22px,4vw,34px); margin:4px 0 3px; color:#fff; text-shadow:0 2px 14px rgba(0,0,0,.55) }
+.tv-hero-artist{ color:rgba(255,255,255,.86); font-size:14px }
+.tv-rail{ display:grid; grid-auto-flow:column; grid-auto-columns:300px; gap:14px; overflow-x:auto; padding:2px 2px 12px }
+.tv-rail::-webkit-scrollbar{ height:8px } .tv-rail::-webkit-scrollbar-thumb{ background:var(--border-2); border-radius:8px }
+.tv-cards-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(258px,1fr)); gap:16px 14px }
+.tv-card{ display:block; color:inherit }
+.tv-card-media{ position:relative; aspect-ratio:16/9; border-radius:12px; overflow:hidden; background:var(--surface); box-shadow:var(--shadow); transition:transform .18s ease }
+.tv-card:hover .tv-card-media{ transform:translateY(-3px) }
+.tv-card-media img{ width:100%; height:100%; object-fit:cover }
+.tv-card-title{ display:block; font-family:var(--f-display); font-weight:700; font-size:15px; margin-top:9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.tv-card-artist{ display:block; color:var(--muted); font-size:13px; margin-top:1px }
+/* Hover preview (YouTube-style): a silent Stream player fills the thumbnail.
+   pointer-events:none so the click still falls through to the card link, and so
+   leaving the thumbnail reliably fires mouseleave (which unmounts & stops it). */
+/* Hidden while it buffers; HoverPreview adds .ready once the video is actually
+   playing, so it fades in smoothly instead of showing a frozen frame. */
+.tv-preview{ position:absolute; inset:0; width:100%; height:100%; border:0; z-index:1; pointer-events:none; opacity:0; transition:opacity .28s ease }
+.tv-preview.ready{ opacity:1 }
+/* The hero's gradient + caption sit above the media, so let hover reach the
+   media box underneath (the whole hero is one link anyway). */
+.tv-hero-grad, .tv-hero-cap{ pointer-events:none }
+@media (prefers-reduced-motion:reduce){ .mus-hero, .tv-hero, .tv-card-media, .tv-preview{ transition:none } }
+
+/* Post "watch" layout — a Stream player on top, info below (YouTube-style). The
+   player takes the video's own shape (--ar): landscape fills the width, a
+   vertical reel stays tall and centered. max-width caps the height at ~82vh so a
+   portrait video never runs off-screen. */
+.watch-player{ position:relative; aspect-ratio:var(--ar,1.7778); width:100%; max-width:calc(82vh * var(--ar,1.7778)); margin-inline:auto; background:transparent; border-radius:16px; overflow:hidden; box-shadow:var(--shadow) }
+.watch-player iframe, .watch-player video{ position:absolute; inset:0; width:100%; height:100%; border:0; background:transparent }
+.watch-player video{ object-fit:contain }
+.watch-noplayer{ position:absolute; inset:0 }
+.watch-meta{ margin-top:18px }
+.watch-row{ display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap }
+.watch-cap{ margin:14px 0 2px; font-size:15px; line-height:1.5 }

@@ -221,6 +221,7 @@ import { parseSlides, isSlideshow } from '../../lib/slideshow';
 import { useStories } from '../../contexts/StoriesContext';
 import { usePostMusicActions, usePostMusicMuted } from '../../contexts/PostMusicContext';
 import type { SourceRect } from '../../lib/stories';
+import { postPrivacy } from '../../lib/postPrivacy';
 
 type Post = {
   id: string;
@@ -366,9 +367,13 @@ const PostCard = memo(function PostCard({
   const countColor = mode === 'dark' ? colors.text : colors.textSecondary;
   const commentCount = item.comments[0]?.count || 0;
   const saveCount = item.save_count || 0;
+  // Creator engagement privacy (post_privacy.sql): hide the like/save COUNT, and
+  // hide the comment affordance entirely, when the post — or its author's account
+  // default — asks for it. The like/save ACTIONS stay; only the numbers go.
+  const priv = postPrivacy(item);
   // The action row tightens when the post has little engagement and opens up as its
   // counts appear — a fresh post reads as one compact cluster, not spread-out icons.
-  const engagedActions = (likeCount > 0 ? 1 : 0) + (commentCount > 0 ? 1 : 0) + (saveCount > 0 ? 1 : 0);
+  const engagedActions = ((likeCount > 0 && !priv.hideLikes) ? 1 : 0) + ((commentCount > 0 && !priv.commentsDisabled) ? 1 : 0) + ((saveCount > 0 && !priv.hideSaves) ? 1 : 0);
   const actionRowGap = engagedActions === 0 ? 10 : engagedActions === 1 ? 16 : 22;
   const imgRef = useRef<any>(null);
   const vidRef = useRef<any>(null);
@@ -844,17 +849,19 @@ const PostCard = memo(function PostCard({
             </Animated.View>
           </TouchableOpacity>
           {/* The COUNT (not the heart) opens the list of who engaged. */}
-          {likeCount > 0 && (
+          {likeCount > 0 && !priv.hideLikes && (
             <TouchableOpacity onPress={() => onLikesPress(item)} activeOpacity={0.6} hitSlop={8}>
               <Text style={[styles.actionCount, { color: countColor }, isLiked && { color: colors.like }]} numberOfLines={1}>{formatCount(likeCount)}</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        <TouchableOpacity style={styles.actionBtn} onPress={() => onComments(item)} activeOpacity={0.6} hitSlop={8}>
-          <Ionicons name="chatbubble-outline" size={22} color={colors.textSecondary} />
-          {commentCount > 0 && <Text style={[styles.actionCount, { color: countColor }]} numberOfLines={1}>{formatCount(commentCount)}</Text>}
-        </TouchableOpacity>
+        {!priv.commentsDisabled && (
+          <TouchableOpacity style={styles.actionBtn} onPress={() => onComments(item)} activeOpacity={0.6} hitSlop={8}>
+            <Ionicons name="chatbubble-outline" size={22} color={colors.textSecondary} />
+            {commentCount > 0 && <Text style={[styles.actionCount, { color: countColor }]} numberOfLines={1}>{formatCount(commentCount)}</Text>}
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity style={styles.actionBtn} onPress={() => { selection(); onSave(item); }} activeOpacity={0.6} hitSlop={8}>
           <Ionicons
@@ -862,7 +869,7 @@ const PostCard = memo(function PostCard({
             size={22}
             color={isSaved ? colors.text : colors.textSecondary}
           />
-          {saveCount > 0 && (
+          {saveCount > 0 && !priv.hideSaves && (
             <Text style={[styles.actionCount, { color: countColor }, isSaved && { color: colors.text }]} numberOfLines={1}>{formatCount(saveCount)}</Text>
           )}
         </TouchableOpacity>

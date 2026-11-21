@@ -3,9 +3,11 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { cache } from 'react';
 import { sb } from '@/lib/supabase';
-import { formatCount, gradientFor, initial, timeAgo } from '@/lib/format';
+import { formatCount, gradientFor, initial, timeAgo, streamIframeSrc, streamThumb, aspectOf } from '@/lib/format';
 import { OpenCTA, NotFoundState } from '../../components';
 import PostInteractions from './PostInteractions';
+import ProtectedAudio from '../../ProtectedAudio';
+import StreamPlayer from '../../StreamPlayer';
 
 export const revalidate = 60;
 
@@ -14,6 +16,9 @@ type Post = {
   media_url: string | null; thumbnail_url: string | null; cover_url: string | null;
   like_count: number | null; comment_count: number | null; view_count: number | null;
   stream_count: number | null; mature: boolean | null; created_at: string;
+  aspect_ratio: string | null;
+  // Creator engagement privacy (post_privacy.sql), resolved server-side.
+  hide_like_count_eff?: boolean | null; comments_disabled_eff?: boolean | null;
 };
 type Author = { username: string; display_name: string | null; avatar_url: string | null; hidden: boolean | null };
 
@@ -22,7 +27,7 @@ const getPost = cache(async (id: string) => {
   // RLS already drops private posts and posts of hidden authors; we also filter
   // archived_at and mature ourselves (neither is policy-enforced for the web).
   const { data: post } = await db.from('posts')
-    .select('id,user_id,type,caption,media_url,thumbnail_url,cover_url,like_count,comment_count,view_count,stream_count,mature,created_at')
+    .select('id,user_id,type,caption,media_url,thumbnail_url,cover_url,like_count,comment_count,view_count,stream_count,mature,aspect_ratio,created_at')
     .eq('id', id).is('archived_at', null).maybeSingle();
   if (!post) return { post: null as Post | null, author: null as Author | null };
   const { data: author } = await db.from('profiles')
@@ -56,34 +61,74 @@ export default async function PostPage({ params }: { params: { id: string } }) {
   const isAudio = post.type ? AUDIO.has(post.type) : false;
   const isVideo = post.type ? VIDEO.has(post.type) : false;
   const img = post.cover_url || post.thumbnail_url || post.media_url;
+  const streamSrc = isVideo ? streamIframeSrc(post.media_url, post.thumbnail_url || post.cover_url) : null;
+  // Size the player to the video's real shape — vertical reels stay vertical,
+  // landscape stays 16:9-ish — instead of forcing everything into 16:9.
+  const videoAr = aspectOf(post.aspect_ratio) || 16 / 9;
 
+  // Author header + caption + engagement, shared by both layouts.
+  const authorLink = (
+    <Link className="pt" href={`/@${author.username}`}>
+      <span className="mini-av">{author.avatar_url ? <img src={author.avatar_url} alt="" /> : initial(name, author.username)}</span>
+      <span><b>@{author.username}</b><div style={{ fontSize: 12, color: 'var(--muted)' }}>{timeAgo(post.created_at)}</div></span>
+    </Link>
+  );
+  const interactions = (
+    <PostInteractions postId={post.id} initialLikes={post.like_count} initialComments={post.comment_count} hideLikes={!!post.hide_like_count_eff} commentsDisabled={!!post.comments_disabled_eff} />
+  );
+
+  // VIDEO → YouTube-style "watch" layout: a 16:9 rectangle player on top, info
+  // below. The Cloudflare Stream iframe plays in every browser, expands to
+  // fullscreen, and offers no download.
+  if (isVideo) {
+    return (
+      <main className="postpage">
+        <div className="wrap watch">
+          {streamSrc ? (
+            <StreamPlayer src={streamSrc} thumb={streamThumb(post.media_url)} initialAr={videoAr} title={post.caption || undefined} />
+          ) : (
+            <div className="watch-player" style={{ ['--ar' as any]: videoAr }}>
+              {post.media_url ? (
+                // Non-Stream video (rare): native player, download affordance off.
+                <video src={post.media_url} poster={post.thumbnail_url || post.cover_url || undefined} controls controlsList="nodownload noplaybackrate" disablePictureInPicture playsInline preload="none" />
+              ) : (
+                <div className="watch-noplayer" style={{ background: gradientFor(post.id) }} />
+              )}
+            </div>
+          )}
+          <div className="watch-meta">
+            <div className="watch-row">{authorLink}<OpenCTA label="Open in Laybell" /></div>
+            {post.caption ? <div className="cap watch-cap">{post.caption}</div> : null}
+            {interactions}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // AUDIO / IMAGE → the compact two-column post card.
   return (
     <main className="postpage">
       <div className="wrap">
         <div className="postwrap">
           <div className="postmedia" style={!img || isAudio ? { background: gradientFor(post.id) } : undefined}>
             {isAudio ? (
+              // Streams in-page over the cover; the raw file is not downloadable
+              // from the player (controlsList + right-click blocked).
               <>
-                {post.cover_url ? <img className="cover-audio" src={post.cover_url} alt="" style={{ objectFit: 'cover', opacity: 0.9 }} /> : null}
-                {post.media_url ? <audio className="audio-ctl" src={post.media_url} controls preload="none" /> : null}
+                {post.cover_url ? <img className="cover-audio" src={post.cover_url} alt="" /> : null}
+                {post.media_url ? <ProtectedAudio className="audio-ctl" src={post.media_url} /> : null}
               </>
-            ) : isVideo ? (
-              // HLS manifest — plays natively in Safari; Chrome support (hls.js) is a
-              // fast follow. The poster always shows.
-              <video src={post.media_url || undefined} poster={post.thumbnail_url || post.cover_url || undefined} controls playsInline preload="none" />
             ) : post.media_url ? (
               <img src={post.media_url} alt={post.caption || ''} />
             ) : null}
           </div>
 
           <div className="postside">
-            <Link className="pt" href={`/@${author.username}`}>
-              <span className="mini-av">{author.avatar_url ? <img src={author.avatar_url} alt="" /> : initial(name, author.username)}</span>
-              <span><b>@{author.username}</b><div style={{ fontSize: 12, color: 'var(--muted)' }}>{timeAgo(post.created_at)}</div></span>
-            </Link>
+            {authorLink}
             <div className="pbody">
               {post.caption ? <div className="cap">{post.caption}</div> : null}
-              <PostInteractions postId={post.id} initialLikes={post.like_count} initialComments={post.comment_count} />
+              {interactions}
             </div>
             <div className="pfoot"><OpenCTA label="Open in Laybell" wide /></div>
           </div>

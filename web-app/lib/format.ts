@@ -31,6 +31,12 @@ export type GridPost = {
   cover_url: string | null;
   like_count?: number | null;
   comment_count?: number | null;
+  // Creator engagement privacy (post_privacy.sql), resolved server-side. Required
+  // (not optional) so a grid query that forgets these columns is a compile error,
+  // not a silent fail-open that renders a count the creator chose to hide.
+  hide_like_count_eff?: boolean | null;
+  comments_disabled_eff?: boolean | null;
+  aspect_ratio?: string | null;
 };
 
 // The thumbnail for a grid tile: cover art for audio, the poster/thumbnail for
@@ -60,4 +66,51 @@ export function gradientFor(id: string): string {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return GRADIENTS[h % GRADIENTS.length];
+}
+
+// Cloudflare Stream HLS manifest -> the Stream iframe player URL. The player is a
+// 16:9 rectangle that plays HLS in every browser, expands to fullscreen, and
+// exposes NO download (downloads are off unless enabled per-video). We only ever
+// embed the player, never the raw manifest, so there's no file to grab.
+// e.g. https://customer-xxx.cloudflarestream.com/<uid>/manifest/video.m3u8
+//   -> https://customer-xxx.cloudflarestream.com/<uid>/iframe?poster=...
+export function streamIframeSrc(mediaUrl?: string | null, poster?: string | null): string | null {
+  if (!mediaUrl) return null;
+  const m = mediaUrl.match(/^(https:\/\/customer-[a-z0-9]+\.cloudflarestream\.com)\/([a-f0-9]{32})\//i);
+  if (!m) return null;
+  // letterboxColor=transparent → the Stream player never paints BLACK bars; any
+  // residual gap shows the page behind it instead.
+  const params = new URLSearchParams({ letterboxColor: 'transparent' });
+  if (poster) params.set('poster', poster);
+  return `${m[1]}/${m[2]}/iframe?${params.toString()}`;
+}
+
+// The Stream-generated thumbnail for a video — carries the video's TRUE pixel
+// dimensions, so measuring it client-side gives the exact aspect to size the
+// player frame to (no letterbox bars).
+export function streamThumb(mediaUrl?: string | null): string | null {
+  if (!mediaUrl) return null;
+  const m = mediaUrl.match(/^(https:\/\/customer-[a-z0-9]+\.cloudflarestream\.com)\/([a-f0-9]{32})\//i);
+  if (!m) return null;
+  return `${m[1]}/${m[2]}/thumbnails/thumbnail.jpg`;
+}
+
+// A silent, controls-less, looping Stream player for a hover preview (YouTube
+// style). Muted is required for autoplay; it's only mounted while hovering.
+export function streamPreviewSrc(mediaUrl?: string | null, poster?: string | null): string | null {
+  if (!mediaUrl) return null;
+  const m = mediaUrl.match(/^(https:\/\/customer-[a-z0-9]+\.cloudflarestream\.com)\/([a-f0-9]{32})\//i);
+  if (!m) return null;
+  const params = new URLSearchParams({ autoplay: 'true', muted: 'true', controls: 'false', loop: 'true', letterboxColor: 'transparent' });
+  if (poster) params.set('poster', poster);
+  return `${m[1]}/${m[2]}/iframe?${params.toString()}`;
+}
+
+// aspect_ratio is a decimal string ("1.7778") or "w:h"; 0 when unknown/invalid.
+// Clamped so one bad value can't make an absurdly tall/wide video player. Used
+// to keep vertical reels vertical and landscape ~16:9 in the web player.
+export function aspectOf(s?: string | null): number {
+  if (!s) return 0;
+  const n = s.includes(':') ? (() => { const [w, h] = s.split(':').map(Number); return h ? w / h : 0; })() : parseFloat(s);
+  return Number.isFinite(n) && n > 0 ? Math.min(3, Math.max(0.4, n)) : 0;
 }

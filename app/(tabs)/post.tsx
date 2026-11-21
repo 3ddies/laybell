@@ -21,6 +21,7 @@ import {
 } from '../../lib/albums';
 import { bumpBadge, publicPostLimit, postKindOf, MUSIC_POST_TYPES, rawTier, tierLabel } from '../../lib/badges';
 import { useProfile } from '../../contexts/ProfileContext';
+import { overrideToStore } from '../../lib/postPrivacy';
 import { usePremium } from '../../contexts/PremiumContext';
 import { FILM_MIN_SEC, FILM_MAX_SEC } from '../../lib/entitlements';
 import { probeVideo } from '../../lib/videoProbe';
@@ -485,6 +486,37 @@ export default function PostScreen() {
   // Tier-gated public slots: none/bronze 6, silver 12, gold 24, diamond ∞.
   // Friends-only posts are never gated; deleting/archiving frees a slot.
   const { profile } = useProfile();
+  // Per-post engagement privacy (post_privacy.sql). Each toggle starts at the
+  // account-wide default and follows it until the user touches it; on publish only
+  // a value that DIVERGES from that default is stored (null = keep inheriting it).
+  const pLikeDefault = !!(profile as any)?.hide_like_count_default;
+  const pCommDefault = !!(profile as any)?.comments_disabled_default;
+  const pSaveDefault = !!(profile as any)?.hide_save_count_default;
+  const [hideLikeCount, setHideLikeCount] = useState<boolean>(pLikeDefault);
+  const [commentsDisabled, setCommentsDisabled] = useState<boolean>(pCommDefault);
+  const [hideSaveCount, setHideSaveCount] = useState<boolean>(pSaveDefault);
+  // The profile can load a tick after mount; keep the toggles following the
+  // account defaults until the user actually changes one, so we never freeze them
+  // at a pre-load value and then store a spurious divergence.
+  // Each toggle follows its account default until the user touches THAT toggle
+  // (per-toggle, so touching one never freezes the other two at a pre-load value).
+  const privacyTouched = useRef({ like: false, comm: false, save: false });
+  useEffect(() => {
+    const tch = privacyTouched.current;
+    if (!tch.like) setHideLikeCount(pLikeDefault);
+    if (!tch.comm) setCommentsDisabled(pCommDefault);
+    if (!tch.save) setHideSaveCount(pSaveDefault);
+  }, [pLikeDefault, pCommDefault, pSaveDefault]);
+  const touchPrivacy = (key: 'like' | 'comm' | 'save', set: (v: boolean) => void) => (v: boolean) => { privacyTouched.current[key] = true; set(v); };
+  // Override columns for an insert: drop any that match the account default so the
+  // post keeps following it (overrideToStore → null), include only a divergence.
+  const privacyCols = () => {
+    const o: Record<string, boolean> = {};
+    const l = overrideToStore(hideLikeCount, pLikeDefault); if (l != null) o.hide_like_count = l;
+    const c = overrideToStore(commentsDisabled, pCommDefault); if (c != null) o.comments_disabled = c;
+    const s = overrideToStore(hideSaveCount, pSaveDefault); if (s != null) o.hide_save_count = s;
+    return o;
+  };
   const navigation = useNavigation<any>();
   // Actions only: the composer reads no queue state, so it must not re-render on
   // every upload progress tick while a previous post is still uploading.
@@ -865,6 +897,11 @@ export default function PostScreen() {
     // one of them would have been notified they were on a track they are not.
     setFeatures([]); setAlbumId(null); setNewAlbumName(''); setExtraTracks([]);
     setAllowDownloads(true); setAllowGifs(true); setMature(false); setSaveToCameraRoll(true);
+    // Reset engagement-privacy toggles to the account defaults AND clear the
+    // per-toggle touched flags, so a divergence set on one post never carries
+    // silently onto the next post composed in the same sitting.
+    setHideLikeCount(pLikeDefault); setCommentsDisabled(pCommDefault); setHideSaveCount(pSaveDefault);
+    privacyTouched.current = { like: false, comm: false, save: false };
     // Abandoning the compose drops any parked spotlight handoff so it can't
     // silently attach to an unrelated later post — the paid campaign itself
     // stays safe as `pending` on the Spotlight screen. (No-op on the share
@@ -904,6 +941,7 @@ export default function PostScreen() {
       audioFile, audioDuration, coverUri, audioKind,
       song, songMix, tagged, features,
       allowDownloads, allowGifs,
+      hideLikeCount, commentsDisabled, hideSaveCount,
       publishAt: scheduleAt,
       mature, allowSound, musicVideo, coverSec, albumId, communities, saveToCameraRoll,
     };
@@ -948,6 +986,11 @@ export default function PostScreen() {
     setFeatures(d.features ?? []);
     setAllowDownloads(d.allowDownloads ?? true);
     setAllowGifs(d.allowGifs ?? true);
+    // Restore engagement-privacy toggles; a draft that carried an explicit value
+    // marks that toggle "touched" so the account-default sync effect won't clobber it.
+    if (d.hideLikeCount != null) { setHideLikeCount(d.hideLikeCount); privacyTouched.current.like = true; }
+    if (d.commentsDisabled != null) { setCommentsDisabled(d.commentsDisabled); privacyTouched.current.comm = true; }
+    if (d.hideSaveCount != null) { setHideSaveCount(d.hideSaveCount); privacyTouched.current.save = true; }
     // The rest of the details form, on drafts saved since 1.0.3; older ones fall
     // back to the composer's defaults.
     setMature(d.mature ?? false);
@@ -1547,7 +1590,7 @@ export default function PostScreen() {
     const url = await uploadToStorageWithProgress('posts', userId, track.uri, ext, track.mime, setUploadPct);
     setUploadPct(null);
     const title = track.name.replace(/\.[^.]+$/, '').trim().slice(0, 120) || 'Track';
-    const { data: np, error } = await supabase.from('posts').insert({
+    const trackRow: Record<string, any> = {
       user_id: userId,
       type: audioKind,
       media_url: url,
@@ -1556,8 +1599,15 @@ export default function PostScreen() {
       ...(track.durationSec != null ? { duration_seconds: track.durationSec } : {}),
       ...(genre && showGenre ? { genre } : {}),
       downloadable: allowDownloads,
+      ...privacyCols(),
       sound_opt_in: allowSound, sound_opt_in_at: new Date().toISOString(),
-    }).select('id').single();
+    };
+    let { data: np, error } = await supabase.from('posts').insert(trackRow).select('id').single();
+    // Degrade like the main insert / video queue if the privacy columns aren't live yet.
+    if (error && /hide_like_count|comments_disabled|hide_save_count/i.test(error.message ?? '')) {
+      delete trackRow.hide_like_count; delete trackRow.comments_disabled; delete trackRow.hide_save_count;
+      ({ data: np, error } = await supabase.from('posts').insert(trackRow).select('id').single());
+    }
     if (error) throw error;
     if (np?.id) {
       await addAlbumTrack(album, np.id);
@@ -1819,6 +1869,7 @@ export default function PostScreen() {
           audioFile: null, audioDuration: null, coverUri: null, audioKind,
           song, songMix, tagged, features,
           allowDownloads, allowGifs,
+          hideLikeCount, commentsDisabled, hideSaveCount,
           publishAt: scheduleAt,
           mature, allowSound, musicVideo, coverSec, albumId, communities, saveToCameraRoll,
           // Marks this as an in-flight upload for boot-time recovery — cleared
@@ -1867,6 +1918,11 @@ export default function PostScreen() {
           taggedIds: tagged.map((tp) => tp.id),
           communityIds: communities.map((c) => c.id),
           allowGifs,
+          // Engagement privacy — null means "inherit my account default" (the
+          // queue only sends a non-null divergence); same rule as every post type.
+          hideLikeCount: overrideToStore(hideLikeCount, pLikeDefault),
+          commentsDisabled: overrideToStore(commentsDisabled, pCommDefault),
+          hideSaveCount: overrideToStore(hideSaveCount, pSaveDefault),
           // Mature content — the switch is on the details form for every post type,
           // and until 1.0.3 it never reached a video.
           mature,
@@ -2073,7 +2129,7 @@ export default function PostScreen() {
 
       const trimmed = false; // videos (the only trimmed type) never reach here
 
-      const { data: newPost, error: postError } = await supabase.from('posts').insert({
+      const insertRow: Record<string, any> = {
         user_id: user.id,
         // Scheduled: in the table now, hidden until then (post_scheduling.sql).
         ...(publishAt ? { publish_at: publishAt } : {}),
@@ -2122,6 +2178,9 @@ export default function PostScreen() {
         // Creator controls: only send the flag relevant to the media type.
         // (video's allow_gifs is set in the background queue, not here.)
         ...(postType === 'audio' ? { downloadable: allowDownloads } : {}),
+        // Engagement privacy (hide likes/saves, disable comments) — only the
+        // overrides that diverge from the account default; the rest inherit it.
+        ...privacyCols(),
         // Sync consent, stamped with when it was given so the grant carries a
         // timestamp rather than being inferred from a column's current value.
         // Spread-conditional like the rest: a pre-migration database simply never
@@ -2129,7 +2188,16 @@ export default function PostScreen() {
         ...(postType === 'audio'
           ? { sound_opt_in: allowSound, sound_opt_in_at: new Date().toISOString() }
           : {}),
-      }).select('id').single();
+      };
+      let { data: newPost, error: postError } = await supabase.from('posts').insert(insertRow).select('id').single();
+      // Never cost the user their post if the privacy columns aren't in the schema
+      // yet (SQL applied after this build ships, or a PostgREST cache lag) — drop
+      // them and retry, the same degradation the video queue does. The post lands
+      // without the per-post override and simply follows the account default.
+      if (postError && /hide_like_count|comments_disabled|hide_save_count/i.test(postError.message ?? '')) {
+        delete insertRow.hide_like_count; delete insertRow.comments_disabled; delete insertRow.hide_save_count;
+        ({ data: newPost, error: postError } = await supabase.from('posts').insert(insertRow).select('id').single());
+      }
       if (postError) throw postError;
       notifySuccess(); // celebratory buzz on a published post
       if (isPublic) {
@@ -2896,13 +2964,42 @@ export default function PostScreen() {
             >
               <Ionicons name="options-outline" size={16} color={colors.textSecondary} />
               <Text style={styles.advancedTitle}>{t('post.advancedSettings')}</Text>
-              {!advancedOpen && (mature || (postType === 'video' && !allowGifs) || (postType === 'audio' && !allowDownloads) || (postType === 'video' && !isFilm && canSaveFinishedVideo() && !saveToCameraRoll)) && (
+              {!advancedOpen && (mature || (postType === 'video' && !allowGifs) || (postType === 'audio' && !allowDownloads) || (postType === 'video' && !isFilm && canSaveFinishedVideo() && !saveToCameraRoll) || hideLikeCount !== pLikeDefault || commentsDisabled !== pCommDefault || hideSaveCount !== pSaveDefault) && (
                 <View style={styles.advancedDot} />
               )}
               <Ionicons name={advancedOpen ? 'chevron-up' : 'chevron-down'} size={15} color={colors.textSecondary} />
             </TouchableOpacity>
             {advancedOpen && (
               <View style={styles.settingsCard}>
+                {/* Engagement privacy — offered for every post type. Each starts at
+                    the account-wide default (Settings → Post privacy). */}
+                <SettingSwitch
+                  label={t('post.hideLikesLabel')}
+                  value={hideLikeCount}
+                  onChange={touchPrivacy('like', setHideLikeCount)}
+                  onInfo={() => setInfo({ icon: 'heart-outline', title: t('post.hideLikesLabel'), body: t('post.hideLikesHelp') })}
+                  infoLabel={t('post.learnMore')}
+                  styles={styles}
+                  colors={colors}
+                />
+                <SettingSwitch
+                  label={t('post.disableCommentsLabel')}
+                  value={commentsDisabled}
+                  onChange={touchPrivacy('comm', setCommentsDisabled)}
+                  onInfo={() => setInfo({ icon: 'chatbubble-outline', title: t('post.disableCommentsLabel'), body: t('post.disableCommentsHelp') })}
+                  infoLabel={t('post.learnMore')}
+                  styles={styles}
+                  colors={colors}
+                />
+                <SettingSwitch
+                  label={t('post.hideSavesLabel')}
+                  value={hideSaveCount}
+                  onChange={touchPrivacy('save', setHideSaveCount)}
+                  onInfo={() => setInfo({ icon: 'bookmark-outline', title: t('post.hideSavesLabel'), body: t('post.hideSavesHelp') })}
+                  infoLabel={t('post.learnMore')}
+                  styles={styles}
+                  colors={colors}
+                />
                 {postType === 'audio' && (
                   <SettingSwitch
                     label={t('offline.downloadableLabel')}

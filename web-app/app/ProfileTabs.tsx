@@ -7,7 +7,7 @@ import type { WebListing } from '@/lib/shop';
 
 type Album = { id: string; title: string; cover: string | null; trackCount: number; firstTrackId: string | null };
 type Single = { id: string; cover: string | null; label: string };
-type Shop = { open: boolean; listings: WebListing[]; name: string | null; bio: string | null };
+type Shop = { open: boolean; listings: WebListing[]; name: string | null; bio: string | null; sold: number };
 type Tab = 'posts' | 'music' | 'videos' | 'shop';
 
 const ICON: Record<Tab, React.ReactNode> = {
@@ -80,7 +80,7 @@ export default function ProfileTabs({ posts, albums, singles, videos, shop }: { 
             <section className="shop-sec shopdark">
               <div className="shop-head">
                 <h2>{shop.name || 'Shop'}</h2>
-                <span className="shop-note">Buy in the app · {shop.listings.length} item{shop.listings.length === 1 ? '' : 's'}</span>
+                <span className="shop-note">Buy in the app · {shop.listings.length} item{shop.listings.length === 1 ? '' : 's'}{shop.sold > 0 ? ` · ${shop.sold} sold` : ''}</span>
               </div>
               {shop.bio ? <p className="shop-bio">{shop.bio}</p> : null}
               <div className="shop-grid">

@@ -410,15 +410,15 @@ export default function NotificationsScreen() {
                 </View>
                 <View style={styles.statsRow}>
                   <View style={styles.statTile}>
-                    <FlipNumber value={stats.views} fontSize={30} color={colors.text} abbreviate />
+                    <FlipNumber value={stats.views} fontSize={46} color={colors.text} abbreviate fitWidth />
                     <Text style={styles.statLabel}>{t('notifications.statViews')}</Text>
                   </View>
                   <View style={styles.statTile}>
-                    <FlipNumber value={stats.plays} fontSize={30} color={colors.text} abbreviate />
+                    <FlipNumber value={stats.plays} fontSize={46} color={colors.text} abbreviate fitWidth />
                     <Text style={styles.statLabel}>{t('notifications.statPlays')}</Text>
                   </View>
                   <View style={styles.statTile}>
-                    <FlipNumber value={stats.likes} fontSize={30} color={colors.text} abbreviate />
+                    <FlipNumber value={stats.likes} fontSize={46} color={colors.text} abbreviate fitWidth />
                     <Text style={styles.statLabel}>{t('notifications.statLikes')}</Text>
                   </View>
                 </View>
@@ -568,12 +568,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   // Lifetime stats header (views / song plays / likes) — three tiles above the list.
   statsWrap: { paddingTop: SPACING.sm, paddingBottom: SPACING.md },
-  statsEyebrowRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: SPACING.xs, marginLeft: 2, marginRight: 2 },
-  statsEyebrow: { color: colors.textTertiary, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
+  statsEyebrowRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, marginLeft: 2, marginRight: 2 },
+  statsEyebrow: { color: colors.textTertiary, fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8 },
   statsRow: { flexDirection: 'row', gap: SPACING.sm },
-  statTile: { flex: 1, alignItems: 'center', gap: 1, paddingVertical: SPACING.xs },
+  statTile: { flex: 1, alignItems: 'center', gap: 3, paddingVertical: SPACING.sm },
   // Proud, bold numbers that FLIP to new values — a scoreboard you want to run up.
-  statLabel: { color: colors.textTertiary, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 },
+  statLabel: { color: colors.textTertiary, fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.6 },
   skeletonBody: { flex: 1, paddingHorizontal: SPACING.sm, paddingTop: SPACING.sm },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

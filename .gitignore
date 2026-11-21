@@ -72,3 +72,9 @@ store/screenshots/preview/
 # creatives). Not app code and never bundled into the EAS build; kept out of git so
 # the repo doesn't balloon by ~600 MB.
 marketing/
+
+# Demo-artist screenshot seeding (scripts/_demo_*) — local/throwaway. Never commit the
+# manifest (holds production account ids), the generated album art, or a stray key.
+scripts/_demo_art/
+scripts/_demo_seed.manifest.json
+scripts/_demo_seed.manifest.json.done

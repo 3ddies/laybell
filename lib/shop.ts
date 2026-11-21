@@ -734,6 +734,19 @@ export function paidSalesCount(l: ShopListing): number {
   return Math.max(0, l.sales_count - (l.free_count ?? 0));
 }
 
+/** A seller's TOTAL paid sales (sells + leases + accepted offers, never free
+ *  claims) across ALL their non-removed listings — including sold-exclusives,
+ *  whose listing row the shop_listings RLS hides from visitors. Summed
+ *  server-side by the shop_seller_paid_sales SECURITY DEFINER function
+ *  (shop_seller_sales.sql), so a visitor sees the real figure, not just what's
+ *  reachable from the active rows. Reads the live trigger-maintained counters,
+ *  so it tracks every sale/lease as it delivers and backs out on refund. */
+export async function fetchSellerPaidSales(userId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('shop_seller_paid_sales', { p_user: userId });
+  if (error || typeof data !== 'number') return 0;
+  return data;
+}
+
 export type ListingStats = { claimed: number; leased: number; sold: boolean };
 
 /** What a listing has actually done, as the page states it.

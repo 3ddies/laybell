@@ -18,15 +18,38 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ---
 
-## 0.0 ✅ THE CURRENT STATE — updated 2026-11-10
+## 0.0 ✅ THE CURRENT STATE — updated 2026-11-18
 
-**1.1.4 is SUBMITTED to BOTH stores and IN REVIEW** (2026-11-10). It **supersedes 1.1.2**
-(which never shipped). This was a **native** build (new on-device module
-`modules/laybell-subject-lift`, no OTA). It carries **subject-lift stickers** (press-and-hold
-any image → cut its subject into a transparent sticker; stickers land in "My GIFs" and send
-transparently in comments/DMs), **storybooks** (chaptered story highlights on the profile,
-with archive + make-public), and the **archive UX polish**. Merged to `dev` via PRs #1–#3
-(final merge `dca8b8c`). Full What's New: **`docs/RELEASE_NOTES_1.1.4.md`**.
+**1.1.5 is LIVE on BOTH stores** (approved ~2026-11-18; submitted 2026-11-16, owner-authorized each submit). On
+`feature/subject-lift-stickers` (features `583ddef`, release cut `20838b4`): **pure JS/TS + one additive
+column**, no new native module. Ships since 1.1.4: the **Explore editorial-grid redesign** +
+Laybell-TV hero rework, **privacy controls** (hide like/save counts, turn off comments), the
+**shop display toggle** (`profiles.shop_display`), **storybooks beside the profile name/bio**,
+and the **album cover-color accent**. Gates: app typecheck **0**; **no money code**; demo
+screenshot data removed + verified 0/0. Submitted by driving the consoles in the Chrome extension:
+- **iOS build 26** → ASC **1.1.5**: build attached, **5 screenshots** (1206×2622), What's New (441 ch),
+  and an **App Preview video as slide 1** = the store trailer reframed to **886×1920**.
+  **Add for Review → Submit → APPROVED/LIVE** (Apple approved the preview — it's review-safe).
+  ⚠️ **PENDING polish for the NEXT iOS version (owner chose to roll it in, not burn a review cycle now):**
+  the live 1.1.5 preview has letterbox bands + square-corner bleed; the **CORRECTED cut** (full-bleed
+  886×1920, footage now clipped to the rounded screen) is saved at
+  `marketing/store-preview/laybell-store-preview-ios-886x1920.mp4` (`render-anim.mjs` alphamerges a
+  rounded-rect screen mask). A live version's App Preview is **LOCKED** and a new version **inherits the
+  old one**, so **actively swap this file into App Previews when prepping 1.1.6+** [[store-preview-video]].
+- **Android vc23** → `eas submit` DRAFT in the **Edwin Devron Hall** Play account (ehalldc@gmail.com,
+  NOT the empty+restricted "Laybell LLC" laybellapp@gmail.com — memory `play-console-account-structure`);
+  `<en-US>` notes added → Publishing overview **"Submit 1 change for review" → sent → "Changes in review"**
+  (≤7 days). Managed-publishing OFF → **auto-publishes full rollout on approval** (still **1 country**).
+  Play **store-listing screenshots KEPT as-is** (new "Midnight" set can't be browser-uploaded — native
+  picker; owner kept the existing 7-shot set). No Play video (needs a YouTube link).
+- ✅ **`profile_shop_display.sql` DEPLOYED to prod 2026-11-18** (via `supabase db query --linked --yes`):
+  `profiles.shop_display` text NOT NULL default 'button', CHECK button|rail — verified live, so the Shop
+  "Cover rail" toggle now persists instead of force-resetting. ⏳ OWNER still: run `scripts/.schema-audit.sql`.
+  **No new IAPs.**
+
+**1.1.4 is LIVE on both stores** (confirmed 2026-11-16; submitted 2026-11-10) — subject-lift
+stickers + storybooks + archive UX polish (native module `modules/laybell-subject-lift`). Full
+What's New: **`docs/RELEASE_NOTES_1.1.4.md`**; its submit detail is in the bullets below.
 
 - **iOS build 25** → `eas submit` (stored ASC key `5GPD4R9QBU`, no 2FA) → ASC version 1.1.4
   created, build attached, metadata carried from 1.1.1, What's New pasted, **Submitted →
@@ -58,8 +81,9 @@ Money: **no money code touched** this release; demo money clear by provenance (n
 
 **Still-true prior state:** **1.1.1 LIVE both stores** (approved 2026-11-05; Android vc18 /
 iOS b23) — ⚠️ Play production availability is still **1 country/region** (expand via
-Production→Countries/regions); ⚠️ the **@laybell active-status test-gate is still LIVE** (only
-@3ddie sees it — remove in `active_status.sql`). SBP: keep full 15%; flip
+Production→Countries/regions); ✅ the active-status test-gate is **already removed** from prod
+(verified 2026-11-10 — the dot shows for all users; the @laybell brand account is opted out via
+its own `active_status_enabled` flag, not a code hack). SBP: keep full 15%; flip
 `STORE_COMMISSION_RATE`→0.15 only on the effective date (§0.3).
 
 ---

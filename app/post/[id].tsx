@@ -6,6 +6,7 @@ import { ambientMixFor, videoSoundFor } from '../../lib/songMix';
 import { Image as ExpoImage } from 'expo-image';
 import { fullImagePreviewProps } from '../../lib/mediaPreview';
 import { formatCount } from '../../lib/format';
+import { postPrivacy } from '../../lib/postPrivacy';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Image, TextInput, KeyboardAvoidingView,
@@ -145,7 +146,10 @@ export default function PostDetailScreen() {
   // The action row tightens when the post has little engagement and opens up as its
   // counts appear — same adaptive spacing as the feed.
   const shareCount = post?.share_count || 0;
-  const engagedActions = (likeCount > 0 ? 1 : 0) + (saveCount > 0 ? 1 : 0) + (shareCount > 0 ? 1 : 0);
+  // Creator engagement privacy (post_privacy.sql) — hides the like/save COUNT and
+  // the comment thread for this post (post carries the *_eff booleans via select '*').
+  const priv = postPrivacy(post);
+  const engagedActions = ((likeCount > 0 && !priv.hideLikes) ? 1 : 0) + ((saveCount > 0 && !priv.hideSaves) ? 1 : 0) + (shareCount > 0 ? 1 : 0);
   const actionRowGap = engagedActions === 0 ? 10 : engagedActions === 1 ? 16 : 22;
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -375,6 +379,7 @@ export default function PostDetailScreen() {
       <Comments
         postId={id as string}
         ownerId={post.user_id}
+        disabled={priv.commentsDisabled}
         onRefresh={setup}
         ListHeaderComponent={
           <>
@@ -604,7 +609,7 @@ export default function PostDetailScreen() {
                   <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={23} color={isLiked ? colors.like : colors.textSecondary} />
                 </TouchableOpacity>
                 {/* The COUNT (not the heart) opens the list of who engaged. */}
-                {likeCount > 0 && (
+                {likeCount > 0 && !priv.hideLikes && (
                   <TouchableOpacity onPress={() => router.push(`/post-engagement/${id}`)} activeOpacity={0.6} hitSlop={8}>
                     <Text style={[styles.actionCount, isLiked && { color: colors.like }]} numberOfLines={1}>{formatCount(likeCount)}</Text>
                   </TouchableOpacity>
@@ -612,7 +617,7 @@ export default function PostDetailScreen() {
               </View>
               <TouchableOpacity style={styles.actionBtn} onPress={handleSave} activeOpacity={0.6} hitSlop={8}>
                 <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={22} color={isSaved ? colors.text : colors.textSecondary} />
-                {saveCount > 0 && <Text style={[styles.actionCount, isSaved && { color: colors.text }]} numberOfLines={1}>{formatCount(saveCount)}</Text>}
+                {saveCount > 0 && !priv.hideSaves && <Text style={[styles.actionCount, isSaved && { color: colors.text }]} numberOfLines={1}>{formatCount(saveCount)}</Text>}
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.actionBtn}

@@ -39,6 +39,8 @@ export default function CommentsScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserProfile, setCurrentUserProfile] = useState<any>(null);
   const [postOwnerId, setPostOwnerId] = useState<string | null>(null);
+  // Commenting turned off for this post (post_privacy.sql, resolved server-side).
+  const [commentsOff, setCommentsOff] = useState(false);
 
   useEffect(() => { setup(); }, [id]);
 
@@ -64,16 +66,17 @@ export default function CommentsScreen() {
   async function setup() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-        const [profileRes, postRes] = await Promise.all([
-          supabase.from('profiles').select('username, display_name').eq('id', user.id).single(),
-          supabase.from('posts').select('user_id').eq('id', id).single(),
-        ]);
-        if (profileRes.data) setCurrentUserProfile(profileRes.data);
-        if (postRes.data) setPostOwnerId(postRes.data.user_id);
-      }
-      await fetchComments();
+      if (user) setCurrentUserId(user.id);
+      // Fetch the off-flag regardless of login (a logged-out viewer must still see
+      // the "off" state), and skip the thread fetch entirely when comments are off.
+      const [profileRes, postRes] = await Promise.all([
+        user ? supabase.from('profiles').select('username, display_name').eq('id', user.id).single() : Promise.resolve({ data: null } as any),
+        supabase.from('posts').select('user_id, comments_disabled_eff').eq('id', id).single(),
+      ]);
+      if (profileRes.data) setCurrentUserProfile(profileRes.data);
+      const off = (postRes.data as any)?.comments_disabled_eff === true;
+      if (postRes.data) { setPostOwnerId(postRes.data.user_id); setCommentsOff(off); }
+      if (!off) await fetchComments();
     } finally {
       // Always clear the skeleton — a transient network reject must not leave the
       // screen spinning forever (pull-to-refresh / reopen can then retry).
@@ -91,7 +94,7 @@ export default function CommentsScreen() {
   }
 
   async function handleSendComment() {
-    if (!newComment.trim() || !currentUserId || sending) return;
+    if (commentsOff || !newComment.trim() || !currentUserId || sending) return;
     setSending(true);
     const prevText = newComment;
     const body = newComment.trim();
@@ -132,14 +135,16 @@ export default function CommentsScreen() {
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('comments.title')}</Text>
-        <View style={styles.countBadge}>
-          <Text style={styles.countText}>{comments.length}</Text>
-        </View>
+        {!commentsOff && (
+          <View style={styles.countBadge}>
+            <Text style={styles.countText}>{comments.length}</Text>
+          </View>
+        )}
       </View>
 
       <FlatList
         ref={flatListRef}
-        data={comments}
+        data={commentsOff ? [] : comments}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
         // The composer sits below this list, so the keyboard is up for most of
@@ -151,8 +156,8 @@ export default function CommentsScreen() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="chatbubbles-outline" size={44} color={colors.textTertiary} />
-            <Text style={styles.emptyTitle}>{t('comments.emptyTitle')}</Text>
-            <Text style={styles.emptySubtitle}>{t('comments.emptySub')}</Text>
+            <Text style={styles.emptyTitle}>{commentsOff ? t('comments.offTitle') : t('comments.emptyTitle')}</Text>
+            <Text style={styles.emptySubtitle}>{commentsOff ? t('comments.offBody') : t('comments.emptySub')}</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -171,6 +176,7 @@ export default function CommentsScreen() {
         )}
       />
 
+      {!commentsOff && (
       <View style={styles.inputContainer}>
         <LinearGradient colors={GRADIENTS.avatar} style={styles.inputAvatar}>
           <Text style={styles.inputAvatarText}>{currentUserProfile?.display_name?.charAt(0).toUpperCase()}</Text>
@@ -192,6 +198,7 @@ export default function CommentsScreen() {
           {sending ? <ActivityIndicator color={colors.background} size="small" /> : <Ionicons name="arrow-up" size={18} color={colors.background} />}
         </TouchableOpacity>
       </View>
+      )}
     </KeyboardAvoidingView>
   );
 }

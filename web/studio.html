@@ -26,8 +26,14 @@
 <meta name="twitter:title" content="Join my Laybell studio session">
 <meta name="twitter:description" content="Join a live studio session from your computer. Pro mics and interfaces, DAW audio, and a clean take straight into your project.">
 <meta name="twitter:image" content="https://laybell.app/logo.png">
+
+<!-- Same type family as the rest of laybell.app: Nunito for the LAYBELL
+     wordmark, Hanken Grotesk for body — so the studio panel matches the site. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Nunito:wght@800;900&display=swap" rel="stylesheet">
 <style>
-:root { --bg:#0d0d0f; --card:#16151a; --ink:#f5f4f2; --muted:#a4a3ab; --line:#272630; --brand:#F26522; --brand2:#E8401C; --ok:#22C55E; --err:#F43F5E; }
+:root { --bg:#0d0d0f; --card:#16151a; --ink:#f5f4f2; --muted:#a4a3ab; --line:#272630; --brand:#F26522; --brand2:#E8401C; --ok:#22C55E; --err:#F43F5E; --f-body:"Hanken Grotesk",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; --f-logo:"Nunito",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
 * { box-sizing:border-box; }
 /* min-height, and centring via `margin:auto` on the child rather than
    `align-items:center` on the flex parent. With align-items:center a child
@@ -37,7 +43,7 @@
    Share button scrolled off the top and could not be reached again. An auto
    margin centres only the spare space, so overflow always goes downward. */
 html,body { min-height:100%; }
-body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; display:flex; justify-content:center; padding:24px; }
+body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 var(--f-body); display:flex; justify-content:center; padding:24px; }
 main { width:100%; max-width:440px; margin:auto; }
 
 /* ── Laptop: console left, guides right ─────────────────────────────────────
@@ -74,30 +80,35 @@ main { width:100%; max-width:440px; margin:auto; }
 }
 /* The real mark, not a CSS letter standing in for it. Same asset the invite
    and open pages use, so every Laybell surface a producer meets looks alike. */
-.logo { width:64px; height:64px; border-radius:16px; margin:0 auto 14px; display:block; object-fit:cover; }
+.logo { width:66px; height:66px; border-radius:17px; margin:0 auto 14px; display:block; object-fit:cover; box-shadow:0 10px 26px -8px rgba(242,101,34,.5); }
 /* The ™ is taken OUT of the flow. As a flex sibling it added its own width to
    the centred row, so "Laybell Studio" was pushed left by half that width and
    sat visibly off-centre under a logo that was centred properly. Absolutely
    positioned, the wordmark centres on its own and the ™ hangs off the end. */
 .brandwrap { text-align:center; margin:0 0 6px; }
-h1.brandline { position:relative; display:inline-block; margin:0; }
-h1.brandline .tm { position:absolute; left:100%; top:.2em; margin-left:3px; font-size:10px; font-weight:700; color:var(--muted); }
+h1.brandline { position:relative; display:inline-block; margin:0; font-family:var(--f-logo); font-weight:900; text-transform:uppercase; letter-spacing:-.015em; font-size:clamp(29px,5.5vw,40px); line-height:1; }
+h1.brandline .tm { position:absolute; left:100%; top:.35em; margin-left:4px; font-size:11px; font-weight:800; color:var(--muted); }
 h1 { font-size:22px; margin:0 0 6px; text-align:center; }
 /* max-width and the auto margins live HERE, not in the media query. They were
    in the query, and this rule comes later in the stylesheet at equal
    specificity, so `margin:0 0 22px` won and reset both sides to zero — leaving
    a 560px-capped line jammed against the left edge of a 1160px page, 300px off
    centre. Shorthand margin after a longhand override is a quiet way to lose. */
-p.sub { color:var(--muted); margin:0 auto 22px; max-width:560px; text-align:center; font-size:14px; }
-.card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; margin-bottom:14px; }
+p.sub { color:var(--muted); margin:8px auto 24px; max-width:560px; text-align:center; font-size:15px; line-height:1.55; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:18px; margin-bottom:14px; box-shadow:0 1px 2px rgba(0,0,0,.4), 0 14px 34px rgba(0,0,0,.34); }
 label { display:block; font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; margin:0 0 6px; }
 input, select { width:100%; padding:13px 14px; border-radius:12px; border:1px solid var(--line); background:#0f0e12; color:var(--ink); font-size:16px; margin-bottom:12px; }
 select { appearance:none; -webkit-appearance:none; }
 input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
-.btn { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:14px 18px; border-radius:13px; border:0; cursor:pointer; font-weight:700; font-size:15px; margin:0 0 10px; }
-.btn-primary { background:linear-gradient(90deg,var(--brand),var(--brand2)); color:#fff; }
+.btn { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:14px 18px; border-radius:13px; border:0; cursor:pointer; font-family:var(--f-body); font-weight:800; font-size:15px; margin:0 0 10px; transition:transform .18s cubic-bezier(.2,.6,.3,1), filter .18s ease, border-color .18s ease; }
+.btn:hover { transform:translateY(-1px); }
+.btn:active { transform:translateY(0) scale(.99); }
+.btn-primary { background:linear-gradient(135deg,var(--brand2),var(--brand)); color:#fff; box-shadow:0 8px 20px -8px rgba(242,101,34,.72); }
+.btn-primary:hover { filter:brightness(1.07); }
 .btn-ghost { background:transparent; border:1px solid var(--line); color:var(--ink); }
+.btn-ghost:hover { border-color:var(--brand); }
 .btn[disabled] { opacity:.5; cursor:default; }
+.btn[disabled]:hover { transform:none; filter:none; }
 /* The mic button carries its own state. "Am I live?" is the one question you
    ask in the middle of a take, and it has to answer from across the room:
    green means they can hear you, red means they cannot. Grey is the state

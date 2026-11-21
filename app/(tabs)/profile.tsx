@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useState, useRef, type ReactElement } from 'react';
 import { FlashList } from '@shopify/flash-list';
+import Reanimated from 'react-native-reanimated';
 import { orderProfileTabs, tabContent } from '../../lib/profileTabOrder';
 import { supabase } from '../../lib/supabase';
 import { tabTick } from '../../lib/haptics';
@@ -60,11 +61,16 @@ import DailyBadges from '../../components/DailyBadges';
 import { profileProgress, type ProfileTaskKey } from '../../lib/profileCompletion';
 import TranslatableText from '../../components/TranslatableText';
 import { ProfileSkeleton } from '../../components/Skeleton';
+import { useScrollAwayHeader } from '../../hooks/useScrollAwayHeader';
+
+// FlashList wrapped as a Reanimated animated component so the scroll-away
+// header's UI-thread scroll handler can attach to the grids.
+const AnimatedFlashList = Reanimated.createAnimatedComponent(FlashList);
 
 type Profile = {
   id: string; username: string; display_name: string;
   bio: string | null; avatar_url: string | null; badge_tier: string; created_at: string;
-  link?: string | null; title?: string | null;
+  link?: string | null; title?: string | null; shop_display?: 'button' | 'rail' | null;
 };
 type Stats = { followers: number; following: number; posts: number };
 
@@ -221,6 +227,28 @@ export default function ProfileScreen() {
     if (!liveId) return;
     hasOpenShop(liveId).then(setHasShop).catch(() => {});
   }, [liveId]));
+
+  // The profile card + tab strip scroll away as the active tab's feed scrolls —
+  // one absolute header layer, native-driver scroll-linked (useScrollAwayHeader).
+  const { onScrollForTab, onOverlayLayout, overlayH, headerStyle } = useScrollAwayHeader(TAB_KEYS, activeTab);
+
+  // Cover-rail preview, so you can see your own shop rail without a second
+  // account. Covers load only when you've chosen the 'rail' display.
+  const shopDisplay = profile?.shop_display ?? 'button';
+  const [shopPreview, setShopPreview] = useState<{ id: string; cover_url: string | null }[]>([]);
+  useEffect(() => {
+    if (!liveId || shopDisplay !== 'rail' || !hasShop) { setShopPreview([]); return; }
+    let active = true;
+    supabase
+      .from('shop_listings')
+      .select('id, cover_url')
+      .eq('user_id', liveId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(4)
+      .then(({ data }) => { if (active) setShopPreview((data as { id: string; cover_url: string | null }[]) ?? []); });
+    return () => { active = false; };
+  }, [liveId, shopDisplay, hasShop]);
 
   // Per-thumbnail nodes so opening a post/reel can expand out of the tapped cell.
   const gridRefs = useRef<Record<string, any>>({});
@@ -989,13 +1017,13 @@ export default function ProfileScreen() {
     const first = header ? 1 : 0;
     const geo = inset ? GRID_INSET : GRID_BLEED;
     return (
-      <FlashList
+      <AnimatedFlashList
         data={rows}
         numColumns={3}
         keyExtractor={gridKey}
         getItemType={gridItemType}
         overrideItemLayout={spanGridHeader}
-        renderItem={({ item, index }) => (item.__header ? header : (
+        renderItem={({ item, index }: { item: any; index: number }) => (item.__header ? header : (
           <ProfileGridTile
             post={item}
             tabKey={key}
@@ -1009,8 +1037,10 @@ export default function ProfileScreen() {
         // Only a page with nothing at all: under a custom layout or a films
         // shelf, that first row is the content.
         ListEmptyComponent={renderGridEmpty(key)}
-        contentContainerStyle={styles.pageContent}
+        contentContainerStyle={[styles.pageContent, { paddingTop: overlayH }]}
         showsVerticalScrollIndicator={false}
+        onScroll={onScrollForTab(key)}
+        scrollEventThrottle={16}
         refreshControl={refreshControl}
         // Behave like the ScrollView this replaced: nothing anchors when the
         // first row or the posts above the screen change.
@@ -1036,7 +1066,6 @@ export default function ProfileScreen() {
     // pageSwipePan lives on the ROOT: flings anywhere — header, grid, empty
     // space — step the sub-tabs; a right-fling on Posts exits to Music.
     <View style={styles.container} {...pageSwipePan.panHandlers} onTouchStart={() => pageHealthRef.current?.collapse()}>
-      <View>
       <View style={styles.headerBar}>
         {/* Tap the username → Instagram-style account switcher (switch between
             signed-in accounts, or add/log into another). */}
@@ -1110,6 +1139,11 @@ export default function ProfileScreen() {
         currentAvatar={avatarUrl ?? null}
       />
 
+      {/* The profile card + tab strip scroll away together as the active feed
+          scrolls (useScrollAwayHeader) — one absolute layer, clipped by the body
+          wrapper's overflow:hidden at the nav bar. */}
+      <View style={styles.body}>
+      <Reanimated.View onLayout={onOverlayLayout} style={[styles.headerOverlay, headerStyle]}>
       {/* Banner — tinted by the user's chosen profile theme (gated by tier) */}
       <LinearGradient colors={bannerColors} style={styles.banner}>
         <View style={styles.avatarWrap}>
@@ -1205,6 +1239,34 @@ export default function ProfileScreen() {
       {/* Storybooks — your highlight shelf, just under the bio */}
       {profile?.id ? <StorybookShelf userId={profile.id} isOwn /> : null}
 
+      {/* Cover rail — a preview of how your shop shows to visitors, when you've
+          chosen the rail display. The word button above stays (it's your manage
+          entry, with the orders dot); this is the visitor-facing look. */}
+      {hasShop && shopDisplay === 'rail' && (
+        <TouchableOpacity style={styles.shopCard} onPress={() => router.push('/shop?tab=mine')} activeOpacity={0.85}>
+          <View style={styles.shopCardHead}>
+            <Ionicons name="storefront" size={16} color={colors.text} />
+            <Text style={styles.shopCardTitle}>{t('shop.title')}</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} style={styles.shopCardChevron} />
+          </View>
+          {shopPreview.length > 0 && (
+            <View style={styles.shopCardRow}>
+              {shopPreview.map((s) => (
+                <View key={s.id} style={styles.shopThumbWrap}>
+                  {s.cover_url ? (
+                    <Image source={{ uri: s.cover_url }} style={styles.shopThumb} contentFit="cover" transition={120} />
+                  ) : (
+                    <View style={[styles.shopThumb, styles.shopThumbEmpty]}>
+                      <Ionicons name="musical-note" size={16} color={colors.textTertiary} />
+                    </View>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
+        </TouchableOpacity>
+      )}
+
       {/* Action buttons */}
       <View style={styles.actionButtons}>
         <TouchableOpacity style={styles.editButton} onPress={() => router.push('/edit-profile')}>
@@ -1260,7 +1322,7 @@ export default function ProfileScreen() {
           ))}
         </View>
       </GuardedRail>
-      </View>
+      </Reanimated.View>
 
       {/* Sub-tab pages — ALL stay mounted; switching just flips visibility, so
           a step never pays a grid-mount cost mid-swipe (that mount was what
@@ -1269,23 +1331,26 @@ export default function ProfileScreen() {
       <Animated.View style={[styles.pager, { transform: [{ translateX: tabAnimX }] }]}>
         {TAB_KEYS.map((key) => {
           const refresh = (
-            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile().catch(() => { setLoading(false); setRefreshing(false); }); }} tintColor={tabAccent} colors={[tabAccent]} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile().catch(() => { setLoading(false); setRefreshing(false); }); }} tintColor={tabAccent} colors={[tabAccent]} progressViewOffset={overlayH} />
           );
           return (
             <View key={key} style={key === activeTab ? styles.pager : styles.pageHidden}>
               {key === 'playlists' || key === 'music' ? (
-                <ScrollView
+                <Reanimated.ScrollView
                   showsVerticalScrollIndicator={false}
-                  contentContainerStyle={styles.pageContent}
+                  contentContainerStyle={[styles.pageContent, { paddingTop: overlayH }]}
+                  onScroll={onScrollForTab(key)}
+                  scrollEventThrottle={16}
                   refreshControl={refresh}
                 >
                   {key === 'playlists' ? renderPlaylists() : renderMusicList(dataForTab('music'))}
-                </ScrollView>
+                </Reanimated.ScrollView>
               ) : renderGridPage(key, refresh)}
             </View>
           );
         })}
       </Animated.View>
+      </View>
       {/* Page Health — a private slide-out side meter (right edge, at the shop slot).
           Collapsed via the root's passive onTouchStart, so a scroll/swipe dismisses it
           AND still registers as a scroll/swipe. */}
@@ -1296,6 +1361,10 @@ export default function ProfileScreen() {
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  // Header + pager share this clip box: the scroll-away header (absolute,
+  // overlapping the pager's reserved paddingTop) is cut off cleanly at the nav bar.
+  body: { flex: 1, overflow: 'hidden' },
+  headerOverlay: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 2, backgroundColor: colors.background },
   loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
 
   headerBar: {
@@ -1360,6 +1429,16 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1.5, borderColor: colors.background,
   },
   shopAlertText: { color: '#fff', fontSize: 9, fontWeight: '800' },
+  // Visitor-style cover rail (a preview on your own profile; same look as the
+  // public-profile shop rail in app/profile/[id].tsx).
+  shopCard: { marginHorizontal: SPACING.md, marginTop: SPACING.md, backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md, padding: SPACING.sm + 2, gap: SPACING.sm },
+  shopCardHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  shopCardTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  shopCardChevron: { marginLeft: 'auto' },
+  shopCardRow: { flexDirection: 'row', gap: SPACING.sm },
+  shopThumbWrap: { flex: 1, aspectRatio: 1, borderRadius: RADIUS.sm, overflow: 'hidden', backgroundColor: colors.background },
+  shopThumb: { width: '100%', height: '100%' },
+  shopThumbEmpty: { alignItems: 'center', justifyContent: 'center' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   displayName: { color: colors.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
   titleText: { color: colors.text, fontSize: 13.5, fontWeight: '700' },

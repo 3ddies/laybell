@@ -1,7 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import SwipeBackPager from '../components/SwipeBackPager';
 import { FlipNumber } from '../components/RollingNumber';
 import { useLifetimeStats } from '../lib/useLifetimeStats';
 import { SPACING, type ThemePalette } from '../constants/theme';
@@ -24,31 +23,32 @@ export default function LifetimeStatsScreen() {
     { key: 'likes', value: stats?.likes ?? 0, label: t('notifications.statLikes') },
   ];
 
+  // No SwipeBackPager here: this screen is a fullscreen MODAL (see app/_layout.tsx)
+  // that slides up to enter and straight DOWN to dismiss — one vertical motion. The
+  // pager's horizontal slide was what added the "slide over" before the "slide down".
   return (
-    <SwipeBackPager>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.backBtn} onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>{t('analytics.lifetime')}</Text>
-          <View style={{ width: 40 }} />
-        </View>
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.backBtn} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{t('analytics.lifetime')}</Text>
+        <View style={{ width: 40 }} />
+      </View>
 
-        <View style={styles.body}>
-          {rows.map((r) => (
-            <View key={r.key} style={styles.block}>
-              <FlipNumber value={r.value} fontSize={46} color={colors.text} />
-              <Text style={styles.label}>{r.label}</Text>
-            </View>
-          ))}
-          <View style={styles.liveRow}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveText}>{t('lifetimeStats.live')}</Text>
+      <View style={styles.body}>
+        {rows.map((r) => (
+          <View key={r.key} style={styles.block}>
+            <FlipNumber value={r.value} fontSize={46} color={colors.text} />
+            <Text style={styles.label}>{r.label}</Text>
           </View>
+        ))}
+        <View style={styles.liveRow}>
+          <View style={styles.liveDot} />
+          <Text style={styles.liveText}>{t('lifetimeStats.live')}</Text>
         </View>
       </View>
-    </SwipeBackPager>
+    </View>
   );
 }
 

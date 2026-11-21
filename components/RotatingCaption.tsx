@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, StyleSheet, Text, TouchableOpacity, View, type TextStyle } from 'react-native';
 import MentionText from './MentionText';
 import { useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -36,6 +36,9 @@ type Props = {
    * nobody watching it at that point, and a feed holds many cards.
    */
   active?: boolean;
+  /** Font weights, so a caller (the Explore hero) can run heavier text than the feed default. */
+  titleWeight?: TextStyle['fontWeight'];
+  descWeight?: TextStyle['fontWeight'];
 };
 
 const COLLAPSED_LINES = 2;
@@ -57,7 +60,7 @@ const BOX_H = Math.max(TITLE_LINE, DESC_LINE) * COLLAPSED_LINES;
 const HOLD_MS = 8200;
 const FADE_MS = 520;
 
-export default function RotatingCaption({ title, caption, tags, active = true }: Props) {
+export default function RotatingCaption({ title, caption, tags, active = true, titleWeight, descWeight }: Props) {
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const [expanded, setExpanded] = useState(false);
@@ -110,17 +113,35 @@ export default function RotatingCaption({ title, caption, tags, active = true }:
     [fade],
   );
 
+  // Weight overrides (the Explore hero runs heavier than the feed default); null = stylesheet.
+  const titleStyle = [styles.title, titleWeight ? { fontWeight: titleWeight } : null];
+  const descWeightStyle = descWeight ? { fontWeight: descWeight } : null;
+
   if (!hasTitle && !hasCaption) return hasTags ? <View style={styles.wrap}>{tags}</View> : null;
 
   // Expanded, or only one of the two exists — nothing to rotate between.
   if (!cycles) {
     return (
       <View style={styles.wrap}>
-        {hasTitle && <Text style={styles.title}>{title}</Text>}
+        {hasTitle && <Text style={titleStyle}>{title}</Text>}
         {hasCaption && (
-          <MentionText style={[styles.desc, hasTitle && styles.descUnderTitle]} text={caption} />
+          <MentionText style={[styles.desc, descWeightStyle, hasTitle && styles.descUnderTitle]} text={caption} />
         )}
-        {hasTags && <View style={styles.row}>{tags}</View>}
+        {(expanded || hasTags) && (
+          <View style={styles.row}>
+            {expanded && (
+              <TouchableOpacity
+                onPress={() => setExpanded(false)}
+                hitSlop={{ top: 12, bottom: 12, left: 14, right: 14 }}
+                accessibilityRole="button"
+                accessibilityLabel={t('a11y.collapse')}
+              >
+                <Text style={styles.lessBtn}>{t('music.showLess')}</Text>
+              </TouchableOpacity>
+            )}
+            {tags}
+          </View>
+        )}
       </View>
     );
   }
@@ -136,16 +157,16 @@ export default function RotatingCaption({ title, caption, tags, active = true }:
             a single extra text layout on the rarest post type there is. First in
             the tree so it sits beneath the two real layers. */}
         <Text
-          style={[styles.desc, styles.measure]}
+          style={[styles.desc, descWeightStyle, styles.measure]}
           onTextLayout={(e) => setDescLines(e.nativeEvent.lines.length)}
         >
           {caption}
         </Text>
         <Animated.View style={[styles.layer, { opacity: titleOpacity }]} pointerEvents="none">
-          <Text style={styles.title} numberOfLines={COLLAPSED_LINES}>{title}</Text>
+          <Text style={titleStyle} numberOfLines={COLLAPSED_LINES}>{title}</Text>
         </Animated.View>
         <Animated.View style={[styles.layer, { opacity: fade }]} pointerEvents={showing === 1 ? 'auto' : 'none'}>
-          <MentionText style={styles.desc} numberOfLines={COLLAPSED_LINES} text={caption} />
+          <MentionText style={[styles.desc, descWeightStyle]} numberOfLines={COLLAPSED_LINES} text={caption} />
         </Animated.View>
       </View>
       {(isLong || hasTags) && (
@@ -193,4 +214,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     // that gap optically; the tags beside it keep their own alignment.
     marginTop: -8,
   },
+  // The collapse control shown once the description has been expanded.
+  lessBtn: { color: colors.textTertiary, fontSize: 13, fontWeight: '700', paddingRight: SPACING.xs },
 });

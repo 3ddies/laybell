@@ -44,8 +44,8 @@ export function PostTile({ post }: { post: GridPost }) {
       {thumb ? <img src={thumb} alt="" loading="lazy" /> : <span className="ph" style={{ background: gradientFor(post.id) }} />}
       {icon ? <span className="badge-ic">{icon}</span> : null}
       <span className="ov">
-        <span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7-4.5-9.3-8.3C1.2 10 2.3 6.5 5.5 6c1.9-.3 3.6.8 4.5 2 .9-1.2 2.6-2.3 4.5-2 3.2.5 4.3 4 2.8 6.7C19 16.5 12 21 12 21Z"/></svg>{formatCount(post.like_count)}</span>
-        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a8 8 0 0 1-11.5 7.2L3 21l1.8-6.5A8 8 0 1 1 21 12Z"/></svg>{formatCount(post.comment_count)}</span>
+        {!post.hide_like_count_eff && <span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7-4.5-9.3-8.3C1.2 10 2.3 6.5 5.5 6c1.9-.3 3.6.8 4.5 2 .9-1.2 2.6-2.3 4.5-2 3.2.5 4.3 4 2.8 6.7C19 16.5 12 21 12 21Z"/></svg>{formatCount(post.like_count)}</span>}
+        {!post.comments_disabled_eff && <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a8 8 0 0 1-11.5 7.2L3 21l1.8-6.5A8 8 0 1 1 21 12Z"/></svg>{formatCount(post.comment_count)}</span>}
       </span>
     </Link>
   );
@@ -53,7 +53,7 @@ export function PostTile({ post }: { post: GridPost }) {
 
 export function OpenCTA({ label = 'Open in Laybell', wide = false }: { label?: string; wide?: boolean }) {
   return (
-    <a className="btn btn-primary" href="https://laybell.app/open.html" style={wide ? { width: '100%', justifyContent: 'center' } : undefined}>
+    <a className="btn btn-primary" href="https://laybell.app/open.html" target="_blank" rel="noopener noreferrer" style={wide ? { width: '100%', justifyContent: 'center' } : undefined}>
       <img className="logo-sm" src="/logo.png" alt="" />
       {label}
     </a>
