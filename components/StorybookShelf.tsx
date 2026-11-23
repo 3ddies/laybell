@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useThemedStyles } from '../contexts/ThemeContext';
 import { SPACING, type ThemePalette } from '../constants/theme';
-import { fetchStorybooks, fetchStorybookFull, updateStorybook, deleteStorybook, archiveStorybook, ensureAutoRecaps, type Storybook } from '../lib/storybooks';
+import { fetchStorybooks, getCachedStorybooks, fetchStorybookFull, updateStorybook, deleteStorybook, archiveStorybook, ensureAutoRecaps, type Storybook } from '../lib/storybooks';
 import type { SourceRect } from '../lib/stories';
 
 /**
@@ -25,7 +25,9 @@ export default function StorybookShelf({ userId, isOwn, compact = false }: { use
   const sz = compact ? 54 : SIZE; // smaller circles when tucked beside the bio
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [books, setBooks] = useState<Storybook[]>([]);
+  // Seed from the module cache so a remount (this shelf now lives inside the
+  // profile's scroll list) paints the books immediately instead of blank-then-fetch.
+  const [books, setBooks] = useState<Storybook[]>(() => getCachedStorybooks(userId) ?? []);
   const [menu, setMenu] = useState<Storybook | null>(null); // the book whose long-press menu is open
   const [openingId, setOpeningId] = useState<string | null>(null); // pre-loading this book before we navigate
   const coverRefs = useRef<Map<string, View>>(new Map()); // ring nodes, for the shared-element rect

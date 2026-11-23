@@ -17,7 +17,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useState, useRef, type ReactElement } from 'react';
 import { FlashList } from '@shopify/flash-list';
-import Reanimated from 'react-native-reanimated';
 import { orderProfileTabs, tabContent } from '../../lib/profileTabOrder';
 import { supabase } from '../../lib/supabase';
 import { tabTick } from '../../lib/haptics';
@@ -61,11 +60,6 @@ import DailyBadges from '../../components/DailyBadges';
 import { profileProgress, type ProfileTaskKey } from '../../lib/profileCompletion';
 import TranslatableText from '../../components/TranslatableText';
 import { ProfileSkeleton } from '../../components/Skeleton';
-import { useScrollAwayHeader } from '../../hooks/useScrollAwayHeader';
-
-// FlashList wrapped as a Reanimated animated component so the scroll-away
-// header's UI-thread scroll handler can attach to the grids.
-const AnimatedFlashList = Reanimated.createAnimatedComponent(FlashList);
 
 type Profile = {
   id: string; username: string; display_name: string;
@@ -100,9 +94,13 @@ const GRID_BLEED = gridGeometry(0, 2);
 const GRID_INSET = gridGeometry(SPACING.md, FILM_GAP, RADIUS.sm);
 // The page's non-square first row (custom layout, films shelf) — see renderGridPage.
 const GRID_HEADER = { id: '__header', __header: true };
+// The profile card is the first full-width row of every tab; an empty tab shows
+// its "nothing yet" message as a full-width row under it.
+const PROFILE_HEADER = { id: '__profile', __profileHeader: true };
+const EMPTY_ROW = { id: '__empty', __empty: true };
 const gridKey = (item: any) => item.id;
-const gridItemType = (item: any) => (item.__header ? 'header' : 'tile');
-const spanGridHeader = (layout: { span?: number }, item: any) => { if (item.__header) layout.span = 3; };
+const gridItemType = (item: any) => (item.__profileHeader ? 'profileHeader' : item.__header ? 'header' : item.__empty ? 'empty' : 'tile');
+const spanGridHeader = (layout: { span?: number }, item: any) => { if (item.__profileHeader || item.__header || item.__empty) layout.span = 3; };
 
 
 // Black or white, whichever reads on a given background — so a SOLID accent pill
@@ -228,9 +226,6 @@ export default function ProfileScreen() {
     hasOpenShop(liveId).then(setHasShop).catch(() => {});
   }, [liveId]));
 
-  // The profile card + tab strip scroll away as the active tab's feed scrolls —
-  // one absolute header layer, native-driver scroll-linked (useScrollAwayHeader).
-  const { onScrollForTab, onOverlayLayout, overlayH, headerStyle } = useScrollAwayHeader(TAB_KEYS, activeTab);
 
   // Cover-rail preview, so you can see your own shop rail without a second
   // account. Covers load only when you've chosen the 'rail' display.
@@ -1013,17 +1008,19 @@ export default function ProfileScreen() {
   function renderGridPage(key: string, refreshControl: ReactElement<RefreshControlProps>) {
     const { data, inset } = gridPageData(key);
     const header = renderGridHeader(key);
-    const rows = header ? [GRID_HEADER, ...data] : data;
-    const first = header ? 1 : 0;
+    // Empty message only when there's genuinely nothing — not when a films shelf
+    // or checklist header is the content (mirrors the old ListEmptyComponent).
+    const rows = [PROFILE_HEADER, ...(header ? [GRID_HEADER] : []), ...(data.length ? data : header ? [] : [EMPTY_ROW])];
+    const first = 1 + (header ? 1 : 0);
     const geo = inset ? GRID_INSET : GRID_BLEED;
     return (
-      <AnimatedFlashList
+      <FlashList
         data={rows}
         numColumns={3}
         keyExtractor={gridKey}
         getItemType={gridItemType}
         overrideItemLayout={spanGridHeader}
-        renderItem={({ item, index }: { item: any; index: number }) => (item.__header ? header : (
+        renderItem={({ item, index }: { item: any; index: number }) => (item.__profileHeader ? renderProfileHeader() : item.__header ? header : item.__empty ? renderGridEmpty(key) : (
           <ProfileGridTile
             post={item}
             tabKey={key}
@@ -1034,13 +1031,8 @@ export default function ProfileScreen() {
             onLongPress={onGridLongPress}
           />
         ))}
-        // Only a page with nothing at all: under a custom layout or a films
-        // shelf, that first row is the content.
-        ListEmptyComponent={renderGridEmpty(key)}
-        contentContainerStyle={[styles.pageContent, { paddingTop: overlayH }]}
+        contentContainerStyle={styles.pageContent}
         showsVerticalScrollIndicator={false}
-        onScroll={onScrollForTab(key)}
-        scrollEventThrottle={16}
         refreshControl={refreshControl}
         // Behave like the ScrollView this replaced: nothing anchors when the
         // first row or the posts above the screen change.
@@ -1062,88 +1054,12 @@ export default function ProfileScreen() {
     });
   };
 
-  return (
-    // pageSwipePan lives on the ROOT: flings anywhere — header, grid, empty
-    // space — step the sub-tabs; a right-fling on Posts exits to Music.
-    <View style={styles.container} {...pageSwipePan.panHandlers} onTouchStart={() => pageHealthRef.current?.collapse()}>
-      <View style={styles.headerBar}>
-        {/* Tap the username → Instagram-style account switcher (switch between
-            signed-in accounts, or add/log into another). */}
-        <TouchableOpacity
-          style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}
-          onPress={() => setSwitcherVisible(true)}
-          hitSlop={8}
-          disabled={!profile?.id}
-          accessibilityRole="button"
-          accessibilityLabel={t('accounts.title')}
-        >
-          <Text style={styles.usernameHeader} numberOfLines={1}>@{profile?.username}</Text>
-          <Ionicons name="chevron-down" size={18} color={colors.textSecondary} style={{ marginTop: 2 }} />
-        </TouchableOpacity>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            onPress={() => { markViewsSeen(); router.push('/profile-viewers'); }}
-            style={styles.settingsBtn}
-            accessibilityRole="button"
-            accessibilityLabel={t('profileViews.title')}
-          >
-            {recentViewerAvatar ? (
-              <Image source={{ uri: recentViewerAvatar }} style={styles.viewAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} />
-            ) : (
-              <Ionicons name="eye-outline" size={23} color={colors.textSecondary} />
-            )}
-            {viewCount > 0 && (
-              <View style={styles.viewBadge}>
-                <Text style={styles.viewBadgeText}>{viewCount > 99 ? '99+' : viewCount}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setQrVisible(true)}
-            style={styles.settingsBtn}
-            accessibilityRole="button"
-            accessibilityLabel={t('qr.a11y')}
-            disabled={!profile?.id}
-          >
-            <Ionicons name="qr-code-outline" size={22} color={colors.textSecondary} />
-          </TouchableOpacity>
-          {/* Money at a glance: the Wallet (earnings + cash out) is one tap from
-              your own profile, not buried in Settings. Credits live one tap deeper,
-              from inside the Wallet. */}
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('wallet.title')} onPress={() => router.push('/wallet')} style={styles.settingsBtn}>
-            <Ionicons name="wallet-outline" size={22} color={colors.textSecondary} />
-          </TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.settings')} onPress={() => router.push('/settings')} style={styles.settingsBtn}>
-            <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {!!profile?.id && (
-        <ProfileQRModal
-          visible={qrVisible}
-          onClose={() => setQrVisible(false)}
-          userId={profile.id}
-          username={profile.username}
-          displayName={profile.display_name}
-          avatarUrl={avatarUrl}
-        />
-      )}
-
-      <AccountSwitcher
-        visible={switcherVisible}
-        onClose={() => setSwitcherVisible(false)}
-        currentUserId={profile?.id ?? ''}
-        currentUsername={profile?.username}
-        currentDisplayName={profile?.display_name}
-        currentAvatar={avatarUrl ?? null}
-      />
-
-      {/* The profile card + tab strip scroll away together as the active feed
-          scrolls (useScrollAwayHeader) — one absolute layer, clipped by the body
-          wrapper's overflow:hidden at the nav bar. */}
-      <View style={styles.body}>
-      <Reanimated.View onLayout={onOverlayLayout} style={[styles.headerOverlay, headerStyle]}>
+  // The whole profile card (banner -> tab strip) is rendered as the FIRST row of
+  // every tab's scroll list, so it scrolls with the grid on the NATIVE thread —
+  // drag the card or the grid, same smooth scroll, and the buttons still tap. It
+  // used to be an absolute scroll-away overlay, which could not be dragged to scroll.
+  const renderProfileHeader = () => (
+    <View style={styles.profileCard}>
       {/* Banner — tinted by the user's chosen profile theme (gated by tier) */}
       <LinearGradient colors={bannerColors} style={styles.banner}>
         <View style={styles.avatarWrap}>
@@ -1322,7 +1238,90 @@ export default function ProfileScreen() {
           ))}
         </View>
       </GuardedRail>
-      </Reanimated.View>
+    </View>
+  );
+
+  return (
+    // pageSwipePan lives on the ROOT: flings anywhere — header, grid, empty
+    // space — step the sub-tabs; a right-fling on Posts exits to Music.
+    <View style={styles.container} {...pageSwipePan.panHandlers} onTouchStart={() => pageHealthRef.current?.collapse()}>
+      <View style={styles.headerBar}>
+        {/* Tap the username → Instagram-style account switcher (switch between
+            signed-in accounts, or add/log into another). */}
+        <TouchableOpacity
+          style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}
+          onPress={() => setSwitcherVisible(true)}
+          hitSlop={8}
+          disabled={!profile?.id}
+          accessibilityRole="button"
+          accessibilityLabel={t('accounts.title')}
+        >
+          <Text style={styles.usernameHeader} numberOfLines={1}>@{profile?.username}</Text>
+          <Ionicons name="chevron-down" size={18} color={colors.textSecondary} style={{ marginTop: 2 }} />
+        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            onPress={() => { markViewsSeen(); router.push('/profile-viewers'); }}
+            style={styles.settingsBtn}
+            accessibilityRole="button"
+            accessibilityLabel={t('profileViews.title')}
+          >
+            {recentViewerAvatar ? (
+              <Image source={{ uri: recentViewerAvatar }} style={styles.viewAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+            ) : (
+              <Ionicons name="eye-outline" size={23} color={colors.textSecondary} />
+            )}
+            {viewCount > 0 && (
+              <View style={styles.viewBadge}>
+                <Text style={styles.viewBadgeText}>{viewCount > 99 ? '99+' : viewCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setQrVisible(true)}
+            style={styles.settingsBtn}
+            accessibilityRole="button"
+            accessibilityLabel={t('qr.a11y')}
+            disabled={!profile?.id}
+          >
+            <Ionicons name="qr-code-outline" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+          {/* Money at a glance: the Wallet (earnings + cash out) is one tap from
+              your own profile, not buried in Settings. Credits live one tap deeper,
+              from inside the Wallet. */}
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('wallet.title')} onPress={() => router.push('/wallet')} style={styles.settingsBtn}>
+            <Ionicons name="wallet-outline" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.settings')} onPress={() => router.push('/settings')} style={styles.settingsBtn}>
+            <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {!!profile?.id && (
+        <ProfileQRModal
+          visible={qrVisible}
+          onClose={() => setQrVisible(false)}
+          userId={profile.id}
+          username={profile.username}
+          displayName={profile.display_name}
+          avatarUrl={avatarUrl}
+        />
+      )}
+
+      <AccountSwitcher
+        visible={switcherVisible}
+        onClose={() => setSwitcherVisible(false)}
+        currentUserId={profile?.id ?? ''}
+        currentUsername={profile?.username}
+        currentDisplayName={profile?.display_name}
+        currentAvatar={avatarUrl ?? null}
+      />
+
+      {/* The profile card (renderProfileHeader) is the first row/child of every
+          tab's list, so it scrolls with the content natively. overflow:hidden
+          clips the sliding pager at the nav bar. */}
+      <View style={styles.body}>
 
       {/* Sub-tab pages — ALL stay mounted; switching just flips visibility, so
           a step never pays a grid-mount cost mid-swipe (that mount was what
@@ -1331,20 +1330,21 @@ export default function ProfileScreen() {
       <Animated.View style={[styles.pager, { transform: [{ translateX: tabAnimX }] }]}>
         {TAB_KEYS.map((key) => {
           const refresh = (
-            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile().catch(() => { setLoading(false); setRefreshing(false); }); }} tintColor={tabAccent} colors={[tabAccent]} progressViewOffset={overlayH} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile().catch(() => { setLoading(false); setRefreshing(false); }); }} tintColor={tabAccent} colors={[tabAccent]} />
           );
           return (
             <View key={key} style={key === activeTab ? styles.pager : styles.pageHidden}>
               {key === 'playlists' || key === 'music' ? (
-                <Reanimated.ScrollView
+                <ScrollView
                   showsVerticalScrollIndicator={false}
-                  contentContainerStyle={[styles.pageContent, { paddingTop: overlayH }]}
-                  onScroll={onScrollForTab(key)}
-                  scrollEventThrottle={16}
+                  contentContainerStyle={styles.pageContent}
                   refreshControl={refresh}
                 >
+                  {/* Only the visible tab renders the card (a hidden ScrollView still
+                      mounts its children), so there's one header shell at a time. */}
+                  {key === activeTab && renderProfileHeader()}
                   {key === 'playlists' ? renderPlaylists() : renderMusicList(dataForTab('music'))}
-                </Reanimated.ScrollView>
+                </ScrollView>
               ) : renderGridPage(key, refresh)}
             </View>
           );
@@ -1361,10 +1361,9 @@ export default function ProfileScreen() {
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  // Header + pager share this clip box: the scroll-away header (absolute,
-  // overlapping the pager's reserved paddingTop) is cut off cleanly at the nav bar.
+  // Clips the horizontally-sliding pager at the nav bar on a sub-tab switch.
   body: { flex: 1, overflow: 'hidden' },
-  headerOverlay: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 2, backgroundColor: colors.background },
+  profileCard: { backgroundColor: colors.background },
   loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
 
   headerBar: {

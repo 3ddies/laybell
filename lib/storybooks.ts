@@ -60,6 +60,15 @@ export type StorybookFull = Storybook & {
  * position the owner set, newest-updated breaking ties. Returns [] if the table
  * isn't set up yet.
  */
+// Shelf-list cache: StorybookShelf seeds its FIRST render from this, so when it
+// remounts — it now lives inside the profile's scroll list, which can recycle the
+// row it sits on — the books show instantly instead of blanking and re-fetching.
+// Populated by fetchStorybooks; read via getCachedStorybooks.
+const _shelfCache = new Map<string, Storybook[]>();
+export function getCachedStorybooks(userId: string): Storybook[] | null {
+  return _shelfCache.get(userId) ?? null;
+}
+
 export async function fetchStorybooks(userId: string): Promise<Storybook[]> {
   const { data, error } = await supabase
     .from('storybooks')
@@ -67,10 +76,12 @@ export async function fetchStorybooks(userId: string): Promise<Storybook[]> {
     .eq('user_id', userId)
     .order('position', { ascending: true })
     .order('updated_at', { ascending: false });
-  if (error) return [];
+  if (error) return _shelfCache.get(userId) ?? []; // keep the last good shelf on a transient error
   // Hide archived books (soft-hidden by the owner). Filtered in-memory so the shelf keeps
   // working even on an older DB where the archived_at column doesn't exist yet.
-  return (data ?? []).filter((b: any) => !b.archived_at) as Storybook[];
+  const books = (data ?? []).filter((b: any) => !b.archived_at) as Storybook[];
+  _shelfCache.set(userId, books);
+  return books;
 }
 
 /**
