@@ -485,6 +485,7 @@ footer.site .wrap{padding-block:30px 40px; display:flex; flex-wrap:wrap; gap:18p
 .carttotal{display:flex; justify-content:space-between; align-items:baseline; margin:18px 2px 6px}
 .carttotal span{color:var(--muted); font-weight:600}
 .carttotal b{font-size:22px; font-weight:800}
+.prow.unavail{opacity:.55}
 
 /* ══════════════════════════════════════════════════════════════════════════
    Home page (hm-) — hero, beat-shop band, feature grid, app CTA.

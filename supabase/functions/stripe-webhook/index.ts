@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { stripe } from '../_shared/stripe.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // stripe-webhook — deliver (or refund) a web card purchase of a shop beat.
@@ -37,7 +38,6 @@ const WEBHOOK_SECRET = Deno.env.get('STRIPE_WEBHOOK_SECRET');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-const STRIPE_VERSION = '2024-06-20';
 const enc = new TextEncoder();
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -69,24 +69,6 @@ async function verifyStripeSig(raw: string, header: string, secret: string, tole
   return sigs.some((s) => timingSafeEqual(s, expected));
 }
 
-async function stripe(path: string, body?: Record<string, string>, method = 'POST', idempotencyKey?: string) {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${STRIPE_KEY}`,
-    'Content-Type': 'application/x-www-form-urlencoded',
-    'Stripe-Version': STRIPE_VERSION,
-  };
-  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
-  const res = await fetch(`https://api.stripe.com/v1/${path}`, {
-    method, headers, body: body ? new URLSearchParams(body).toString() : undefined,
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    const err = new Error(data?.error?.message ?? 'stripe_error');
-    (err as any).code = data?.error?.code ?? null;
-    throw err;
-  }
-  return data;
-}
 
 serve(async (req) => {
   if (req.method !== 'POST') return new Response('method_not_allowed', { status: 405 });
@@ -148,7 +130,7 @@ serve(async (req) => {
           return json({ received: true, delivered: false, reason: res.reason ?? null, needs_manual_refund: true });
         }
         try {
-          await stripe('refunds', { payment_intent: pi, 'metadata[laybell_reason]': String(res.reason ?? 'undeliverable') }, 'POST', `refund_${event.id}`);
+          await stripe(STRIPE_KEY, 'refunds', { payment_intent: pi, 'metadata[laybell_reason]': String(res.reason ?? 'undeliverable') }, 'POST', `refund_${event.id}`);
           await db.rpc('shop_stripe_mark_refunded', { p_event_id: event.id });
           console.log('refunded undeliverable purchase', event.id, res.reason);
         } catch (rerr) {

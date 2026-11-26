@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { browserSb } from '@/lib/supabaseBrowser';
 import { gradientFor } from '@/lib/format';
 import { CATEGORY_LABEL } from '@/lib/shop';
-import { clearCart } from '@/lib/cart';
+import { clearCheckout } from '@/lib/cart';
 
 type Purchase = {
   order_id: string; kind: string; price_cents: number; created_at: string;
@@ -51,7 +51,7 @@ function PurchasesInner() {
         : await sb.rpc('shop_poll_stripe_order', { p_intent_id: checkoutIntent });
       if (error) { setBanner({ kind: 'err', text: 'We couldn’t confirm this purchase yet — it’ll appear below once it clears.' }); return; }
       if ((data as any)?.delivered) {
-        if (checkoutCart) clearCart();
+        if (checkoutCart) clearCheckout(checkoutCart);
         setBanner({ kind: 'ok', text: 'Purchased! Your downloads are ready below.' }); load(); return;
       }
       if ((data as any)?.refunded || (data as any)?.status === 'failed') {

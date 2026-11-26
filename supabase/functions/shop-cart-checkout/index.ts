@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { CORS, userIdFromJwt, safeOrigin, stripe } from '../_shared/stripe.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // shop-cart-checkout — start a card purchase of a CART of shop beats on the WEB.
@@ -17,12 +18,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 //   supabase functions deploy shop-cart-checkout
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
 // DEDICATED shop key (same as stripe-checkout) — NOT the live payouts key. TEST for testing,
 // live only at go-live. Fail-closed if unset.
 const STRIPE_KEY = Deno.env.get('STRIPE_SHOP_SECRET_KEY');
@@ -30,51 +25,9 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 const DEFAULT_ORIGIN = Deno.env.get('SHOP_WEB_ORIGIN') ?? 'https://laybell-web.vercel.app';
-const STRIPE_VERSION = '2024-06-20';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
-
-function userIdFromJwt(req: Request): string | null {
-  try {
-    const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-    let b64 = (token.split('.')[1] ?? '').replace(/-/g, '+').replace(/_/g, '/');
-    if (!b64) return null;
-    while (b64.length % 4) b64 += '=';
-    return JSON.parse(atob(b64)).sub ?? null;
-  } catch { return null; }
-}
-
-function safeOrigin(req: Request): string {
-  const o = req.headers.get('Origin') ?? '';
-  try {
-    const u = new URL(o);
-    if (u.protocol === 'https:' && (u.hostname.endsWith('.vercel.app') || u.hostname === 'laybell.app' || u.hostname.endsWith('.laybell.app'))) {
-      return u.origin;
-    }
-    if ((u.hostname === 'localhost' || u.hostname === '127.0.0.1')) return u.origin;
-  } catch { /* fall through */ }
-  return DEFAULT_ORIGIN;
-}
-
-async function stripe(path: string, body?: Record<string, string>, method = 'POST', idempotencyKey?: string) {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${STRIPE_KEY}`,
-    'Content-Type': 'application/x-www-form-urlencoded',
-    'Stripe-Version': STRIPE_VERSION,
-  };
-  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
-  const res = await fetch(`https://api.stripe.com/v1/${path}`, {
-    method, headers, body: body ? new URLSearchParams(body).toString() : undefined,
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    const err = new Error(data?.error?.message ?? 'stripe_error');
-    (err as any).code = data?.error?.code ?? null;
-    throw err;
-  }
-  return data;
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -111,7 +64,7 @@ serve(async (req) => {
     const cartItems = (begin.items ?? []) as Array<{ listing_id: string; kind: string; price_cents: number; title: string; cover_url: string | null }>;
     if (cartItems.length === 0) return json({ error: 'cart_empty' });
 
-    const origin = safeOrigin(req);
+    const origin = safeOrigin(req, DEFAULT_ORIGIN);
     const taxOn = (Deno.env.get('SHOP_TAX_ENABLED') ?? '').toLowerCase() === 'true';
     const taxCode = Deno.env.get('STRIPE_TAX_CODE');
 
@@ -148,7 +101,7 @@ serve(async (req) => {
       params['billing_address_collection'] = 'required';
     }
 
-    const session = await stripe('checkout/sessions', params);
+    const session = await stripe(STRIPE_KEY, 'checkout/sessions', params);
 
     // (3) Record the session id on the cart (service role).
     const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });

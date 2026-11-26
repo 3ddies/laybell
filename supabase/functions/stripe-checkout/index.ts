@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { CORS, userIdFromJwt, safeOrigin, stripe } from '../_shared/stripe.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // stripe-checkout — start a card purchase of a shop beat on the WEB.
@@ -17,12 +18,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 //   supabase functions deploy stripe-checkout
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
 // DEDICATED shop key — deliberately NOT the shared STRIPE_SECRET_KEY, which is this
 // account's LIVE key and powers payouts (stripe-connect). Reading a separate secret
 // decouples shop checkout's mode from payouts: set STRIPE_SHOP_SECRET_KEY to a TEST key
@@ -35,56 +30,8 @@ const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 // Fallback return origin if the caller sends no usable Origin header.
 const DEFAULT_ORIGIN = Deno.env.get('SHOP_WEB_ORIGIN') ?? 'https://laybell-web.vercel.app';
 
-// Pinned, same as stripe-connect. Stripe can change response shapes under a running
-// deployment otherwise, and this is money-adjacent. Bump intentionally.
-const STRIPE_VERSION = '2024-06-20';
-
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
-
-function userIdFromJwt(req: Request): string | null {
-  try {
-    const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-    let b64 = (token.split('.')[1] ?? '').replace(/-/g, '+').replace(/_/g, '/');
-    if (!b64) return null;
-    while (b64.length % 4) b64 += '=';
-    return JSON.parse(atob(b64)).sub ?? null;
-  } catch { return null; }
-}
-
-// Only send the buyer back to a Laybell origin. A bad Origin just breaks their return,
-// not security, but keep it tidy.
-function safeOrigin(req: Request): string {
-  const o = req.headers.get('Origin') ?? '';
-  try {
-    const u = new URL(o);
-    if (u.protocol === 'https:' && (u.hostname.endsWith('.vercel.app') || u.hostname === 'laybell.app' || u.hostname.endsWith('.laybell.app'))) {
-      return u.origin;
-    }
-    // localhost for dev
-    if ((u.hostname === 'localhost' || u.hostname === '127.0.0.1')) return u.origin;
-  } catch { /* fall through */ }
-  return DEFAULT_ORIGIN;
-}
-
-async function stripe(path: string, body?: Record<string, string>, method = 'POST', idempotencyKey?: string) {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${STRIPE_KEY}`,
-    'Content-Type': 'application/x-www-form-urlencoded',
-    'Stripe-Version': STRIPE_VERSION,
-  };
-  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
-  const res = await fetch(`https://api.stripe.com/v1/${path}`, {
-    method, headers, body: body ? new URLSearchParams(body).toString() : undefined,
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    const err = new Error(data?.error?.message ?? 'stripe_error');
-    (err as any).code = data?.error?.code ?? null;
-    throw err;
-  }
-  return data;
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -119,7 +66,7 @@ serve(async (req) => {
     // Expire the Checkout Session from any prior abandoned attempt on this reused intent,
     // so a buyer can't complete two live sessions for one purchase. Best-effort.
     const prevSession = (begin as any).prev_session_id as string | null;
-    if (prevSession) { try { await stripe(`checkout/sessions/${prevSession}/expire`); } catch { /* already expired/completed — fine */ } }
+    if (prevSession) { try { await stripe(STRIPE_KEY, `checkout/sessions/${prevSession}/expire`); } catch { /* already expired/completed — fine */ } }
 
     // (2) Listing title/cover for a nice Stripe receipt (service-role read, public cols).
     const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
@@ -128,7 +75,7 @@ serve(async (req) => {
     const title = `${(listing as any)?.title ?? 'Beat'}${kind === 'lease' ? ' (Lease license)' : ''}`.slice(0, 250);
     const cover = (listing as any)?.cover_url as string | null;
 
-    const origin = safeOrigin(req);
+    const origin = safeOrigin(req, DEFAULT_ORIGIN);
 
     // (3) Create the Checkout Session. unit_amount IS the server-set price; the webhook
     // re-checks amount_total against the intent before delivering, so a tampered client
@@ -165,7 +112,7 @@ serve(async (req) => {
       if (taxCode) params['line_items[0][price_data][product_data][tax_code]'] = taxCode;
     }
 
-    const session = await stripe('checkout/sessions', params);
+    const session = await stripe(STRIPE_KEY, 'checkout/sessions', params);
 
     // (4) Record the session id on the intent (service role).
     await db.rpc('shop_stripe_attach_session', { p_intent_id: intentId, p_session_id: session.id });

@@ -50,6 +50,23 @@ export function removeFromCart(listingId: string, kind: string) {
 }
 export function clearCart() { write([]); }
 
+// Remember exactly which items a cart checkout is paying for (keyed by the server cart id),
+// so /purchases can clear ONLY those on delivery — not items added to the cart afterward.
+const coKey = (cartId: string) => 'laybell_cart_co_' + cartId;
+export function stashCheckout(cartId: string, keys: { listing_id: string; kind: string }[]) {
+  try { localStorage.setItem(coKey(cartId), JSON.stringify(keys.map((k) => ({ listing_id: k.listing_id, kind: k.kind })))); } catch { /* ignore */ }
+}
+export function clearCheckout(cartId: string) {
+  let keys: { listing_id: string; kind: string }[] = [];
+  try { keys = JSON.parse(localStorage.getItem(coKey(cartId)) || '[]'); } catch { keys = []; }
+  try { localStorage.removeItem(coKey(cartId)); } catch { /* ignore */ }
+  if (Array.isArray(keys) && keys.length) {
+    write(read().filter((i) => !keys.some((k) => k.listing_id === i.listing_id && k.kind === i.kind)));
+  } else {
+    write([]);  // no snapshot (e.g. storage cleared) → fall back to emptying the cart
+  }
+}
+
 // Live cart for components. Starts empty on the server/first paint (no localStorage), then
 // syncs on mount — callers must tolerate a 0 → N settle (a count badge, etc.).
 export function useCart(): CartItem[] {

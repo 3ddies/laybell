@@ -3,8 +3,9 @@ import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { browserSb } from '@/lib/supabaseBrowser';
-import { useCart, removeFromCart, getCart } from '@/lib/cart';
+import { useCart, removeFromCart, getCart, stashCheckout, type CartItem } from '@/lib/cart';
 import { gradientFor } from '@/lib/format';
+import { LISTING_PUBLIC_COLS, saleTypes, priceForKind, formatPrice, type WebListing } from '@/lib/shop';
 
 function prettyErr(m?: string): string {
   const map: Record<string, string> = {
@@ -23,6 +24,8 @@ function prettyErr(m?: string): string {
   return 'Couldn’t start checkout. Please try again.';
 }
 
+type Fresh = Record<string, WebListing | null>;
+
 function CartInner() {
   const sb = browserSb();
   const items = useCart();
@@ -30,6 +33,7 @@ function CartInner() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [fresh, setFresh] = useState<Fresh | null>(null);
 
   useEffect(() => {
     sb.auth.getSession().then(({ data }) => setAuthed(!!data.session));
@@ -37,7 +41,40 @@ function CartInner() {
     return () => sub.subscription.unsubscribe();
   }, [sb]);
 
-  const totalCents = items.reduce((s, i) => s + (Number(i.price_cents) || 0), 0);
+  // Re-fetch current prices + availability so the cart reflects LIVE data (localStorage can
+  // be stale). Re-runs when the set of listings in the cart changes.
+  const idKey = items.map((i) => i.listing_id).sort().join(',');
+  useEffect(() => {
+    const ids = Array.from(new Set(items.map((i) => i.listing_id)));
+    if (ids.length === 0) { setFresh({}); return; }
+    let active = true;
+    sb.from('shop_listings').select(LISTING_PUBLIC_COLS).in('id', ids).eq('status', 'active')
+      .then(({ data }) => {
+        if (!active) return;
+        const map: Fresh = {};
+        ids.forEach((id) => { map[id] = null; });
+        ((data as WebListing[]) ?? []).forEach((l) => { map[l.id] = l; });
+        setFresh(map);
+      });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idKey, sb]);
+
+  // Live price + availability for a cart item (falls back to the stashed values while loading).
+  function current(i: CartItem): { available: boolean; priceCents: number | null; price: string } {
+    if (!fresh) return { available: true, priceCents: i.price_cents, price: i.price };
+    const l = fresh[i.listing_id];
+    if (!l) return { available: false, priceCents: null, price: i.price };
+    const t = saleTypes(l);
+    const ok = (i.kind === 'sell' && t.sell) || (i.kind === 'lease' && t.lease);
+    if (!ok) return { available: false, priceCents: null, price: i.price };
+    const c = priceForKind(l, i.kind);
+    return { available: true, priceCents: c, price: formatPrice(c, l.currency) };
+  }
+
+  const rows = items.map((i) => ({ i, c: current(i) }));
+  const anyUnavailable = !!fresh && rows.some((r) => !r.c.available);
+  const totalCents = rows.reduce((s, r) => s + (r.c.available ? (r.c.priceCents ?? 0) : 0), 0);
   const total = `$${(totalCents / 100).toFixed(2)}`;
 
   async function checkout() {
@@ -48,6 +85,8 @@ function CartInner() {
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       if (!(data as any)?.url) throw new Error('cannot_checkout');
+      // Remember exactly what this cart is paying for, so /purchases clears only these items.
+      if ((data as any)?.cart_id) stashCheckout(String((data as any).cart_id), payload);
       window.location.href = (data as any).url as string;
     } catch (e: any) {
       setErr(prettyErr(e?.message));
@@ -70,15 +109,16 @@ function CartInner() {
       <h1>Your cart</h1>
       {canceled ? <div className="pbanner refund">Checkout canceled — your cart is still here.</div> : null}
       {err ? <div className="pbanner err">{err}</div> : null}
+      {anyUnavailable ? <div className="pbanner refund">Some items are no longer available — remove them to check out.</div> : null}
       <div className="plist">
-        {items.map((i) => (
-          <div className="prow" key={`${i.listing_id}:${i.kind}`}>
+        {rows.map(({ i, c }) => (
+          <div className={`prow${c.available ? '' : ' unavail'}`} key={`${i.listing_id}:${i.kind}`}>
             <Link href={`/listing/${i.listing_id}`} className="part" style={!i.cover_url ? { background: gradientFor(i.listing_id) } : undefined}>
               {i.cover_url ? <img src={i.cover_url} alt="" /> : null}
             </Link>
             <div className="pinfo2">
               <b>{i.title}</b>
-              <span>{i.label || (i.kind === 'lease' ? 'Lease' : 'Buy')} · {i.price}</span>
+              <span>{c.available ? `${i.label || (i.kind === 'lease' ? 'Lease' : 'Buy')} · ${c.price}` : 'No longer available'}</span>
             </div>
             <button className="btn btn-ghost pdl" onClick={() => removeFromCart(i.listing_id, i.kind)}>Remove</button>
           </div>
@@ -89,7 +129,7 @@ function CartInner() {
       {authed === false ? (
         <a className="btn btn-primary lbuy" href="/login?next=/cart">Log in to check out</a>
       ) : (
-        <button className="btn btn-primary lbuy" disabled={busy || authed === null} onClick={checkout}>
+        <button className="btn btn-primary lbuy" disabled={busy || authed === null || anyUnavailable} onClick={checkout}>
           {busy ? 'Starting secure checkout…' : `Check out · ${total}`}
         </button>
       )}
