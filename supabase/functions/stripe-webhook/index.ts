@@ -60,12 +60,22 @@ async function sendGuestEmail(to: string, title: string, token: string) {
     <p style="margin:20px 0"><a href="${link}" style="display:inline-block;background:#F26522;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:700">Download your beat</a></p>
     <p style="color:#888;font-size:13px">If the button doesn't work, paste this into your browser:<br>${link}</p>
   </div>`;
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: SHOP_FROM_EMAIL, to, subject: `Your download: ${safeTitle}`, html }),
-  });
-  if (!res.ok) throw new Error(`resend ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  // Bounded: fetch has no default timeout, and this runs inline before the webhook acks Stripe.
+  // A hung Resend must never stall the 2xx (Stripe would retry the event), so abort after 5s —
+  // the caller treats the abort like any other mail failure (the success page still delivers).
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 5000);
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: SHOP_FROM_EMAIL, to, subject: `Your download: ${safeTitle}`, html }),
+      signal: ac.signal,
+    });
+    if (!res.ok) throw new Error(`resend ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 function hex(buf: ArrayBuffer): string {

@@ -23,7 +23,10 @@ function CompleteInner() {
       if (error) { setState('err'); return; }
       if ((data as any)?.delivered && (data as any)?.download_token) { setToken((data as any).download_token); setState('ready'); return; }
       if ((data as any)?.refunded || (data as any)?.status === 'failed') { setState('refunded'); return; }
-      if (tries++ < 25) setTimeout(tick, 1500);
+      // Poll ~90s with gentle backoff (1.5s → 3s). Webhook delivery can lag under Stripe load;
+      // don't declare failure early. If it's still not confirmed, the emailed link is the fallback.
+      tries++;
+      if (tries < 45) setTimeout(tick, tries < 20 ? 1500 : 3000);
       else setState('err');
     };
     tick();
@@ -48,7 +51,7 @@ function CompleteInner() {
       <h1>Your purchase</h1>
       {state === 'wait' ? <div className="pbanner wait">Completing your purchase…</div> : null}
       {state === 'refunded' ? <div className="pbanner refund">That purchase couldn’t be completed and your card was refunded.</div> : null}
-      {state === 'err' ? <div className="pbanner err">We couldn’t confirm this purchase yet — check the email we sent for your download link.</div> : null}
+      {state === 'err' ? <div className="pbanner wait">Still finishing up — your download link is also on its way by email, so you won’t lose it. You can safely close this page.</div> : null}
       {state === 'ready' ? (
         <>
           <div className="pbanner ok">Purchased! We’ve also emailed your download link — keep it as your receipt.</div>

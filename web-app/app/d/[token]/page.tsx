@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { browserSb } from '@/lib/supabaseBrowser';
 
@@ -11,24 +11,30 @@ export default function GuestDownloadPage({ params }: { params: { token: string 
   const sb = browserSb();
   const [state, setState] = useState<'checking' | 'ready' | 'busy' | 'err'>('checking');
   const [title, setTitle] = useState<string | null>(null);
+  // The signed URL lives 1h; cache the one minted during on-load validation and reuse it on
+  // click (re-minting only once it's aged past ~55min) instead of minting a second URL.
+  const cached = useRef<{ url: string; at: number } | null>(null);
 
-  async function fetchUrl(): Promise<string | null> {
+  async function getUrl(): Promise<string | null> {
+    if (cached.current && Date.now() - cached.current.at < 55 * 60 * 1000) return cached.current.url;
     const { data, error } = await sb.functions.invoke('shop-guest-download', { body: { token: params.token } });
     if (error || (data as any)?.error || !(data as any)?.url) return null;
     if ((data as any)?.title) setTitle((data as any).title as string);
-    return (data as any).url as string;
+    const url = (data as any).url as string;
+    cached.current = { url, at: Date.now() };
+    return url;
   }
 
   useEffect(() => {
     let active = true;
-    (async () => { const url = await fetchUrl(); if (active) setState(url ? 'ready' : 'err'); })();
+    (async () => { const url = await getUrl(); if (active) setState(url ? 'ready' : 'err'); })();
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function download() {
     setState('busy');
-    const url = await fetchUrl();
+    const url = await getUrl();
     if (!url) { setState('err'); return; }
     const a = document.createElement('a'); a.href = url; a.rel = 'noopener';
     document.body.appendChild(a); a.click(); a.remove();
