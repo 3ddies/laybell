@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { browserSb } from '@/lib/supabaseBrowser';
 import type { DealRow } from '@/lib/shop';
+import { addToCart, cartHas } from '@/lib/cart';
 
 function prettyErr(m?: string): string {
   const map: Record<string, string> = {
@@ -22,17 +23,30 @@ function prettyErr(m?: string): string {
   return 'Couldn’t start checkout. Please try again.';
 }
 
-export default function ListingActions({ listingId, deals, appLink, note }: { listingId: string; deals: DealRow[]; appLink: string; note: string }) {
+export default function ListingActions({ listingId, deals, appLink, note, title, cover, priceCents }: {
+  listingId: string; deals: DealRow[]; appLink: string; note: string;
+  title: string; cover: string | null; priceCents: Partial<Record<'sell' | 'lease', number>>;
+}) {
   const sb = browserSb();
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [inCart, setInCart] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     sb.auth.getSession().then(({ data }) => setAuthed(!!data.session));
     const { data: sub } = sb.auth.onAuthStateChange((_e, s) => setAuthed(!!s));
     return () => sub.subscription.unsubscribe();
   }, [sb]);
+
+  // Reflect current cart membership (updates on add/remove here or in another tab).
+  useEffect(() => {
+    const sync = () => setInCart({ sell: cartHas(listingId, 'sell'), lease: cartHas(listingId, 'lease') });
+    sync();
+    window.addEventListener('laybell-cart-changed', sync);
+    window.addEventListener('storage', sync);
+    return () => { window.removeEventListener('laybell-cart-changed', sync); window.removeEventListener('storage', sync); };
+  }, [listingId]);
 
   async function buy(kind: 'sell' | 'lease') {
     setErr(null); setBusy(kind);
@@ -46,6 +60,14 @@ export default function ListingActions({ listingId, deals, appLink, note }: { li
       setErr(prettyErr(e?.message));
       setBusy(null);
     }
+  }
+
+  function add(d: DealRow) {
+    addToCart({
+      listing_id: listingId, kind: d.kind as 'sell' | 'lease', title,
+      price: d.price, price_cents: priceCents[d.kind as 'sell' | 'lease'] ?? 0,
+      cover_url: cover, label: d.label,
+    });
   }
 
   const paid = deals.filter((d) => d.kind !== 'free');
@@ -62,15 +84,20 @@ export default function ListingActions({ listingId, deals, appLink, note }: { li
 
       {err ? <div className="authmsg err">{err}</div> : null}
 
-      {authed === false ? (
-        <a className="btn btn-primary lbuy" href={`/login?next=${encodeURIComponent(`/listing/${listingId}`)}`}>Log in to buy</a>
-      ) : paid.length ? (
-        paid.map((d) => (
-          <button key={d.kind} className="btn btn-primary lbuy" disabled={!!busy || authed === null} onClick={() => buy(d.kind as 'sell' | 'lease')}>
-            {busy === d.kind ? 'Starting secure checkout…' : `${d.label} with card · ${d.price}`}
+      {paid.map((d) => (
+        <div className="lbuyrow" key={d.kind}>
+          {authed === false ? (
+            <a className="btn btn-primary lbuy" href={`/login?next=${encodeURIComponent(`/listing/${listingId}`)}`}>{d.label} · {d.price}</a>
+          ) : (
+            <button className="btn btn-primary lbuy" disabled={!!busy || authed === null} onClick={() => buy(d.kind as 'sell' | 'lease')}>
+              {busy === d.kind ? 'Starting secure checkout…' : `${d.label} with card · ${d.price}`}
+            </button>
+          )}
+          <button className="btn btn-ghost lcart" disabled={!!inCart[d.kind]} onClick={() => add(d)}>
+            {inCart[d.kind] ? 'In cart ✓' : 'Add to cart'}
           </button>
-        ))
-      ) : null}
+        </div>
+      ))}
 
       {free ? (
         <a className="btn btn-ghost lbuy" href={appLink}>Get the free download in the app</a>

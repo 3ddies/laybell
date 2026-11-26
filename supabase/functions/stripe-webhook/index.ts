@@ -112,23 +112,28 @@ serve(async (req) => {
       if (s.payment_status && s.payment_status !== 'paid') {
         return json({ received: true, ignored: 'unpaid' });
       }
+      const cartId = s.metadata?.cart_id ?? null;
       const intentId = s.metadata?.intent_id ?? null;
       const pi = typeof s.payment_intent === 'string' ? s.payment_intent : (s.payment_intent?.id ?? null);
       // Stripe Tax adds tax ON TOP: amount_total = price + tax, amount_subtotal = price,
-      // total_details.amount_tax = the tax. The RPC checks the subtotal against the price
-      // we issued and banks the tax in the tax fund. Fall back subtotal = total − tax if an
-      // older session omits amount_subtotal, so a legit purchase never fails closed.
+      // total_details.amount_tax = the tax. The RPC checks the subtotal against what we
+      // issued and banks the tax. Fall back subtotal = total − tax if an older session omits
+      // amount_subtotal, so a legit purchase never fails closed.
       const total = Math.floor(Number(s.amount_total));
       const tax = Math.floor(Number(s.total_details?.amount_tax ?? 0));
       const subtotal = s.amount_subtotal != null ? Math.floor(Number(s.amount_subtotal)) : total - tax;
       const addr = s.customer_details?.address ?? null;
-
-      const { data: res, error } = await db.rpc('shop_deliver_stripe_order', {
-        p_intent_id: intentId, p_event_id: event.id, p_payment_intent_id: pi,
+      const money = {
+        p_event_id: event.id, p_payment_intent_id: pi,
         p_total_cents: total, p_subtotal_cents: subtotal, p_tax_cents: tax,
         p_tax_country: addr?.country ?? null, p_tax_state: addr?.state ?? null,
         p_currency: s.currency ?? 'usd',
-      });
+      };
+      // A cart session (N beats) delivers all-or-nothing via shop_deliver_stripe_cart; a
+      // single-item session via shop_deliver_stripe_order. Both return refund:true on failure.
+      const { data: res, error } = cartId
+        ? await db.rpc('shop_deliver_stripe_cart', { p_cart_id: cartId, ...money })
+        : await db.rpc('shop_deliver_stripe_order', { p_intent_id: intentId, ...money });
       if (error) { console.error('deliver_failed', event.id, error.message); return new Response('deliver_error', { status: 500 }); }
 
       // Couldn't deliver (sold out, price mismatch, slot taken, no intent, or a prior

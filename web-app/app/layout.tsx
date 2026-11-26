@@ -2,6 +2,7 @@ import './globals.css';
 import type { Metadata } from 'next';
 import { Inter, Nunito } from 'next/font/google';
 import AuthNav from './AuthNav';
+import CartLink from './CartLink';
 import SearchBox from './SearchBox';
 
 // Inter is the site's one UI/display face — clean, iOS/SF-Pro feel, the same look
@@ -36,6 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <SearchBox />
             <div className="top-actions">
               <a className="navlink shoplink" href="/market">Shop</a>
+              <CartLink />
               <AuthNav />
               <a className="btn btn-primary" href={OPEN} target="_blank" rel="noopener noreferrer">Get the app</a>
             </div>

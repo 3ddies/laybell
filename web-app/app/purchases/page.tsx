@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { browserSb } from '@/lib/supabaseBrowser';
 import { gradientFor } from '@/lib/format';
 import { CATEGORY_LABEL } from '@/lib/shop';
+import { clearCart } from '@/lib/cart';
 
 type Purchase = {
   order_id: string; kind: string; price_cents: number; created_at: string;
@@ -14,7 +15,9 @@ type Purchase = {
 function PurchasesInner() {
   const sb = browserSb();
   const router = useRouter();
-  const checkoutIntent = useSearchParams().get('checkout');
+  const sp = useSearchParams();
+  const checkoutIntent = sp.get('checkout');
+  const checkoutCart = sp.get('cart');
 
   const [checked, setChecked] = useState(false);
   const [items, setItems] = useState<Purchase[] | null>(null);
@@ -34,17 +37,23 @@ function PurchasesInner() {
     });
   }, [sb, router, load]);
 
-  // After Stripe redirects back with ?checkout=<intent>, poll until the webhook
-  // delivers (or refunds) the purchase.
+  // After Stripe redirects back with ?checkout=<intent> (single) or ?cart=<cart> (cart),
+  // poll until the webhook delivers (or refunds) the purchase. A delivered cart also clears
+  // the browser cart.
   useEffect(() => {
-    if (!checked || !checkoutIntent) return;
+    if (!checked || (!checkoutIntent && !checkoutCart)) return;
     let tries = 0; let active = true;
     setBanner({ kind: 'wait', text: 'Completing your purchase…' });
     const tick = async () => {
       if (!active) return;
-      const { data, error } = await sb.rpc('shop_poll_stripe_order', { p_intent_id: checkoutIntent });
+      const { data, error } = checkoutCart
+        ? await sb.rpc('shop_poll_stripe_cart', { p_cart_id: checkoutCart })
+        : await sb.rpc('shop_poll_stripe_order', { p_intent_id: checkoutIntent });
       if (error) { setBanner({ kind: 'err', text: 'We couldn’t confirm this purchase yet — it’ll appear below once it clears.' }); return; }
-      if ((data as any)?.delivered) { setBanner({ kind: 'ok', text: 'Purchased! Your download is ready below.' }); load(); return; }
+      if ((data as any)?.delivered) {
+        if (checkoutCart) clearCart();
+        setBanner({ kind: 'ok', text: 'Purchased! Your downloads are ready below.' }); load(); return;
+      }
       if ((data as any)?.refunded || (data as any)?.status === 'failed') {
         setBanner({ kind: 'refund', text: 'That purchase couldn’t be completed and your card was refunded.' }); return;
       }
@@ -53,7 +62,7 @@ function PurchasesInner() {
     };
     tick();
     return () => { active = false; };
-  }, [checked, checkoutIntent, sb, load]);
+  }, [checked, checkoutIntent, checkoutCart, sb, load]);
 
   async function download(p: Purchase) {
     setDownloading(p.order_id);

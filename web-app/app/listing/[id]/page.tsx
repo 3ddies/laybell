@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { sb, isVisibleProfile } from '@/lib/supabase';
 import { formatCount, gradientFor } from '@/lib/format';
-import { LISTING_PUBLIC_COLS, CATEGORY_LABEL, dealRows, listingAppLink, type WebListing } from '@/lib/shop';
+import { LISTING_PUBLIC_COLS, CATEGORY_LABEL, dealRows, listingAppLink, saleTypes, priceForKind, type WebListing } from '@/lib/shop';
 import { TierBadge, NotFoundState } from '../../components';
 import ProtectedAudio from '../../ProtectedAudio';
 import ListingActions from './ListingActions';
@@ -49,6 +49,11 @@ export default async function ListingPage({ params }: { params: { id: string } }
   const badge = seller && seller.badge_show !== false ? seller.badge_tier : null;
 
   const deals = dealRows(l);
+  const t = saleTypes(l);
+  const priceCents = {
+    sell: t.sell ? priceForKind(l, 'sell') : undefined,
+    lease: t.lease ? priceForKind(l, 'lease') : undefined,
+  };
   const cat = CATEGORY_LABEL[l.category] || 'Digital good';
   const stats: string[] = [];
   if ((l.sales_count ?? 0) > 0) stats.push(`${formatCount(l.sales_count!)} sold`);
@@ -85,7 +90,7 @@ export default async function ListingPage({ params }: { params: { id: string } }
             </div>
           ) : null}
 
-          <ListingActions deals={deals} listingId={l.id} appLink={listingAppLink(l.id)} note={stats.join(' · ')} />
+          <ListingActions deals={deals} listingId={l.id} appLink={listingAppLink(l.id)} note={stats.join(' · ')} title={l.title} cover={l.cover_url} priceCents={priceCents} />
 
           {l.description ? (
             <div className="ldesc"><h3>About this {cat.toLowerCase()}</h3><p>{l.description}</p></div>
