@@ -84,7 +84,11 @@ begin
   if v_price is null or v_price <= 0 then raise exception 'price_unset'; end if;
   if v_price < 50 then raise exception 'price_below_min'; end if;
 
-  v_token := encode(gen_random_bytes(24), 'hex');  -- 48 hex chars of CSPRNG
+  -- 64 hex chars from TWO core gen_random_uuid() (always in search_path). NOT
+  -- encode(gen_random_bytes(...)) — pgcrypto lives in the `extensions` schema, which this
+  -- definer's `search_path = public` can't see ("function gen_random_bytes does not exist");
+  -- same lesson as copyright_strikes.sql. uuid v4 is CSPRNG-backed → unguessable token.
+  v_token := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
   insert into public.shop_stripe_intents (buyer_id, listing_id, kind, price_cents, download_token)
     values (null, p_listing_id, p_kind, v_price, v_token)
     returning * into v_intent;
