@@ -151,6 +151,20 @@ serve(async (req) => {
     };
     if (cover && /^https:\/\//.test(cover)) params['line_items[0][price_data][product_data][images][0]'] = cover;
 
+    // Sales tax (Stripe Tax). OFF until the owner has finished Stripe Tax setup (origin
+    // address + state registrations) and sets SHOP_TAX_ENABLED=true — enabling it before
+    // that makes Stripe reject the session. When on: collect the buyer's address so Stripe
+    // can determine the jurisdiction, add tax ON TOP of the price (tax_behavior exclusive),
+    // and categorize the beat via STRIPE_TAX_CODE (a digital-goods tax code the owner/
+    // accountant confirms). The webhook banks whatever tax Stripe computes into the tax fund.
+    if ((Deno.env.get('SHOP_TAX_ENABLED') ?? '').toLowerCase() === 'true') {
+      params['automatic_tax[enabled]'] = 'true';
+      params['billing_address_collection'] = 'required';
+      params['line_items[0][price_data][tax_behavior]'] = 'exclusive';
+      const taxCode = Deno.env.get('STRIPE_TAX_CODE');
+      if (taxCode) params['line_items[0][price_data][product_data][tax_code]'] = taxCode;
+    }
+
     const session = await stripe('checkout/sessions', params);
 
     // (4) Record the session id on the intent (service role).

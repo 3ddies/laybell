@@ -111,6 +111,42 @@ create index if not exists shop_stripe_payments_pi_idx
 alter table public.shop_stripe_payments enable row level security;  -- service-role only; no policy
 
 
+-- ─── 1b) Collected sales tax — the "tax fund" ───────────────────────────────
+-- Stripe Tax calculates + collects sales tax ON TOP of the beat price at checkout. That
+-- tax is NOT revenue and NOT part of the seller/platform split — it is money held in
+-- trust for the taxing state. It therefore lives in its OWN table, never the earnings
+-- ledger (so ledger_verify() solvency is untouched): one row per delivered taxed order,
+-- so the owner can see exactly how much is owed to each jurisdiction and mark it remitted.
+-- Written only by the delivery RPC (service role) in the SAME transaction as the sale, and
+-- reversed (reversed_at) if the order is later refunded (the card refund returns the tax too).
+create table if not exists public.shop_tax_collected (
+  id              uuid primary key default gen_random_uuid(),
+  order_id        uuid not null references public.shop_orders(id) on delete cascade,
+  event_id        text not null unique references public.shop_stripe_payments(event_id),
+  buyer_id        uuid references auth.users(id) on delete set null,
+  -- Cents. subtotal = the beat price we issued; tax = what Stripe collected on top;
+  -- total = what the card was actually charged (= subtotal + tax).
+  subtotal_cents  int  not null check (subtotal_cents >= 0),
+  tax_cents       int  not null check (tax_cents >= 0),
+  total_cents     int  not null check (total_cents >= 0),
+  -- Where the tax is owed, from Stripe's breakdown. country is ISO-2 ('US'); state is the
+  -- 2-letter code ('MD') when Stripe reports a US sub-jurisdiction.
+  country         text,
+  state           text,
+  currency        text not null default 'usd',
+  -- remitted_at: owner has paid this tax to the state (drops off the "owed" report).
+  -- reversed_at: the sale was refunded, so this tax went back to the buyer (not owed).
+  remitted_at     timestamptz,
+  reversed_at     timestamptz,
+  created_at      timestamptz not null default now()
+);
+create index if not exists shop_tax_collected_juris_idx
+  on public.shop_tax_collected (country, state, created_at);
+create index if not exists shop_tax_collected_owed_idx
+  on public.shop_tax_collected (created_at) where remitted_at is null and reversed_at is null;
+alter table public.shop_tax_collected enable row level security;  -- service-role + definer RPCs only; no policy
+
+
 -- ─── 2) Begin ───────────────────────────────────────────────────────────────
 -- Called (as the buyer, via the edge fn passing the buyer's JWT) before creating a
 -- Stripe Checkout Session. Validates the listing/kind, SETS the price server-side
@@ -216,7 +252,12 @@ create or replace function public.shop_deliver_stripe_order(
   p_intent_id         uuid,
   p_event_id          text,
   p_payment_intent_id text,
-  p_paid_cents        int
+  p_total_cents       int,            -- amount_total Stripe charged (beat price + tax)
+  p_subtotal_cents    int,            -- amount_subtotal = the beat price we issued
+  p_tax_cents         int  default 0, -- total_details.amount_tax (0 when untaxed)
+  p_tax_country       text default null,
+  p_tax_state         text default null,
+  p_currency          text default 'usd'
 )
 returns jsonb
 language plpgsql
@@ -246,7 +287,7 @@ begin
   end if;
   if v_intent.id is null then
     insert into public.shop_stripe_payments (event_id, paid_cents, payment_intent_id, outcome)
-      values (p_event_id, p_paid_cents, p_payment_intent_id, 'failed')
+      values (p_event_id, p_total_cents, p_payment_intent_id, 'failed')
       on conflict (event_id) do nothing;
     -- No intent → refund the stray charge.
     return jsonb_build_object('ok', false, 'reason', 'no_intent', 'refund', true,
@@ -259,7 +300,7 @@ begin
   -- conflicts here; we return the RECORDED outcome so the webhook can finish a refund
   -- that a prior attempt recorded as owed ('failed') but could not complete.
   insert into public.shop_stripe_payments (event_id, buyer_id, paid_cents, payment_intent_id, session_id)
-    values (p_event_id, v_buyer, p_paid_cents, p_payment_intent_id, v_intent.session_id)
+    values (p_event_id, v_buyer, p_total_cents, p_payment_intent_id, v_intent.session_id)
     on conflict (event_id) do nothing
     returning id into v_pay_id;
   if v_pay_id is null then
@@ -277,9 +318,13 @@ begin
                               'payment_intent_id', p_payment_intent_id);
   end if;
 
-  -- (4) The amount actually charged must equal the price we issued for this intent.
+  -- (4) Verify the money. Stripe Tax adds tax ON TOP, so the SUBTOTAL (pre-tax) must equal
+  -- the price we issued for this intent, and the TOTAL charged must equal subtotal + tax.
+  -- We validate the base price (which we control) and accept the tax Stripe computed.
   -- `is distinct from` so a null amount fails CLOSED (counts as a mismatch → refund).
-  if p_paid_cents is distinct from v_intent.price_cents then
+  if p_subtotal_cents is distinct from v_intent.price_cents
+     or coalesce(p_tax_cents, 0) < 0
+     or p_total_cents is distinct from (v_intent.price_cents + coalesce(p_tax_cents, 0)) then
     update public.shop_stripe_payments set outcome = 'failed' where id = v_pay_id;
     update public.shop_stripe_intents set status = 'failed' where id = v_intent.id;
     return jsonb_build_object('ok', false, 'reason', 'price_mismatch', 'refund', true,
@@ -354,13 +399,24 @@ begin
      set outcome = 'delivered', order_id = v_order.id
    where id = v_pay_id;
 
+  -- (8) Park any collected sales tax in the tax fund (NOT the earnings ledger — it is
+  -- money held in trust for the state). Only when tax was actually charged.
+  if coalesce(p_tax_cents, 0) > 0 then
+    insert into public.shop_tax_collected
+      (order_id, event_id, buyer_id, subtotal_cents, tax_cents, total_cents, country, state, currency)
+    values (v_order.id, p_event_id, v_buyer, v_intent.price_cents, p_tax_cents, p_total_cents,
+            upper(nullif(p_tax_country, '')), upper(nullif(p_tax_state, '')),
+            lower(coalesce(nullif(p_currency, ''), 'usd')));
+  end if;
+
   return jsonb_build_object('ok', true, 'delivered', true, 'order_id', v_order.id,
-                            'seller_cents', v_payout, 'fee_cents', v_fee, 'transaction_id', v_tx);
+                            'seller_cents', v_payout, 'fee_cents', v_fee,
+                            'tax_cents', coalesce(p_tax_cents, 0), 'transaction_id', v_tx);
 end $$;
 
 -- Invariant 5 (ledger.sql): nothing client-side may deliver. Service role only.
-revoke all on function public.shop_deliver_stripe_order(uuid, text, text, int) from public;
-revoke all on function public.shop_deliver_stripe_order(uuid, text, text, int) from authenticated;
+revoke all on function public.shop_deliver_stripe_order(uuid, text, text, int, int, int, text, text, text) from public;
+revoke all on function public.shop_deliver_stripe_order(uuid, text, text, int, int, int, text, text, text) from authenticated;
 
 
 -- ─── 4) Record a completed card refund ──────────────────────────────────────
@@ -405,6 +461,9 @@ begin
     update public.shop_orders set status = 'refunded', refunded_at = now()
      where id = v_pay.order_id and status = 'delivered';
     update public.shop_stripe_payments set outcome = 'refunded' where id = v_pay.id;
+    -- The card refund returns the tax to the buyer too, so drop it from the fund.
+    update public.shop_tax_collected set reversed_at = now()
+     where order_id = v_pay.order_id and reversed_at is null;
     return jsonb_build_object('ok', true, 'revoked', true, 'order_id', v_pay.order_id);
   end if;
   return jsonb_build_object('ok', true, 'noop', true);  -- failed/already-refunded
@@ -461,6 +520,61 @@ revoke all on function public.shop_sweep_stripe_intents() from public;
 revoke all on function public.shop_sweep_stripe_intents() from authenticated;
 
 
+-- ─── 8) Tax fund — owner read + remit marking ───────────────────────────────
+-- The "tax fund" the owner draws from at filing time. shop_tax_report sums collected tax
+-- per jurisdiction (owed vs already-remitted); shop_tax_mark_remitted flags rows as paid
+-- so they drop off the owed total. Service-role / SQL-editor ONLY (no app role) — this is
+-- owner/admin tooling, same posture as the service-role admin console.
+create or replace function public.shop_tax_report(p_from timestamptz default null, p_to timestamptz default null)
+returns table (country text, state text, currency text,
+               sales bigint, tax_collected_cents bigint, tax_owed_cents bigint, tax_remitted_cents bigint)
+language sql
+security definer
+set search_path = public
+as $$
+  select t.country, t.state, t.currency,
+         count(*) filter (where t.reversed_at is null)                                               as sales,
+         coalesce(sum(t.tax_cents) filter (where t.reversed_at is null), 0)                           as tax_collected_cents,
+         coalesce(sum(t.tax_cents) filter (where t.reversed_at is null and t.remitted_at is null), 0) as tax_owed_cents,
+         coalesce(sum(t.tax_cents) filter (where t.reversed_at is null and t.remitted_at is not null), 0) as tax_remitted_cents
+    from public.shop_tax_collected t
+   where (p_from is null or t.created_at >= p_from)
+     and (p_to   is null or t.created_at <  p_to)
+   group by t.country, t.state, t.currency
+   order by t.country, t.state;
+$$;
+
+-- Flag the still-owed, non-reversed tax rows for a jurisdiction (optionally within a date
+-- range) as remitted, AFTER the owner actually pays the state. Returns rows + cents flagged.
+create or replace function public.shop_tax_mark_remitted(
+  p_country text, p_state text default null,
+  p_from timestamptz default null, p_to timestamptz default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_rows int; v_cents bigint;
+begin
+  with upd as (
+    update public.shop_tax_collected t
+       set remitted_at = now()
+     where t.remitted_at is null and t.reversed_at is null
+       and t.country is not distinct from upper(nullif(p_country, ''))
+       and (p_state is null or t.state is not distinct from upper(nullif(p_state, '')))
+       and (p_from is null or t.created_at >= p_from)
+       and (p_to   is null or t.created_at <  p_to)
+     returning t.tax_cents
+  )
+  select count(*), coalesce(sum(tax_cents), 0) into v_rows, v_cents from upd;
+  return jsonb_build_object('ok', true, 'rows', v_rows, 'cents', v_cents);
+end $$;
+
+revoke all on function public.shop_tax_report(timestamptz, timestamptz)                    from public, anon, authenticated;
+revoke all on function public.shop_tax_mark_remitted(text, text, timestamptz, timestamptz) from public, anon, authenticated;
+
+
 -- ─── Revoke anon, BY NAME (the load-bearing one) ────────────────────────────
 -- Supabase's bootstrap grants EXECUTE to anon on every new public function, and
 -- `revoke … from public`/`authenticated` does NOT remove it. The anon key is public,
@@ -471,7 +585,7 @@ revoke all on function public.shop_sweep_stripe_intents() from authenticated;
 --    where n.nspname='public' and p.proname like 'shop_%stripe%';
 revoke all on function public.shop_begin_stripe_order(uuid, text)                     from public, anon;
 revoke all on function public.shop_stripe_attach_session(uuid, text)                  from public, anon, authenticated;
-revoke all on function public.shop_deliver_stripe_order(uuid, text, text, int)        from anon;
+revoke all on function public.shop_deliver_stripe_order(uuid, text, text, int, int, int, text, text, text) from anon;
 revoke all on function public.shop_stripe_mark_refunded(text)                         from anon;
 revoke all on function public.shop_stripe_refund_delivered(text)                      from anon;
 revoke all on function public.shop_poll_stripe_order(uuid)                            from public, anon;
@@ -491,8 +605,10 @@ revoke all on function public.shop_sweep_stripe_intents()                       
 --
 -- Rollback:
 --   drop function if exists public.shop_sweep_stripe_intents(),
+--     public.shop_tax_mark_remitted(text,text,timestamptz,timestamptz),
+--     public.shop_tax_report(timestamptz,timestamptz),
 --     public.shop_poll_stripe_order(uuid), public.shop_stripe_refund_delivered(text),
 --     public.shop_stripe_mark_refunded(text),
---     public.shop_deliver_stripe_order(uuid,text,text,int),
+--     public.shop_deliver_stripe_order(uuid,text,text,int,int,int,text,text,text),
 --     public.shop_stripe_attach_session(uuid,text), public.shop_begin_stripe_order(uuid,text);
---   drop table if exists public.shop_stripe_payments, public.shop_stripe_intents;
+--   drop table if exists public.shop_tax_collected, public.shop_stripe_payments, public.shop_stripe_intents;
