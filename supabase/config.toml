@@ -52,3 +52,14 @@ verify_jwt = false
 # NOTE: stripe-checkout + shop-cart-checkout are deliberately NOT here — they need the buyer's JWT.
 [functions.stripe-webhook]
 verify_jwt = false
+
+# Guest (no-account) web-shop checkout + token download. verify_jwt=false because a browser
+# with NO Laybell account must be able to call them. shop-guest-checkout validates the listing
+# and sets the price server-side before creating a Stripe session; shop-guest-download hands
+# over the file ONLY for a valid 48-char download token (the credential). Neither trusts the
+# client for money — the webhook (shop_deliver_stripe_guest_order) is the sole money authority.
+[functions.shop-guest-checkout]
+verify_jwt = false
+
+[functions.shop-guest-download]
+verify_jwt = false

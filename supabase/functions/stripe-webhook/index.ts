@@ -37,10 +37,36 @@ const STRIPE_KEY = Deno.env.get('STRIPE_SHOP_SECRET_KEY');
 const WEBHOOK_SECRET = Deno.env.get('STRIPE_WEBHOOK_SECRET');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+// Guest-download email (Resend). Reuse the already-verified consent sender if SHOP_FROM_EMAIL
+// isn't set. Best-effort: a mail failure never strands a purchase (the success page still
+// shows an instant download).
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+const SHOP_FROM_EMAIL = Deno.env.get('SHOP_FROM_EMAIL') ?? Deno.env.get('CONSENT_FROM_EMAIL') ?? 'Laybell <noreply@laybell.app>';
+const WEB_ORIGIN = Deno.env.get('SHOP_WEB_ORIGIN') ?? 'https://laybell-web.vercel.app';
 
 const enc = new TextEncoder();
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+
+// Email a guest their durable download link. Throws on failure so the caller can log it; the
+// caller swallows that (the purchase is already delivered + downloadable on the success page).
+async function sendGuestEmail(to: string, title: string, token: string) {
+  if (!RESEND_API_KEY) { console.error('RESEND_API_KEY unset — guest download email not sent'); return; }
+  const link = `${WEB_ORIGIN}/d/${token}`;
+  const safeTitle = title.replace(/[<>]/g, '').slice(0, 120);
+  const html = `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;color:#111">
+    <h2 style="margin:0 0 12px">Your Laybell purchase</h2>
+    <p>Thanks for buying <b>${safeTitle}</b>. Download it below — keep this email, the link is your receipt.</p>
+    <p style="margin:20px 0"><a href="${link}" style="display:inline-block;background:#F26522;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:700">Download your beat</a></p>
+    <p style="color:#888;font-size:13px">If the button doesn't work, paste this into your browser:<br>${link}</p>
+  </div>`;
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: SHOP_FROM_EMAIL, to, subject: `Your download: ${safeTitle}`, html }),
+  });
+  if (!res.ok) throw new Error(`resend ${res.status}: ${(await res.text()).slice(0, 200)}`);
+}
 
 function hex(buf: ArrayBuffer): string {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -95,6 +121,7 @@ serve(async (req) => {
         return json({ received: true, ignored: 'unpaid' });
       }
       const cartId = s.metadata?.cart_id ?? null;
+      const guestIntentId = s.metadata?.guest_intent_id ?? null;
       const intentId = s.metadata?.intent_id ?? null;
       const pi = typeof s.payment_intent === 'string' ? s.payment_intent : (s.payment_intent?.id ?? null);
       // Stripe Tax adds tax ON TOP: amount_total = price + tax, amount_subtotal = price,
@@ -105,16 +132,19 @@ serve(async (req) => {
       const tax = Math.floor(Number(s.total_details?.amount_tax ?? 0));
       const subtotal = s.amount_subtotal != null ? Math.floor(Number(s.amount_subtotal)) : total - tax;
       const addr = s.customer_details?.address ?? null;
+      const guestEmail = s.customer_details?.email ?? null;
       const money = {
         p_event_id: event.id, p_payment_intent_id: pi,
         p_total_cents: total, p_subtotal_cents: subtotal, p_tax_cents: tax,
         p_tax_country: addr?.country ?? null, p_tax_state: addr?.state ?? null,
         p_currency: s.currency ?? 'usd',
       };
-      // A cart session (N beats) delivers all-or-nothing via shop_deliver_stripe_cart; a
-      // single-item session via shop_deliver_stripe_order. Both return refund:true on failure.
+      // Route by session type: cart (N beats, all-or-nothing), guest (no account → token
+      // delivery + emailed link), or a logged-in single item. All return refund:true on failure.
       const { data: res, error } = cartId
         ? await db.rpc('shop_deliver_stripe_cart', { p_cart_id: cartId, ...money })
+        : guestIntentId
+        ? await db.rpc('shop_deliver_stripe_guest_order', { p_intent_id: guestIntentId, ...money, p_email: guestEmail })
         : await db.rpc('shop_deliver_stripe_order', { p_intent_id: intentId, ...money });
       if (error) { console.error('deliver_failed', event.id, error.message); return new Response('deliver_error', { status: 500 }); }
 
@@ -137,6 +167,12 @@ serve(async (req) => {
           console.error('refund_failed', event.id, String(rerr));
           return new Response('refund_error', { status: 500 }); // Stripe retries; deliver RPC idempotent → retries the refund
         }
+      }
+      // Guest delivered → email the durable download link (best-effort; the success page also
+      // shows an instant download, so a mail failure never strands the purchase).
+      if (guestIntentId && res?.delivered && (res as any)?.download_token && (res as any)?.email) {
+        await sendGuestEmail(String((res as any).email), String((res as any).title ?? 'your beat'), String((res as any).download_token))
+          .catch((e) => console.error('guest_email_failed', event.id, String(e)));
       }
       return json({ received: true, delivered: !!res?.delivered, reason: res?.reason ?? null });
     }
