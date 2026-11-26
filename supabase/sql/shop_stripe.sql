@@ -192,11 +192,13 @@ begin
   -- Stripe's own floor (~$0.50 for USD) — a sub-floor price can't be charged.
   if v_price < 50 then raise exception 'price_below_min'; end if;
 
-  -- Already own it? (one delivered order per listing+buyer+kind)
+  -- ANY existing order (delivered, pending, or refunded) occupies the unique
+  -- (listing,buyer,kind) slot, so delivery would fail on it — reject it HERE, before the
+  -- buyer is charged, instead of charging then refunding.
   if exists (
     select 1 from public.shop_orders o
      where o.listing_id = p_listing_id and o.buyer_id = v_buyer
-       and coalesce(o.kind, 'legacy') = p_kind and o.status = 'delivered'
+       and coalesce(o.kind, 'legacy') = p_kind
   ) then
     raise exception 'already_purchased';
   end if;
@@ -248,6 +250,10 @@ end $$;
 -- auto-decline behave EXACTLY as for a credit/IAP sale. Never raises on an expected
 -- business outcome. On a duplicate event it returns the recorded outcome so the webhook
 -- can finish a refund a prior attempt started.
+-- Drop the pre-tax 4-arg signature first: changing the arg list below with create-or-replace
+-- would otherwise leave the OLD overload in place (it was deployed in test mode) as dead code
+-- that still carries grants. No-op on a fresh install.
+drop function if exists public.shop_deliver_stripe_order(uuid, text, text, int);
 create or replace function public.shop_deliver_stripe_order(
   p_intent_id         uuid,
   p_event_id          text,
@@ -443,31 +449,43 @@ revoke all on function public.shop_stripe_mark_refunded(text) from authenticated
 -- by flipping the order to 'refunded'. Matched by PaymentIntent id. Per the shop refund
 -- policy (shop_credits.sql), the SELLER is not clawed back (the ledger refuses a
 -- negative user balance once withdrawn); only the order status drops. Idempotent.
-create or replace function public.shop_stripe_refund_delivered(p_payment_intent_id text)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare v_pay public.shop_stripe_payments%rowtype;
+-- The cart layer (shop_stripe_cart.sql) REPLACES this with a cart-aware version. Guard the
+-- single-order definition so re-running THIS file after the cart layer is installed does NOT
+-- silently clobber that override (which would leave a refunded cart's orders 'delivered', so
+-- the buyer keeps the files): only (re)create the single-order version when the cart layer
+-- isn't present. The inner function uses a distinct dollar-tag so it nests in the do-block.
+do $do$
 begin
-  if p_payment_intent_id is null then return jsonb_build_object('ok', false, 'reason', 'no_pi'); end if;
-  select * into v_pay from public.shop_stripe_payments
-    where payment_intent_id = p_payment_intent_id order by created_at desc limit 1;
-  if v_pay.id is null then
-    return jsonb_build_object('ok', false, 'reason', 'payment_not_found');
+  if not exists (select 1 from information_schema.tables
+                  where table_schema = 'public' and table_name = 'shop_stripe_carts') then
+    execute $def$
+      create or replace function public.shop_stripe_refund_delivered(p_payment_intent_id text)
+      returns jsonb language plpgsql security definer set search_path = public
+      as $body$
+      declare v_pay public.shop_stripe_payments%rowtype;
+      begin
+        if p_payment_intent_id is null then return jsonb_build_object('ok', false, 'reason', 'no_pi'); end if;
+        select * into v_pay from public.shop_stripe_payments
+          where payment_intent_id = p_payment_intent_id order by created_at desc limit 1;
+        if v_pay.id is null then
+          return jsonb_build_object('ok', false, 'reason', 'payment_not_found');
+        end if;
+        if v_pay.outcome = 'delivered' and v_pay.order_id is not null then
+          update public.shop_orders set status = 'refunded', refunded_at = now()
+           where id = v_pay.order_id and status = 'delivered';
+          update public.shop_stripe_payments set outcome = 'refunded' where id = v_pay.id;
+          -- The card refund returns the tax to the buyer too, so drop it from the fund.
+          update public.shop_tax_collected set reversed_at = now()
+           where order_id = v_pay.order_id and reversed_at is null;
+          return jsonb_build_object('ok', true, 'revoked', true, 'order_id', v_pay.order_id);
+        end if;
+        return jsonb_build_object('ok', true, 'noop', true);  -- failed/already-refunded
+      end
+      $body$;
+    $def$;
   end if;
-  if v_pay.outcome = 'delivered' and v_pay.order_id is not null then
-    update public.shop_orders set status = 'refunded', refunded_at = now()
-     where id = v_pay.order_id and status = 'delivered';
-    update public.shop_stripe_payments set outcome = 'refunded' where id = v_pay.id;
-    -- The card refund returns the tax to the buyer too, so drop it from the fund.
-    update public.shop_tax_collected set reversed_at = now()
-     where order_id = v_pay.order_id and reversed_at is null;
-    return jsonb_build_object('ok', true, 'revoked', true, 'order_id', v_pay.order_id);
-  end if;
-  return jsonb_build_object('ok', true, 'noop', true);  -- failed/already-refunded
-end $$;
+end
+$do$;
 
 revoke all on function public.shop_stripe_refund_delivered(text) from public;
 revoke all on function public.shop_stripe_refund_delivered(text) from authenticated;

@@ -95,7 +95,7 @@ declare
   v_price   int;
   v_total   bigint := 0;
   v_out     jsonb := '[]'::jsonb;
-  v_seen    jsonb := '[]'::jsonb;  -- dedupe (listing, kind)
+  v_seen    uuid[] := '{}';         -- one cart entry per listing (see dedupe below)
 begin
   if v_buyer is null then raise exception 'not_signed_in'; end if;
   if jsonb_typeof(p_items) <> 'array' then raise exception 'bad_request'; end if;
@@ -114,10 +114,13 @@ begin
     v_kind    := v_item->>'kind';
     if v_listing is null or v_kind not in ('sell', 'lease') then raise exception 'bad_item'; end if;
 
-    if v_seen @> jsonb_build_array(jsonb_build_object('l', v_listing, 'k', v_kind)) then
+    -- One entry per LISTING (not per listing+kind): carting a beat's exclusive sell
+    -- alongside its own lease would deliver the sell (marking the listing sold) and then
+    -- break the second item in the same transaction. One line per beat avoids that.
+    if v_listing = any(v_seen) then
       raise exception 'duplicate_item';
     end if;
-    v_seen := v_seen || jsonb_build_array(jsonb_build_object('l', v_listing, 'k', v_kind));
+    v_seen := v_seen || v_listing;
 
     select * into l from public.shop_listings where id = v_listing;
     if l.id is null then raise exception 'listing_not_found'; end if;
@@ -135,10 +138,13 @@ begin
     end if;
     if v_price is null or v_price <= 0 then raise exception 'price_unset'; end if;
 
+    -- ANY existing order (delivered, pending, or refunded) occupies the unique
+    -- (listing,buyer,kind) slot, so delivery would fail on it — reject it HERE, before the
+    -- buyer is charged, instead of refunding the whole cart afterward.
     if exists (
       select 1 from public.shop_orders o
        where o.listing_id = v_listing and o.buyer_id = v_buyer
-         and coalesce(o.kind, 'legacy') = v_kind and o.status = 'delivered'
+         and coalesce(o.kind, 'legacy') = v_kind
     ) then
       raise exception 'already_purchased';
     end if;
