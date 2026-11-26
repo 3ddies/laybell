@@ -62,6 +62,22 @@ export default function ListingActions({ listingId, deals, appLink, note, title,
     }
   }
 
+  // Guest (not signed in) checkout — no account needed; the download is emailed + shown on
+  // the success page. Hits the public shop-guest-checkout edge fn.
+  async function guestBuy(kind: 'sell' | 'lease') {
+    setErr(null); setBusy(kind);
+    try {
+      const { data, error } = await sb.functions.invoke('shop-guest-checkout', { body: { listing_id: listingId, kind } });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      if (!(data as any)?.url) throw new Error('cannot_checkout');
+      window.location.href = (data as any).url as string;
+    } catch (e: any) {
+      setErr(prettyErr(e?.message));
+      setBusy(null);
+    }
+  }
+
   function add(d: DealRow) {
     addToCart({
       listing_id: listingId, kind: d.kind as 'sell' | 'lease', title,
@@ -86,13 +102,13 @@ export default function ListingActions({ listingId, deals, appLink, note, title,
 
       {paid.map((d) => (
         <div className="lbuyrow" key={d.kind}>
-          {authed === false ? (
-            <a className="btn btn-primary lbuy" href={`/login?next=${encodeURIComponent(`/listing/${listingId}`)}`}>{d.label} · {d.price}</a>
-          ) : (
-            <button className="btn btn-primary lbuy" disabled={!!busy || authed === null} onClick={() => buy(d.kind as 'sell' | 'lease')}>
-              {busy === d.kind ? 'Starting secure checkout…' : `${d.label} with card · ${d.price}`}
-            </button>
-          )}
+          <button
+            className="btn btn-primary lbuy"
+            disabled={!!busy || authed === null}
+            onClick={() => (authed ? buy(d.kind as 'sell' | 'lease') : guestBuy(d.kind as 'sell' | 'lease'))}
+          >
+            {busy === d.kind ? 'Starting secure checkout…' : `${d.label} with card · ${d.price}`}
+          </button>
           <button className="btn btn-ghost lcart" disabled={!!inCart[d.kind]} onClick={() => add(d)}>
             {inCart[d.kind] ? 'In cart ✓' : 'Add to cart'}
           </button>
@@ -103,7 +119,11 @@ export default function ListingActions({ listingId, deals, appLink, note, title,
         <a className="btn btn-ghost lbuy" href={appLink}>Get the free download in the app</a>
       ) : null}
 
-      <p className="lnote">{paid.length ? 'Secure checkout with card, powered by Stripe. ' : ''}{note}</p>
+      <p className="lnote">
+        {paid.length ? 'Secure checkout with card, powered by Stripe. ' : ''}
+        {paid.length && authed === false ? 'No account needed — your download is emailed and shown instantly. ' : ''}
+        {note}
+      </p>
       {paid.length ? <a className="lapp" href={appLink}>Prefer the app? Buy there instead →</a> : null}
     </div>
   );
