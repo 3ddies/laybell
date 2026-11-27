@@ -49,6 +49,9 @@ end $$;
 -- `select false`.
 create or replace function public.shop_refund_clawback_enabled()
 returns boolean language sql immutable as $$ select true $$;
+-- Revoke anon BY NAME (project rule: revoke from public/authenticated does NOT remove anon's
+-- default grant). Harmless constant, but kept consistent with every other fn in this file.
+revoke all on function public.shop_refund_clawback_enabled() from public, anon, authenticated;
 
 
 -- ─── 1) Shortfall ledger (the rare, un-clawable tail — made visible) ─────────

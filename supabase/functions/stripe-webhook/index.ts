@@ -25,7 +25,8 @@ import { stripe } from '../_shared/stripe.ts';
 //   supabase functions deploy stripe-checkout
 //   # then, IN THE MATCHING STRIPE MODE (test), create a webhook endpoint pointing at the
 //   #   stripe-webhook URL for events checkout.session.completed,
-//   #   checkout.session.async_payment_succeeded, charge.refunded → set its signing
+//   #   checkout.session.async_payment_succeeded, charge.refunded,
+//   #   charge.dispute.created, charge.dispute.closed → set its signing
 //   #   secret:  supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_…
 //   # (the webhook endpoint's mode must match STRIPE_SHOP_SECRET_KEY's mode.)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -231,15 +232,93 @@ serve(async (req) => {
       return json({ received: true, delivered: !!res?.delivered, reason: res?.reason ?? null });
     }
 
-    // A refund issued from the Stripe dashboard for a delivered order → revoke file access.
+    // A refund issued from the Stripe dashboard for a delivered order → revoke file access AND
+    // claw the seller's earnings back (shop_stripe_refund_delivered does both now).
+    //
+    // ⚠️ Stripe emits charge.refunded for PARTIAL refunds too. Only a FULL refund should revoke
+    // the download + reverse the seller's whole payout; a partial (a goodwill credit, say) leaves
+    // the sale — and the seller's earnings — standing. `refunded` flips true only when the charge
+    // is fully refunded; `amount_refunded >= amount` is the belt-and-suspenders for cumulative
+    // partials that add up to the full amount (amount_refunded is cumulative).
     if (event.type === 'charge.refunded') {
       const c = event.data.object;
       const pi = typeof c.payment_intent === 'string' ? c.payment_intent : (c.payment_intent?.id ?? null);
-      if (pi) {
+      const amount = Math.floor(Number(c.amount ?? 0));
+      const refundedAmt = Math.floor(Number(c.amount_refunded ?? 0));
+      const fullyRefunded = c.refunded === true || (amount > 0 && refundedAmt >= amount);
+      if (pi && fullyRefunded) {
         const { error } = await db.rpc('shop_stripe_refund_delivered', { p_payment_intent_id: pi });
         if (error) { console.error('refund_delivered_failed', pi, error.message); return new Response('refund_delivered_error', { status: 500 }); }
+      } else if (pi) {
+        console.log('partial refund — seller earnings + buyer access left intact', pi, refundedAmt, 'of', amount);
       }
-      return json({ received: true });
+      return json({ received: true, fully_refunded: pi ? fullyRefunded : null });
+    }
+
+    // A card CHARGEBACK was opened. Stripe has already pulled the funds (gross + a dispute fee)
+    // from the platform balance. Treat it like a refund: revoke the download AND claw the seller's
+    // earnings back (so the platform doesn't eat the chargeback AND still pay the seller their
+    // cut) — the SAME audited, idempotent path a refund uses. Then record it for the owner.
+    if (event.type === 'charge.dispute.created') {
+      const d = event.data.object;
+      const pi = typeof d.payment_intent === 'string' ? d.payment_intent : (d.payment_intent?.id ?? null);
+      const charge = typeof d.charge === 'string' ? d.charge : (d.charge?.id ?? null);
+      const disputed = Math.floor(Number(d.amount ?? 0));
+      let clawed = false;
+      let full = true;
+      if (pi) {
+        // A dispute is usually for the FULL charge, but can be partial. Detect a partial by
+        // comparing the disputed amount to what we actually charged (the payment row's paid_cents):
+        // a full dispute claws the seller back + revokes; a partial is recorded only (no
+        // wrong-direction over-claw). Unknown charged amount → treat as full (a dispute is
+        // adversarial and the platform is already eating the loss + fee, so protect it).
+        const { data: payRow } = await db.from('shop_stripe_payments')
+          .select('paid_cents').eq('payment_intent_id', pi)
+          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        const paid = Math.floor(Number((payRow as any)?.paid_cents ?? 0));
+        full = paid <= 0 || disputed >= paid;
+        if (full) {
+          const { data: r, error } = await db.rpc('shop_stripe_refund_delivered', { p_payment_intent_id: pi });
+          // Fail LOUD (5xx → Stripe retries; the reversal is idempotent) so a revoke/clawback never
+          // silently no-ops on a real chargeback.
+          if (error) { console.error('dispute_revoke_failed', d.id, pi, error.message); return new Response('dispute_error', { status: 500 }); }
+          clawed = !!(r as any)?.revoked;
+        } else {
+          console.error('PARTIAL DISPUTE — not auto-clawed; manual review needed', d.id, disputed, 'of', paid);
+        }
+      } else {
+        console.error('DISPUTE WITH NO payment_intent — manual review needed', d.id);
+      }
+      // Audit row (best-effort; a log hiccup must not wedge Stripe retries for an already-reversed
+      // dispute — the money reversal above is the load-bearing part).
+      await db.rpc('shop_record_dispute', {
+        p_dispute_id: d.id, p_payment_intent_id: pi, p_charge_id: charge,
+        p_amount_cents: disputed, p_currency: d.currency ?? 'usd',
+        p_reason: d.reason ?? null, p_status: d.status ?? 'needs_response', p_clawed_back: clawed,
+      }).catch((e) => console.error('dispute_record_failed', d.id, String(e)));
+      return json({ received: true, disputed: true, clawed_back: clawed, partial: !full });
+    }
+
+    // A dispute resolved. 'lost' → already handled on .created (the reversal is idempotent, so
+    // nothing more to do). 'won' → the charge stands, but we already revoked + clawed back on
+    // open, so a WON dispute may owe the seller a MANUAL re-credit + the buyer re-access. We log
+    // that loudly and record it; we never auto-re-credit (a re-credit is the only mint-direction
+    // action and stays a deliberate owner decision).
+    if (event.type === 'charge.dispute.closed') {
+      const d = event.data.object;
+      const pi = typeof d.payment_intent === 'string' ? d.payment_intent : (d.payment_intent?.id ?? null);
+      const charge = typeof d.charge === 'string' ? d.charge : (d.charge?.id ?? null);
+      await db.rpc('shop_record_dispute', {
+        p_dispute_id: d.id, p_payment_intent_id: pi, p_charge_id: charge,
+        p_amount_cents: Math.floor(Number(d.amount ?? 0)), p_currency: d.currency ?? 'usd',
+        p_reason: d.reason ?? null, p_status: d.status ?? null,
+      }).catch((e) => console.error('dispute_record_failed', d.id, String(e)));
+      if (d.status === 'won') {
+        console.error('DISPUTE WON — seller was clawed back on open; MANUAL re-credit + re-grant may be owed:', d.id, 'pi:', pi);
+      } else {
+        console.log('dispute closed', d.status, d.id);
+      }
+      return json({ received: true, dispute_status: d.status ?? null });
     }
 
     return json({ received: true, ignored: event.type });
