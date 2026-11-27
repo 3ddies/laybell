@@ -44,17 +44,28 @@ export default function GuestDownloadPage({ params }: { params: { token: string 
   return (
     <main className="purchases">
       <h1>Your download</h1>
-      {state === 'err' ? (
-        <div className="pbanner err">This download link is invalid or has expired. If you just bought, check your email for the latest link.</div>
+
+      {state === 'checking' ? (
+        <div className="pstatus">
+          <span className="cspin big" />
+          <div className="ptext">Checking your link…</div>
+        </div>
+      ) : state === 'err' ? (
+        <div className="pstatus">
+          <div className="pbanner err" style={{ marginBottom: 0 }}>This download link is invalid or has expired. If you just bought, check your email for the latest link.</div>
+          <p className="lnote"><Link href="/market">Browse more beats →</Link></p>
+        </div>
       ) : (
-        <>
-          {title ? <div className="pbanner ok">{title} — ready to download.</div> : null}
-          <button className="btn btn-primary lbuy" disabled={state === 'checking' || state === 'busy'} onClick={download}>
-            {state === 'checking' ? 'Checking…' : state === 'busy' ? 'Preparing…' : 'Download your beat'}
+        <div className="pstatus">
+          <div className="pcheck"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.3L19 7" /></svg></div>
+          <div className="ptext">{title || 'Your beat'}</div>
+          <div className="psub">Ready to download — this link stays valid, so keep it.</div>
+          <button className="btn btn-primary lbuy" disabled={state === 'busy'} onClick={download}>
+            {state === 'busy' ? <><span className="cspin" /> Preparing…</> : 'Download your beat'}
           </button>
-        </>
+          <p className="lnote"><Link href="/market">Browse more beats →</Link></p>
+        </div>
       )}
-      <p className="lnote"><Link href="/market">Browse more beats →</Link></p>
     </main>
   );
 }

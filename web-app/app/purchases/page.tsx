@@ -80,20 +80,24 @@ function PurchasesInner() {
       a.click();
       a.remove();
     } catch {
-      alert('Could not start the download. Please try again.');
+      setBanner({ kind: 'err', text: 'Couldn’t start that download — please try again.' });
     } finally {
       setDownloading(null);
     }
   }
 
-  if (!checked) return <main className="purchases"><div className="feed-empty">Loading…</div></main>;
+  if (!checked) return <main className="purchases"><div className="pstatus"><span className="cspin big" /><div className="ptext">Loading…</div></div></main>;
 
   return (
     <main className="purchases">
       <h1>Your purchases</h1>
-      {banner ? <div className={`pbanner ${banner.kind}`}>{banner.text}</div> : null}
+      {banner ? (
+        <div className={`pbanner ${banner.kind}`}>
+          {banner.kind === 'wait' ? <span className="cspin" style={{ marginRight: 8 }} /> : null}{banner.text}
+        </div>
+      ) : null}
       {items === null ? (
-        <div className="feed-empty">Loading…</div>
+        <div className="pstatus"><span className="cspin big" /><div className="ptext">Loading your purchases…</div></div>
       ) : items.length === 0 ? (
         <div className="state"><h2 style={{ fontSize: 18 }}>No purchases yet</h2><p>Beats and songs you buy will show up here to download.</p></div>
       ) : (
@@ -108,7 +112,7 @@ function PurchasesInner() {
                 <span>{CATEGORY_LABEL[p.category as keyof typeof CATEGORY_LABEL] || 'Beat'}{p.kind === 'lease' ? ' · Lease' : p.kind === 'sell' ? ' · Exclusive' : ''}{p.seller_username ? ` · @${p.seller_username}` : ''}</span>
               </div>
               <button className="btn btn-primary pdl" disabled={downloading === p.order_id} onClick={() => download(p)}>
-                {downloading === p.order_id ? 'Preparing…' : 'Download'}
+                {downloading === p.order_id ? <><span className="cspin" /> Preparing…</> : 'Download'}
               </button>
             </div>
           ))}
@@ -120,7 +124,7 @@ function PurchasesInner() {
 
 export default function PurchasesPage() {
   return (
-    <Suspense fallback={<main className="purchases"><div className="feed-empty">Loading…</div></main>}>
+    <Suspense fallback={<main className="purchases"><div className="pstatus"><span className="cspin big" /><div className="ptext">Loading…</div></div></main>}>
       <PurchasesInner />
     </Suspense>
   );

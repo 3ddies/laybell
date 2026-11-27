@@ -62,24 +62,14 @@ export default async function ListingPage({ params }: { params: { id: string } }
   return (
     <main className="listing shopdark">
       <div className="wrap lwrap">
-        <div className="lcover" style={!l.cover_url ? { background: gradientFor(l.id) } : undefined}>
-          {l.cover_url ? (
-            <img src={l.cover_url} alt={l.title} />
-          ) : (
-            <span className="lcover-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"><path d="M3 9h18M4.5 9 6 4.5A2 2 0 0 1 7.9 3h8.2a2 2 0 0 1 1.9 1.5L19.5 9M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M9 13a3 3 0 0 0 6 0"/></svg></span>
-          )}
-        </div>
-
-        <div className="linfo">
-          <span className="lcat">{cat}{l.genre ? ` · ${l.genre}` : ''}</span>
-          <h1 className="ltitle">{l.title}</h1>
-
-          {sellerVisible ? (
-            <Link className="lseller" href={`/@${seller.username}`}>
-              <span className="mini-av">{seller.avatar_url ? <img src={seller.avatar_url} alt="" /> : (sellerName || '?').charAt(0).toUpperCase()}</span>
-              <span className="ls-txt"><b>{sellerName}</b><TierBadge tier={badge} /><span className="ls-handle">@{seller.username}</span></span>
-            </Link>
-          ) : null}
+        <div className="lmedia">
+          <div className="lcover" style={!l.cover_url ? { background: gradientFor(l.id) } : undefined}>
+            {l.cover_url ? (
+              <img src={l.cover_url} alt={l.title} />
+            ) : (
+              <span className="lcover-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"><path d="M3 9h18M4.5 9 6 4.5A2 2 0 0 1 7.9 3h8.2a2 2 0 0 1 1.9 1.5L19.5 9M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M9 13a3 3 0 0 0 6 0"/></svg></span>
+            )}
+          </div>
 
           {l.preview_url ? (
             <div className="lpreview">
@@ -89,8 +79,27 @@ export default async function ListingPage({ params }: { params: { id: string } }
               <ProtectedAudio src={l.preview_url} />
             </div>
           ) : null}
+        </div>
 
-          <ListingActions deals={deals} listingId={l.id} appLink={listingAppLink(l.id)} note={stats.join(' · ')} title={l.title} cover={l.cover_url} priceCents={priceCents} />
+        <div className="linfo">
+          <span className="lcat">{cat}{l.genre ? ` · ${l.genre}` : ''}</span>
+          <h1 className="ltitle">{l.title}</h1>
+
+          {sellerVisible ? (
+            <Link className="lseller" href={`/@${seller.username}`}>
+              <span className="mini-av">{seller.avatar_url ? <img src={seller.avatar_url} alt="" /> : (sellerName || '?').charAt(0).toUpperCase()}</span>
+              <span className="ls-txt">
+                <span className="ls-name"><b>{sellerName}</b><TierBadge tier={badge} /></span>
+                <span className="ls-handle">@{seller.username}</span>
+              </span>
+            </Link>
+          ) : null}
+
+          {stats.length ? (
+            <div className="lstats">{stats.map((s) => <span key={s}>{s}</span>)}</div>
+          ) : null}
+
+          <ListingActions deals={deals} listingId={l.id} appLink={listingAppLink(l.id)} title={l.title} cover={l.cover_url} priceCents={priceCents} />
 
           {l.description ? (
             <div className="ldesc"><h3>About this {cat.toLowerCase()}</h3><p>{l.description}</p></div>

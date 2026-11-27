@@ -16,6 +16,11 @@ function prettyErr(m?: string): string {
     listing_not_available: 'One of these is no longer available — remove it to continue.',
     cannot_buy_own: 'Your cart has one of your own items — remove it to continue.',
     cart_below_min: 'The total is below the card-payment minimum.',
+    duplicate_item: 'You can’t check out two options for the same beat — keep just the Buy or the Lease, not both.',
+    bad_item: 'One of these items looks invalid — remove it and try again.',
+    listing_not_found: 'One of these no longer exists — remove it to continue.',
+    price_unset: 'One of these has no price set — remove it to continue.',
+    kind_not_available: 'One of these options isn’t available anymore — remove it to continue.',
     cannot_checkout: 'Couldn’t start checkout. Please try again.',
     stripe_not_configured: 'Card payments aren’t available right now.',
   };
@@ -77,15 +82,17 @@ function CartInner() {
   const totalCents = rows.reduce((s, r) => s + (r.c.available ? (r.c.priceCents ?? 0) : 0), 0);
   const total = `$${(totalCents / 100).toFixed(2)}`;
 
-  async function checkout() {
+  // Logged in → shop-cart-checkout; guest (no account) → shop-guest-cart-checkout. Both record
+  // the cart + N intents server-side (re-pricing every item), then redirect to one Stripe session.
+  async function startCheckout(fn: 'shop-cart-checkout' | 'shop-guest-cart-checkout') {
     setErr(null); setBusy(true);
     try {
       const payload = getCart().map((i) => ({ listing_id: i.listing_id, kind: i.kind }));
-      const { data, error } = await sb.functions.invoke('shop-cart-checkout', { body: { items: payload } });
+      const { data, error } = await sb.functions.invoke(fn, { body: { items: payload } });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       if (!(data as any)?.url) throw new Error('cannot_checkout');
-      // Remember exactly what this cart is paying for, so /purchases clears only these items.
+      // Remember exactly what this cart is paying for, so the success page clears only these items.
       if ((data as any)?.cart_id) stashCheckout(String((data as any).cart_id), payload);
       window.location.href = (data as any).url as string;
     } catch (e: any) {
@@ -125,14 +132,14 @@ function CartInner() {
         ))}
       </div>
       <div className="carttotal"><span>Total</span><b>{total}</b></div>
-      <p className="lnote">Tax, if any, is calculated at checkout. Secure checkout powered by Stripe.</p>
-      {authed === false ? (
-        <a className="btn btn-primary lbuy" href="/login?next=/cart">Log in to check out</a>
-      ) : (
-        <button className="btn btn-primary lbuy" disabled={busy || authed === null || anyUnavailable} onClick={checkout}>
-          {busy ? 'Starting secure checkout…' : `Check out · ${total}`}
-        </button>
-      )}
+      <p className="lnote">{authed === false ? 'No account needed — your downloads are emailed and shown instantly. ' : ''}Tax, if any, is calculated at checkout. Secure checkout powered by Stripe.</p>
+      <button
+        className="btn btn-primary lbuy"
+        disabled={busy || authed === null || anyUnavailable}
+        onClick={() => startCheckout(authed ? 'shop-cart-checkout' : 'shop-guest-cart-checkout')}
+      >
+        {busy ? <><span className="cspin" /> Starting secure checkout…</> : `Check out · ${total}`}
+      </button>
     </main>
   );
 }

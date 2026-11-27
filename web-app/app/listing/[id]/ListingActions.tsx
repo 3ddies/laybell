@@ -23,8 +23,8 @@ function prettyErr(m?: string): string {
   return 'Couldn’t start checkout. Please try again.';
 }
 
-export default function ListingActions({ listingId, deals, appLink, note, title, cover, priceCents }: {
-  listingId: string; deals: DealRow[]; appLink: string; note: string;
+export default function ListingActions({ listingId, deals, appLink, title, cover, priceCents }: {
+  listingId: string; deals: DealRow[]; appLink: string;
   title: string; cover: string | null; priceCents: Partial<Record<'sell' | 'lease', number>>;
 }) {
   const sb = browserSb();
@@ -87,42 +87,68 @@ export default function ListingActions({ listingId, deals, appLink, note, title,
   }
 
   const paid = deals.filter((d) => d.kind !== 'free');
-  const free = deals.find((d) => d.kind === 'free');
 
   return (
     <div className="ldeals">
-      {deals.map((d) => (
-        <div className={`ldeal ${d.kind}`} key={d.kind}>
-          <div className="ld-main"><b>{d.label}</b><span>{d.sub}</span></div>
-          <div className="ld-price">{d.price}</div>
-        </div>
-      ))}
-
       {err ? <div className="authmsg err">{err}</div> : null}
 
-      {paid.map((d) => (
-        <div className="lbuyrow" key={d.kind}>
-          <button
-            className="btn btn-primary lbuy"
-            disabled={!!busy || authed === null}
-            onClick={() => (authed ? buy(d.kind as 'sell' | 'lease') : guestBuy(d.kind as 'sell' | 'lease'))}
-          >
-            {busy === d.kind ? 'Starting secure checkout…' : `${d.label} with card · ${d.price}`}
-          </button>
-          <button className="btn btn-ghost lcart" disabled={!!inCart[d.kind]} onClick={() => add(d)}>
-            {inCart[d.kind] ? 'In cart ✓' : 'Add to cart'}
-          </button>
-        </div>
-      ))}
+      {deals.map((d) => {
+        const kind = d.kind as 'sell' | 'lease' | 'free';
 
-      {free ? (
-        <a className="btn btn-ghost lbuy" href={appLink}>Get the free download in the app</a>
-      ) : null}
+        // Free = an app-only claim: the whole card links into the app.
+        if (kind === 'free') {
+          return (
+            <a className={`ldeal ${kind} ldeal-free`} key={d.kind} href={appLink}>
+              <span className="ld-hit">
+                <span className="ld-main"><b>{d.label}</b><span>{d.sub}</span></span>
+                <span className="ld-pricewrap">
+                  <span className="ld-price">{d.price}</span>
+                  <span className="ld-cta">Get in the app ›</span>
+                </span>
+              </span>
+            </a>
+          );
+        }
+
+        // Paid = tap the whole card to check out with card. The small cart button is
+        // a sibling (never nested — a <button> can't contain a <button>).
+        const isBusy = busy === kind;
+        return (
+          <div className={`ldeal ${kind} ldeal-buy`} key={d.kind}>
+            <button
+              className="ld-hit"
+              disabled={!!busy || authed === null}
+              onClick={() => (authed ? buy(kind) : guestBuy(kind))}
+              aria-label={`${d.label} ${d.price} — check out with card`}
+            >
+              <span className="ld-main"><b>{d.label}</b><span>{d.sub}</span></span>
+              <span className="ld-pricewrap">
+                <span className="ld-price">{d.price}</span>
+                <span className="ld-cta">
+                  {isBusy ? <><span className="cspin" /> Starting…</> : `${d.label} Now ›`}
+                </span>
+              </span>
+            </button>
+            <button
+              className="ld-cart"
+              disabled={!!inCart[kind]}
+              onClick={() => add(d)}
+              aria-label={inCart[kind] ? 'In cart' : 'Add to cart'}
+              title={inCart[kind] ? 'In cart' : 'Add to cart'}
+            >
+              {inCart[kind] ? (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="20" r="1.4" /><circle cx="18" cy="20" r="1.4" /><path d="M2.5 3h2.2l2.2 11.2a1.6 1.6 0 0 0 1.6 1.3h8.1a1.6 1.6 0 0 0 1.6-1.3L21 7H6" /></svg>
+              )}
+            </button>
+          </div>
+        );
+      })}
 
       <p className="lnote">
-        {paid.length ? 'Secure checkout with card, powered by Stripe. ' : ''}
-        {paid.length && authed === false ? 'No account needed — your download is emailed and shown instantly. ' : ''}
-        {note}
+        {paid.length ? 'Secure card payment via Stripe. ' : ''}
+        {paid.length && authed === false ? 'No account needed. Your download is emailed and shown instantly.' : ''}
       </p>
       {paid.length ? <a className="lapp" href={appLink}>Prefer the app? Buy there instead →</a> : null}
     </div>

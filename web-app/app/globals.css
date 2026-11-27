@@ -411,27 +411,68 @@ footer.site .wrap{padding-block:30px 40px; display:flex; flex-wrap:wrap; gap:18p
 /* Listing detail */
 .listing{padding-bottom:48px}
 .lwrap{max-width:900px; display:grid; grid-template-columns:minmax(0,420px) 1fr; gap:36px; padding-block:30px 10px; align-items:start}
-.lcover{position:sticky; top:80px; aspect-ratio:1; border-radius:18px; overflow:hidden; background:var(--surface); display:grid; place-items:center; box-shadow:var(--shadow)}
+/* Left column: artwork with the audio preview beneath it (sticky on desktop). */
+.lmedia{position:sticky; top:80px; display:flex; flex-direction:column; gap:14px; min-width:0}
+.lcover{aspect-ratio:1; border-radius:18px; overflow:hidden; background:var(--surface); display:grid; place-items:center; box-shadow:var(--shadow)}
 .lcover img{width:100%; height:100%; object-fit:cover}
 .lcover-ic{color:var(--muted)} .lcover-ic svg{width:64px; height:64px}
 .linfo{min-width:0}
 .lcat{font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); font-weight:700}
 .ltitle{font-size:clamp(24px,4vw,34px); font-family:var(--f-display); font-weight:900; letter-spacing:-.02em; margin:5px 0 14px; line-height:1.08}
-.lseller{display:inline-flex; align-items:center; gap:10px; margin-bottom:20px}
-.lseller .mini-av{width:40px; height:40px}
-.ls-txt{display:flex; flex-direction:column; line-height:1.25}
-.ls-txt b{font-family:var(--f-display); font-weight:700; font-size:15px; display:inline-flex; align-items:center; gap:6px}
+/* Seller strip — a clean, tappable profile chip (name + badge on one line, handle below). */
+.lseller{display:inline-flex; align-items:center; gap:12px; margin:2px 0 14px; max-width:100%;
+  padding:6px 14px 6px 6px; border-radius:999px; border:1px solid transparent;
+  transition:background .16s ease, border-color .16s ease}
+.lseller:hover{background:color-mix(in srgb,var(--fg) 7%,transparent); border-color:var(--border-2)}
+.lseller .mini-av{width:44px; height:44px; box-shadow:0 0 0 1px var(--border-2)}
+.ls-txt{display:flex; flex-direction:column; gap:3px; line-height:1.15; min-width:0}
+.ls-name{display:inline-flex; align-items:center; gap:7px; min-width:0}
+.ls-name b{font-family:var(--f-display); font-weight:700; font-size:15.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .ls-handle{font-size:13px; color:var(--muted)}
-.lpreview{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:12px 14px; margin-bottom:18px}
+/* "1 sold" etc. — plain muted text under the profile, above the deal cards. */
+.lstats{display:flex; flex-wrap:wrap; gap:4px 14px; margin:0 0 16px}
+.lstats span{font-size:13px; font-weight:600; color:var(--muted)}
+.lpreview{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:12px 14px}
 .lp-label{display:flex; align-items:center; gap:7px; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:9px}
 .lp-label svg{width:15px; height:15px}
 .lpreview audio{width:100%; height:38px}
 .ldeals{display:flex; flex-direction:column; gap:10px; margin-bottom:18px}
-.ldeal{display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 16px; border-radius:14px; border:1px solid var(--border-2); background:var(--surface-2)}
-.ldeal.sell{border-color:color-mix(in srgb,var(--accent) 45%,var(--border-2))}
+/* Each deal is ONE clickable card: tap the title+price to check out with card. The
+   small cart button at the right is a secondary action (a sibling, never nested in the
+   hit button — a <button> can't contain a <button>). */
+.ldeal{position:relative; display:flex; align-items:stretch; border-radius:14px; border:1px solid var(--border-2); background:var(--surface-2); overflow:hidden;
+  transition:transform .18s cubic-bezier(.2,.6,.3,1), border-color .18s ease, background .18s ease, box-shadow .18s ease}
+/* The Buy (exclusive) card is emphasised a touch larger than the Lease card. */
+.ldeal.sell .ld-hit{padding:19px 16px}
+.ldeal.sell .ld-main b{font-size:17px}
+.ldeal.sell .ld-price{font-size:22px}
+/* Hover a clickable card → it turns white with dark text, lifts + grows slightly. */
+.ldeal.ldeal-buy:hover, .ldeal.ldeal-free:hover{transform:translateY(-2px) scale(1.02);
+  background:#fff; border-color:#fff; color:#15151b;
+  box-shadow:0 16px 34px -14px rgba(0,0,0,.55)}
+.ldeal.ldeal-buy:hover .ld-main span, .ldeal.ldeal-free:hover .ld-main span{color:#5a5a64}
+.ldeal.ldeal-buy:hover .ld-cta, .ldeal.ldeal-free:hover .ld-cta{color:#16a34a; font-size:13.5px}
+.ldeal.ldeal-buy:hover .ld-cart, .ldeal.ldeal-free:hover .ld-cart{color:#5a5a64; border-left-color:rgba(0,0,0,.1)}
+.ldeal.ldeal-buy:hover .ld-cart:hover:not(:disabled), .ldeal.ldeal-free:hover .ld-cart:hover:not(:disabled){color:#15151b; background:rgba(0,0,0,.05)}
+.ldeal.ldeal-buy:active, .ldeal.ldeal-free:active{transform:translateY(-1px) scale(1.006)}
+.ld-hit{flex:1; min-width:0; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:15px 16px;
+  background:none; border:0; color:inherit; font-family:inherit; text-align:left; cursor:pointer}
+.ld-hit:disabled{cursor:default}
+.ld-main{min-width:0}
 .ld-main b{font-family:var(--f-display); font-weight:700; font-size:16px; display:block}
-.ld-main span{font-size:13px; color:var(--muted)}
-.ld-price{font-family:var(--f-display); font-weight:800; font-size:19px; white-space:nowrap}
+.ld-main span{font-size:13px; color:var(--muted); display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.ld-pricewrap{flex:0 0 auto; text-align:right}
+.ld-price{display:block; font-family:var(--f-display); font-weight:800; font-size:19px; white-space:nowrap; line-height:1.12}
+.ld-cta{display:inline-flex; align-items:center; gap:5px; justify-content:flex-end; margin-top:2px;
+  font-size:11.5px; font-weight:800; letter-spacing:.01em; color:var(--accent); white-space:nowrap;
+  transition:font-size .16s cubic-bezier(.2,.6,.3,1), color .15s ease}
+.ld-cart{flex:0 0 auto; width:46px; display:grid; place-items:center; border:0; border-left:1px solid var(--border-2);
+  background:none; color:var(--muted); cursor:pointer; transition:color .15s ease, background .15s ease}
+.ld-cart:hover:not(:disabled){color:var(--fg); background:color-mix(in srgb,var(--fg) 6%,transparent)}
+.ld-cart:disabled{color:var(--live); cursor:default}
+.ld-cart svg{width:19px; height:19px}
+.ldeal-free{text-decoration:none}
+.ldeal-free .ld-cta{color:var(--accent-warm)}
 .lbuy{width:100%; justify-content:center; padding:14px; font-size:15px}
 .lnote{color:var(--faint); font-size:12.5px; margin:10px 0 0; text-align:center}
 .ldesc{margin-top:26px; border-top:1px solid var(--border); padding-top:20px}
@@ -439,7 +480,7 @@ footer.site .wrap{padding-block:30px 40px; display:flex; flex-wrap:wrap; gap:18p
 .ldesc p{color:var(--fg); font-size:14.5px; white-space:pre-wrap; line-height:1.55}
 @media(max-width:720px){
   .lwrap{grid-template-columns:1fr; gap:20px; padding-block:18px 6px}
-  .lcover{position:relative; top:0; max-width:420px}
+  .lmedia{position:relative; top:0; max-width:420px}
 }
 @media(max-width:560px){ .shoplink{display:none} }
 
@@ -477,9 +518,6 @@ footer.site .wrap{padding-block:30px 40px; display:flex; flex-wrap:wrap; gap:18p
 .pdl{flex:0 0 auto; padding:9px 16px}
 
 /* Cart */
-.lbuyrow{display:flex; gap:8px; align-items:stretch; margin-top:8px}
-.lbuyrow .lbuy{flex:1; margin-top:0}
-.lbuyrow .lcart{flex:0 0 auto; white-space:nowrap}
 .cartlink{display:inline-flex; align-items:center; gap:6px}
 .cartbadge{min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:var(--accent,#F26522); color:#fff; font-size:11px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; line-height:1}
 .carttotal{display:flex; justify-content:space-between; align-items:baseline; margin:18px 2px 6px}
@@ -793,3 +831,63 @@ html:has(.live-page) .topbar{
 .watch-meta{ margin-top:18px }
 .watch-row{ display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap }
 .watch-cap{ margin:14px 0 2px; font-size:15px; line-height:1.5 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Checkout / purchase polish — a live spinner, choreographed state entrances, a
+   success check that draws itself in, and tactile buttons. Keeps the
+   post-payment pages (/buy/complete, /purchases, /d/[token]) feeling fluent
+   instead of flashing static text and jumping the layout. Fully motion-safe.
+   ══════════════════════════════════════════════════════════════════════════ */
+@keyframes lb-spin{ to{ transform:rotate(360deg) } }
+@keyframes lb-in{ from{ opacity:0; transform:translateY(9px) } to{ opacity:1; transform:none } }
+@keyframes lb-pop{ 0%{ opacity:0; transform:scale(.82) } 60%{ transform:scale(1.045) } 100%{ opacity:1; transform:scale(1) } }
+@keyframes lb-check{ to{ stroke-dashoffset:0 } }
+
+/* Inline spinner — inherits the text colour, sizes to the font. Named .cspin (NOT
+   .spin, which would collide with .dj-platter.spin above). */
+.cspin{ display:inline-block; width:1em; height:1em; border-radius:50%; flex:0 0 auto;
+  border:2px solid color-mix(in srgb,currentColor 26%,transparent); border-top-color:currentColor;
+  animation:lb-spin .7s linear infinite; vertical-align:-.15em }
+.cspin.big{ width:30px; height:30px; border-width:3px; color:var(--accent) }
+
+/* One centred status block for every post-payment state, so wait → ready → error
+   swap IN PLACE and the page never jumps. */
+.pstatus{ min-height:240px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:13px; padding:8px 0 }
+.pstatus .ptext{ color:var(--fg); font-size:17px; font-weight:800; letter-spacing:-.01em }
+.pstatus .psub{ color:var(--muted); font-size:13.5px; max-width:34ch; margin-top:-4px }
+.pstatus .pberr{ color:var(--like); font-size:13px; font-weight:600 }
+.pstatus .lbuy{ margin-top:4px; max-width:420px }
+.pstatus .lnote{ margin-top:2px }
+
+/* Smooth entrances, lightly staggered so a success reveal feels choreographed. */
+.pbanner, .pstatus > *{ animation:lb-in .42s cubic-bezier(.2,.7,.2,1) both }
+.pstatus > *:nth-child(2){ animation-delay:.05s }
+.pstatus > *:nth-child(3){ animation-delay:.1s }
+.pstatus > *:nth-child(4){ animation-delay:.15s }
+.pstatus > *:nth-child(5){ animation-delay:.19s }
+/* Re-assert the spinner's spin over the entrance rule above (`.pstatus > .cspin` is
+   more specific than `.pstatus > *`), so a standalone loader never freezes on lb-in.
+   Stays spinning even under reduced-motion: it's functional feedback, not decoration. */
+.pstatus > .cspin{ animation:lb-spin .7s linear infinite }
+
+/* Success check — a circle that pops, with the tick drawing itself in. */
+.pcheck{ width:64px; height:64px; border-radius:50%; display:grid; place-items:center;
+  background:var(--live); color:#fff; box-shadow:0 8px 22px -6px color-mix(in srgb,var(--live) 65%,transparent);
+  animation:lb-pop .5s cubic-bezier(.2,.7,.2,1) both }
+.pcheck svg{ width:32px; height:32px; fill:none; stroke:currentColor; stroke-width:3.2; stroke-linecap:round; stroke-linejoin:round }
+.pcheck path{ stroke-dasharray:26; stroke-dashoffset:26; animation:lb-check .42s .2s cubic-bezier(.2,.7,.2,1) forwards }
+
+/* Tactile primary / buy / download buttons — hover lift, press dip, real disabled
+   look. (Topbar & hero buttons keep their own more-specific press transforms.) */
+.btn-primary{ transition:transform .2s cubic-bezier(.2,.6,.3,1), filter .2s ease }
+.btn-primary:not(:disabled):hover{ filter:brightness(1.05) }
+.btn-primary:not(:disabled):active{ transform:scale(.975) }
+.lbuy:not(:disabled):active{ transform:scale(.99) }
+.btn:disabled{ opacity:.7; cursor:default }
+/* Keep a button from collapsing/jumping when its label swaps to a spinner. */
+.lbuy, .pdl{ min-height:46px }
+.pdl{ min-width:118px; justify-content:center }
+
+@media (prefers-reduced-motion:reduce){
+  .pbanner, .pstatus > *, .pcheck, .pcheck path{ animation:none }
+}
