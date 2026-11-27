@@ -15,6 +15,7 @@ function prettyErr(m?: string): string {
     price_unset: 'This item has no price set.',
     price_below_min: 'This item’s price is below the card-payment minimum.',
     bad_price: 'This item’s price can’t be charged.',
+    rate_limited: 'Too many attempts — please wait a few minutes and try again.',
     cannot_checkout: 'Couldn’t start checkout. Please try again.',
     stripe_not_configured: 'Card payments aren’t available right now.',
   };

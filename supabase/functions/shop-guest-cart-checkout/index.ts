@@ -45,6 +45,13 @@ serve(async (req) => {
 
     const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
+    // (0) Anti-abuse: per-IP rate limit (this fn is --no-verify-jwt, so anon can hammer it).
+    // Checked before any begin/Stripe work so a flood never mints carts or sessions.
+    const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim()
+            || (req.headers.get('cf-connecting-ip') ?? '').trim();
+    const { data: allowed } = await db.rpc('shop_guest_rl_hit', { p_ip: ip });
+    if (allowed === false) return json({ error: 'rate_limited' });
+
     // (1) Validate + price + record a guest cart (service role; no buyer). The RPC sets every
     // price server-side, de-dupes per listing, and mints a token per item; the webhook re-checks
     // amount_subtotal against the cart intents before delivering.

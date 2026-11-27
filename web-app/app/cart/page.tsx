@@ -21,6 +21,7 @@ function prettyErr(m?: string): string {
     listing_not_found: 'One of these no longer exists — remove it to continue.',
     price_unset: 'One of these has no price set — remove it to continue.',
     kind_not_available: 'One of these options isn’t available anymore — remove it to continue.',
+    rate_limited: 'Too many attempts — please wait a few minutes and try again.',
     cannot_checkout: 'Couldn’t start checkout. Please try again.',
     stripe_not_configured: 'Card payments aren’t available right now.',
   };

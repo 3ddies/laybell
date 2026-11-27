@@ -39,6 +39,13 @@ serve(async (req) => {
 
     const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
+    // (0) Anti-abuse: per-IP rate limit (this fn is --no-verify-jwt, so anon can hammer it).
+    // Checked before any begin/Stripe work so a flood never mints intents or sessions.
+    const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim()
+            || (req.headers.get('cf-connecting-ip') ?? '').trim();
+    const { data: allowed } = await db.rpc('shop_guest_rl_hit', { p_ip: ip });
+    if (allowed === false) return json({ error: 'rate_limited' });
+
     // (1) Validate + price + record a guest intent (service role; no buyer). The RPC sets the
     // price server-side and mints the download token; the webhook re-checks the amount.
     const { data: begin, error: beginErr } = await db.rpc('shop_begin_stripe_guest_order', { p_listing_id: listingId, p_kind: kind });
