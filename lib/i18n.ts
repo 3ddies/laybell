@@ -2817,6 +2817,7 @@ const en: Record<string, string> = {
   'shop.sales': 'Sales',
   'shop.purchases': 'Purchases',
   'shop.noOrders': 'Nothing here yet.',
+  'shop.guestBuyer': 'Guest',
   'shop.status.requested': 'Requested',
   'shop.status.delivered': 'Delivered',
   'shop.status.declined': 'Declined',

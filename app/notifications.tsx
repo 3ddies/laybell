@@ -515,7 +515,7 @@ export default function NotificationsScreen() {
                         </>
                       ) : (
                         <Text style={styles.text} numberOfLines={2}>
-                          <Text style={styles.name}>{item.actor?.display_name ?? t('notifications.someone')}</Text>
+                          <Text style={styles.name}>{item.actor?.display_name ?? (item.type === 'sale' ? t('shop.guestBuyer') : t('notifications.someone'))}</Text>
                           {' '}{grouped ? groupedText(t, item.type, count) : notificationText(t, item.type)}
                         </Text>
                       )}

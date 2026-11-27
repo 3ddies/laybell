@@ -601,6 +601,8 @@ function OrdersTab({ onChanged }: { onChanged?: () => void }) {
           {section.orders.map((o) => {
             const other = section.sale ? o.buyer : o.seller;
             const name = other?.display_name || other?.username || '';
+            // A guest sale has no buyer account (buyer_id null) → label it "Guest", not a blank.
+            const isGuestSale = section.sale && !o.buyer_id;
             return (
               <TouchableOpacity
                 key={o.id}
@@ -626,7 +628,9 @@ function OrdersTab({ onChanged }: { onChanged?: () => void }) {
                         {name}
                       </Text>
                     )}
-                    {name ? ' · ' : ''}{formatPrice(o.price_cents, o.currency)}
+                    {/* Guest buyer: no account to open → plain, non-tappable label. */}
+                    {!name && isGuestSale ? t('shop.guestBuyer') : ''}
+                    {(name || isGuestSale) ? ' · ' : ''}{formatPrice(o.price_cents, o.currency)}
                     {o.kind ? ` · ${t(`shop.kind.${o.kind}`)}` : ''} · {t(`shop.status.${o.status}`)}
                   </Text>
                 </View>
