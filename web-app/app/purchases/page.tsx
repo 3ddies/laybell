@@ -1,0 +1,131 @@
+'use client';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { browserSb } from '@/lib/supabaseBrowser';
+import { gradientFor } from '@/lib/format';
+import { CATEGORY_LABEL } from '@/lib/shop';
+import { clearCheckout } from '@/lib/cart';
+
+type Purchase = {
+  order_id: string; kind: string; price_cents: number; created_at: string;
+  listing_id: string; title: string; cover_url: string | null; category: string; seller_username: string | null;
+};
+
+function PurchasesInner() {
+  const sb = browserSb();
+  const router = useRouter();
+  const sp = useSearchParams();
+  const checkoutIntent = sp.get('checkout');
+  const checkoutCart = sp.get('cart');
+
+  const [checked, setChecked] = useState(false);
+  const [items, setItems] = useState<Purchase[] | null>(null);
+  const [banner, setBanner] = useState<{ kind: 'wait' | 'ok' | 'refund' | 'err'; text: string } | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const { data, error } = await sb.rpc('my_shop_purchases');
+    if (!error) setItems((data as Purchase[]) ?? []);
+  }, [sb]);
+
+  useEffect(() => {
+    sb.auth.getSession().then(({ data }) => {
+      if (!data.session) { router.replace('/login'); return; }
+      setChecked(true);
+      load();
+    });
+  }, [sb, router, load]);
+
+  // After Stripe redirects back with ?checkout=<intent> (single) or ?cart=<cart> (cart),
+  // poll until the webhook delivers (or refunds) the purchase. A delivered cart also clears
+  // the browser cart.
+  useEffect(() => {
+    if (!checked || (!checkoutIntent && !checkoutCart)) return;
+    let tries = 0; let active = true;
+    setBanner({ kind: 'wait', text: 'Completing your purchase…' });
+    const tick = async () => {
+      if (!active) return;
+      const { data, error } = checkoutCart
+        ? await sb.rpc('shop_poll_stripe_cart', { p_cart_id: checkoutCart })
+        : await sb.rpc('shop_poll_stripe_order', { p_intent_id: checkoutIntent });
+      if (error) { setBanner({ kind: 'err', text: 'We couldn’t confirm this purchase yet — it’ll appear below once it clears.' }); return; }
+      if ((data as any)?.delivered) {
+        if (checkoutCart) clearCheckout(checkoutCart);
+        setBanner({ kind: 'ok', text: 'Purchased! Your downloads are ready below.' }); load(); return;
+      }
+      if ((data as any)?.refunded || (data as any)?.status === 'failed') {
+        setBanner({ kind: 'refund', text: 'That purchase couldn’t be completed and your card was refunded.' }); return;
+      }
+      if (tries++ < 20) setTimeout(tick, 1500);
+      else setBanner({ kind: 'err', text: 'Still processing — your purchase will appear below once it clears.' });
+    };
+    tick();
+    return () => { active = false; };
+  }, [checked, checkoutIntent, checkoutCart, sb, load]);
+
+  async function download(p: Purchase) {
+    setDownloading(p.order_id);
+    try {
+      const { data: path, error } = await sb.rpc('shop_deliverable_path', { p_order_id: p.order_id });
+      if (error || !path) throw error || new Error('no_path');
+      const { data: signed, error: sErr } = await sb.storage.from('shop-files').createSignedUrl(path as string, 3600, { download: true });
+      if (sErr || !signed?.signedUrl) throw sErr || new Error('no_url');
+      // The signed URL already carries content-disposition: attachment (download:true),
+      // so an anchor click downloads without unloading this SPA page/poll.
+      const a = document.createElement('a');
+      a.href = signed.signedUrl;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch {
+      setBanner({ kind: 'err', text: 'Couldn’t start that download — please try again.' });
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  if (!checked) return <main className="purchases"><div className="pstatus"><span className="cspin big" /><div className="ptext">Loading…</div></div></main>;
+
+  return (
+    <main className="purchases">
+      <h1>Your purchases</h1>
+      {banner ? (
+        <div className={`pbanner ${banner.kind}`}>
+          {banner.kind === 'wait' ? <span className="cspin" style={{ marginRight: 8 }} /> : null}{banner.text}
+        </div>
+      ) : null}
+      {items === null ? (
+        <div className="pstatus"><span className="cspin big" /><div className="ptext">Loading your purchases…</div></div>
+      ) : items.length === 0 ? (
+        <div className="state"><h2 style={{ fontSize: 18 }}>No purchases yet</h2><p>Beats and songs you buy will show up here to download.</p></div>
+      ) : (
+        <div className="plist">
+          {items.map((p) => (
+            <div className="prow" key={p.order_id}>
+              <Link href={`/listing/${p.listing_id}`} className="part" style={!p.cover_url ? { background: gradientFor(p.listing_id) } : undefined}>
+                {p.cover_url ? <img src={p.cover_url} alt="" /> : null}
+              </Link>
+              <div className="pinfo2">
+                <b>{p.title}</b>
+                <span>{CATEGORY_LABEL[p.category as keyof typeof CATEGORY_LABEL] || 'Beat'}{p.kind === 'lease' ? ' · Lease' : p.kind === 'sell' ? ' · Exclusive' : ''}{p.seller_username ? ` · @${p.seller_username}` : ''}</span>
+              </div>
+              <button className="btn btn-primary pdl" disabled={downloading === p.order_id} onClick={() => download(p)}>
+                {downloading === p.order_id ? <><span className="cspin" /> Preparing…</> : 'Download'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </main>
+  );
+}
+
+export default function PurchasesPage() {
+  return (
+    <Suspense fallback={<main className="purchases"><div className="pstatus"><span className="cspin big" /><div className="ptext">Loading…</div></div></main>}>
+      <PurchasesInner />
+    </Suspense>
+  );
+}

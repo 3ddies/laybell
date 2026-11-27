@@ -3,9 +3,10 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { sb, isVisibleProfile } from '@/lib/supabase';
 import { formatCount, gradientFor } from '@/lib/format';
-import { LISTING_PUBLIC_COLS, CATEGORY_LABEL, dealRows, listingAppLink, type WebListing } from '@/lib/shop';
+import { LISTING_PUBLIC_COLS, CATEGORY_LABEL, dealRows, listingAppLink, saleTypes, priceForKind, type WebListing } from '@/lib/shop';
 import { TierBadge, NotFoundState } from '../../components';
 import ProtectedAudio from '../../ProtectedAudio';
+import ListingActions from './ListingActions';
 
 export const revalidate = 60;
 
@@ -48,6 +49,11 @@ export default async function ListingPage({ params }: { params: { id: string } }
   const badge = seller && seller.badge_show !== false ? seller.badge_tier : null;
 
   const deals = dealRows(l);
+  const t = saleTypes(l);
+  const priceCents = {
+    sell: t.sell ? priceForKind(l, 'sell') : undefined,
+    lease: t.lease ? priceForKind(l, 'lease') : undefined,
+  };
   const cat = CATEGORY_LABEL[l.category] || 'Digital good';
   const stats: string[] = [];
   if ((l.sales_count ?? 0) > 0) stats.push(`${formatCount(l.sales_count!)} sold`);
@@ -56,24 +62,14 @@ export default async function ListingPage({ params }: { params: { id: string } }
   return (
     <main className="listing shopdark">
       <div className="wrap lwrap">
-        <div className="lcover" style={!l.cover_url ? { background: gradientFor(l.id) } : undefined}>
-          {l.cover_url ? (
-            <img src={l.cover_url} alt={l.title} />
-          ) : (
-            <span className="lcover-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"><path d="M3 9h18M4.5 9 6 4.5A2 2 0 0 1 7.9 3h8.2a2 2 0 0 1 1.9 1.5L19.5 9M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M9 13a3 3 0 0 0 6 0"/></svg></span>
-          )}
-        </div>
-
-        <div className="linfo">
-          <span className="lcat">{cat}{l.genre ? ` · ${l.genre}` : ''}</span>
-          <h1 className="ltitle">{l.title}</h1>
-
-          {sellerVisible ? (
-            <Link className="lseller" href={`/@${seller.username}`}>
-              <span className="mini-av">{seller.avatar_url ? <img src={seller.avatar_url} alt="" /> : (sellerName || '?').charAt(0).toUpperCase()}</span>
-              <span className="ls-txt"><b>{sellerName}</b><TierBadge tier={badge} /><span className="ls-handle">@{seller.username}</span></span>
-            </Link>
-          ) : null}
+        <div className="lmedia">
+          <div className="lcover" style={!l.cover_url ? { background: gradientFor(l.id) } : undefined}>
+            {l.cover_url ? (
+              <img src={l.cover_url} alt={l.title} />
+            ) : (
+              <span className="lcover-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"><path d="M3 9h18M4.5 9 6 4.5A2 2 0 0 1 7.9 3h8.2a2 2 0 0 1 1.9 1.5L19.5 9M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M9 13a3 3 0 0 0 6 0"/></svg></span>
+            )}
+          </div>
 
           {l.preview_url ? (
             <div className="lpreview">
@@ -83,20 +79,27 @@ export default async function ListingPage({ params }: { params: { id: string } }
               <ProtectedAudio src={l.preview_url} />
             </div>
           ) : null}
+        </div>
 
-          <div className="ldeals">
-            {deals.map((d) => (
-              <div className={`ldeal ${d.kind}`} key={d.kind}>
-                <div className="ld-main"><b>{d.label}</b><span>{d.sub}</span></div>
-                <div className="ld-price">{d.price}</div>
-              </div>
-            ))}
-          </div>
+        <div className="linfo">
+          <span className="lcat">{cat}{l.genre ? ` · ${l.genre}` : ''}</span>
+          <h1 className="ltitle">{l.title}</h1>
 
-          <a className="btn btn-primary lbuy" href={listingAppLink(l.id)}>
-            <img className="logo-sm" src="/logo.png" alt="" />Get it in the app
-          </a>
-          <p className="lnote">Browse here, buy in the app — purchases are handled securely in Laybell.{stats.length ? ` · ${stats.join(' · ')}` : ''}</p>
+          {sellerVisible ? (
+            <Link className="lseller" href={`/@${seller.username}`}>
+              <span className="mini-av">{seller.avatar_url ? <img src={seller.avatar_url} alt="" /> : (sellerName || '?').charAt(0).toUpperCase()}</span>
+              <span className="ls-txt">
+                <span className="ls-name"><b>{sellerName}</b><TierBadge tier={badge} /></span>
+                <span className="ls-handle">@{seller.username}</span>
+              </span>
+            </Link>
+          ) : null}
+
+          {stats.length ? (
+            <div className="lstats">{stats.map((s) => <span key={s}>{s}</span>)}</div>
+          ) : null}
+
+          <ListingActions deals={deals} listingId={l.id} appLink={listingAppLink(l.id)} title={l.title} cover={l.cover_url} priceCents={priceCents} />
 
           {l.description ? (
             <div className="ldesc"><h3>About this {cat.toLowerCase()}</h3><p>{l.description}</p></div>

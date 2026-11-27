@@ -175,10 +175,14 @@ export default function BadgesScreen() {
   // the previewed one — it reflects actual progress toward the next tier.
   const progressCols = emblemTier ? badgeRingColors(emblemTier) : GRADIENTS.primaryWarm;
 
-  // Categories with the most recent achievement first; ties (and categories with
-  // no badge yet) keep their default order, so they settle below. Array.sort is
-  // stable, which preserves that fallback ordering.
-  const orderedCats = [...CATEGORY_ORDER].sort((a, b) => (recentByCat[b] ?? 0) - (recentByCat[a] ?? 0));
+  // App Sharing is pinned to the very top — the share-the-app badge is featured so
+  // people notice it. Every other category then follows most-recent-achievement
+  // first; ties (and categories with no badge yet) keep their default CATEGORY_ORDER,
+  // so they settle below (Array.sort is stable, which preserves that fallback).
+  const rest = CATEGORY_ORDER
+    .filter((c) => c !== 'app_sharing')
+    .sort((a, b) => (recentByCat[b] ?? 0) - (recentByCat[a] ?? 0));
+  const orderedCats: BadgeCategory[] = ['app_sharing', ...rest];
 
   // A single theme chip — lights up in its own tier color only when selected.
   const themeChip = (opt: typeof THEME_OPTIONS[number]) => {
