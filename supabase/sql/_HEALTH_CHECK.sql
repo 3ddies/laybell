@@ -29,6 +29,36 @@ select
   (select count(*) from public.ledger_accounts
     where kind <> 'platform' and balance_cents < 0)                       as negative_user_balances_must_be_0,
 
+  -- ── SHOP CARD SALES (shop_stripe + clawback + chargeback). Monitor OUTCOMES:
+  --    Stripe money that entered but never resolved, and refunds/chargebacks that
+  --    failed to reverse the seller — the exact leak the clawback closes. ──────
+  (select count(*) from public.shop_stripe_payments
+    where outcome is null and created_at < now() - interval '15 minutes')  as shop_payments_unresolved_must_be_0,
+  -- Every REFUNDED/charged-back card order must have reversed the seller (a
+  -- 'shop-refund:<order>' ledger tx) OR recorded the un-clawable shortfall. A row
+  -- here = a reversal that left the seller paid: a real, silent platform loss.
+  (select count(*) from public.shop_orders o
+    where o.status = 'refunded' and coalesce(o.price_cents, 0) > 0
+      and exists (select 1 from public.shop_stripe_payments p
+                   where p.outcome = 'refunded'
+                     and (p.order_id = o.id
+                          or exists (select 1 from public.shop_stripe_intents i
+                                      where i.order_id = o.id and i.cart_id = p.cart_id)))
+      and not exists (select 1 from public.ledger_transactions
+                       where source = 'stripe' and external_id = 'shop-refund:' || o.id::text)
+      and not exists (select 1 from public.shop_refund_shortfalls s
+                       where s.order_id = o.id))                           as stripe_refunds_not_reversed_must_be_0,
+  -- A DELIVERED guest order with no download token can never be downloaded (broken delivery).
+  (select count(*) from public.shop_orders
+    where status = 'delivered' and coalesce(price_cents, 0) > 0
+      and buyer_id is null and download_token is null)                     as guest_orders_no_token_must_be_0,
+  -- Context, not must-be-0: platform-absorbed refund losses (seller already cashed
+  -- out), chargebacks still open, and total delivered card + guest sales.
+  (select count(*) from public.shop_refund_shortfalls)                     as refund_shortfalls_recorded,
+  (select count(*) from public.shop_disputes
+    where status not in ('won', 'lost'))                                   as chargebacks_open,
+  (select count(*) from public.shop_orders where status = 'delivered')     as shop_orders_delivered,
+
   -- ── ACCOUNT DELETION. The health signal is the OVERDUE COUNT, never the
   --    cron status — that is exactly what lied for a week. Three separate
   --    blockers hid behind each other here (follow_events, access_log,
