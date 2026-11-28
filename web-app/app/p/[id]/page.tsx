@@ -8,6 +8,8 @@ import { OpenCTA, NotFoundState } from '../../components';
 import PostInteractions from './PostInteractions';
 import ProtectedAudio from '../../ProtectedAudio';
 import StreamPlayer from '../../StreamPlayer';
+import TvWatch from './TvWatch';
+import { TV_WEB_PREROLL_MIN_SEC } from '@/lib/ads';
 
 export const revalidate = 60;
 
@@ -16,7 +18,7 @@ type Post = {
   media_url: string | null; thumbnail_url: string | null; cover_url: string | null;
   like_count: number | null; comment_count: number | null; view_count: number | null;
   stream_count: number | null; mature: boolean | null; created_at: string;
-  aspect_ratio: string | null;
+  aspect_ratio: string | null; duration_seconds: number | null;
   // Creator engagement privacy (post_privacy.sql), resolved server-side.
   hide_like_count_eff?: boolean | null; comments_disabled_eff?: boolean | null;
 };
@@ -27,7 +29,7 @@ const getPost = cache(async (id: string) => {
   // RLS already drops private posts and posts of hidden authors; we also filter
   // archived_at and mature ourselves (neither is policy-enforced for the web).
   const { data: post } = await db.from('posts')
-    .select('id,user_id,type,caption,media_url,thumbnail_url,cover_url,like_count,comment_count,view_count,stream_count,mature,aspect_ratio,created_at')
+    .select('id,user_id,type,caption,media_url,thumbnail_url,cover_url,like_count,comment_count,view_count,stream_count,mature,aspect_ratio,duration_seconds,created_at')
     .eq('id', id).is('archived_at', null).maybeSingle();
   if (!post) return { post: null as Post | null, author: null as Author | null };
   const { data: author } = await db.from('profiles')
@@ -81,11 +83,20 @@ export default async function PostPage({ params }: { params: { id: string } }) {
   // below. The Cloudflare Stream iframe plays in every browser, expands to
   // fullscreen, and offers no download.
   if (isVideo) {
+    // Laybell TV pre-roll gate (owner spec): LANDSCAPE video over 2 minutes —
+    // the same aspect>1 rule that puts a clip on /tv, plus a length floor. These
+    // videos play a YouTube-style pre-roll ad on the first play click; TvWatch
+    // handles the poster → ad → video flow. Everything else keeps StreamPlayer.
+    const canPreroll = aspectOf(post.aspect_ratio) > 1 && (post.duration_seconds ?? 0) > TV_WEB_PREROLL_MIN_SEC;
     return (
       <main className="postpage">
         <div className="wrap watch">
           {streamSrc ? (
-            <StreamPlayer src={streamSrc} thumb={streamThumb(post.media_url)} initialAr={videoAr} title={post.caption || undefined} />
+            canPreroll ? (
+              <TvWatch src={streamSrc} thumb={streamThumb(post.media_url)} initialAr={videoAr} title={post.caption || undefined} />
+            ) : (
+              <StreamPlayer src={streamSrc} thumb={streamThumb(post.media_url)} initialAr={videoAr} title={post.caption || undefined} />
+            )
           ) : (
             <div className="watch-player" style={{ ['--ar' as any]: videoAr }}>
               {post.media_url ? (
