@@ -1913,6 +1913,9 @@ const en: Record<string, string> = {
   'auth.emailInUse': 'An account with this email already exists. Try logging in.',
   'auth.invalidCredentials': 'Incorrect email or password.',
   'auth.rateLimited': 'Too many attempts — wait a minute and try again.',
+  'auth.forgotPassword': 'Forgot password?',
+  'auth.resetNeedEmail': 'Enter your email above, then tap “Forgot password”.',
+  'auth.resetSent': 'Check your inbox for a password reset link.',
 
   // Home feed + ad menu
   'feed.filter.all': 'All',

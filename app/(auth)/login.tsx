@@ -7,6 +7,7 @@ import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
+import { passwordResetRedirectUrl } from '../../lib/authLink';
 import { isAddingAccount, setAddAccountMode } from '../../lib/accounts';
 import SocialAuthButtons from '../../components/SocialAuthButtons';
 import AuthLogoMark from '../../components/AuthLogoMark';
@@ -28,6 +29,11 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  // "Forgot password?" lives on this screen too: it emails a recovery link that
+  // lands in (auth)/reset-password. `notice` is the positive confirmation, kept
+  // separate from `error` so the success message is never styled as a failure.
+  const [notice, setNotice] = useState('');
+  const [resetting, setResetting] = useState(false);
   // True when this login screen was opened to ADD another account (the current
   // account is still signed in underneath). Captured on mount — it only changes
   // when we navigate away. Shows a back button so the user can cancel and return
@@ -54,7 +60,7 @@ export default function LoginScreen() {
     // keyboard on someone who has to go straight back into a field.
     // It also uncovers the button: the spinner is no use behind a keyboard.
     Keyboard.dismiss();
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setNotice('');
     // Capture a thrown network/timeout error into the same shape the branches
     // below already handle, so a rejected sign-in can never leave the button
     // stuck disabled — the setLoading(false) at the end always runs.
@@ -103,6 +109,31 @@ export default function LoginScreen() {
     // profile fetch can hang. The timer is the guarantee that no route through
     // this function can leave a permanently spinning button — the property the
     // old unconditional setLoading(false) was protecting, kept.
+  }
+
+  // Send a password-reset email to whatever address is in the email field. The
+  // link lands in (auth)/reset-password (app/_layout.tsx routes 'recovery'
+  // there). Supabase returns success even when no account matches — so an
+  // attacker can't probe which emails exist — which is why the confirmation
+  // below is unconditional on the no-error path.
+  async function handleForgotPassword() {
+    const target = email.trim();
+    if (!target) { setNotice(''); setError(t('auth.resetNeedEmail')); return; }
+    Keyboard.dismiss();
+    setError(''); setNotice('');
+    setResetting(true);
+    let error: any;
+    try {
+      ({ error } = await supabase.auth.resetPasswordForEmail(target, { redirectTo: passwordResetRedirectUrl() }));
+    } catch (e: any) {
+      error = e;
+    }
+    setResetting(false);
+    if (error) {
+      setError(/rate|security purposes/i.test(error.message) ? t('auth.rateLimited') : error.message);
+      return;
+    }
+    setNotice(t('auth.resetSent'));
   }
 
   return (
@@ -169,6 +200,13 @@ export default function LoginScreen() {
             </View>
           )}
 
+          {!!notice && (
+            <View style={styles.noticeRow}>
+              <Ionicons name="checkmark-circle-outline" size={15} color={colors.primary} />
+              <Text style={styles.noticeText}>{notice}</Text>
+            </View>
+          )}
+
           <AuthField
             icon="mail-outline"
             placeholder={t('auth.email')}
@@ -194,6 +232,19 @@ export default function LoginScreen() {
               </TouchableOpacity>
             )}
           />
+
+          {/* Right-aligned, hugging the password field above it. Disabled while a
+              reset email is in flight (and during a login) so it can't double-fire. */}
+          <TouchableOpacity
+            style={styles.forgotRow}
+            onPress={handleForgotPassword}
+            disabled={resetting || loading}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t('auth.forgotPassword')}
+          >
+            <Text style={[styles.forgotText, resetting && styles.forgotTextDim]}>{t('auth.forgotPassword')}</Text>
+          </TouchableOpacity>
 
           <AuthSubmitButton
             label={t('auth.login')}
@@ -243,6 +294,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   form: { gap: SPACING.md },
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.error + '18', borderRadius: RADIUS.md, padding: SPACING.sm + 2 },
   errorText: { color: colors.error, fontSize: 13, flex: 1 },
+  noticeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.primary + '18', borderRadius: RADIUS.md, padding: SPACING.sm + 2 },
+  noticeText: { color: colors.primary, fontSize: 13, flex: 1 },
+  // Negative top margin pulls the link up to hug the password field, against the
+  // form's md row-gap, so it reads as attached to the field rather than floating.
+  forgotRow: { alignSelf: 'flex-end', marginTop: -SPACING.xs, paddingVertical: 4 },
+  forgotText: { color: colors.primary, fontSize: 13, fontWeight: '600' },
+  forgotTextDim: { opacity: 0.5 },
 
 
   // White, not colors.text: the label sits on the gold end of the gradient in
